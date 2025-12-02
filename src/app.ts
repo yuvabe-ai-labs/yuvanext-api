@@ -7,9 +7,7 @@ const app = createApp();
 
 configureOpenAPI(app);
 
-const routes = [
-  auth,
-] as const;
+const routes = [auth] as const;
 
 routes.forEach((route) => {
   app.basePath("/api").route("", route);
@@ -19,6 +17,6 @@ app.get("/", (c) => {
   return c.redirect("/docs");
 });
 
-// export type AppType = typeof routes[number];
+export type AppType = (typeof routes)[number];
 
 export default app;

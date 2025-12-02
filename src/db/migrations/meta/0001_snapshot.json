@@ -1,6 +1,6 @@
 {
-  "id": "94a95ca3-ab42-4843-ae00-de5196b67eaa",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "13f05d1b-8cc1-4770-af12-5db6a73c1f8e",
+  "prevId": "94a95ca3-ab42-4843-ae00-de5196b67eaa",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -295,6 +295,12 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
         }
       },
       "indexes": {},

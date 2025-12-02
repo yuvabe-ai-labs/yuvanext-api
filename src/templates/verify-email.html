@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Welcome to YuvaNext</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f4f4f4;
+        margin: 0;
+        padding: 0;
+      }
+      .container {
+        max-width: 600px;
+        margin: 40px auto;
+        background-color: #ffffff;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      }
+      h1,
+      h2 {
+        color: #333333;
+      }
+      p {
+        color: #555555;
+        line-height: 1.6;
+      }
+      .button {
+        display: inline-block;
+        padding: 12px 20px;
+        margin: 20px 0;
+        font-size: 16px;
+        color: #ffffff;
+        background-color: #f04e27;
+        text-decoration: none;
+        border-radius: 5px;
+      }
+      .footer {
+        margin-top: 30px;
+        font-size: 12px;
+        color: #999999;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <p>Hi {{name}},</p>
+      <p>
+        Welcome to YuvaNext, Thank you for joining our community of changemakers creating real opportunities for youth.
+      </p>
+
+      <h2>Confirm your signup</h2>
+      <p>To complete your registration, please verify your email by clicking the button below:</p>
+      <a href="{{url}}" class="button">Verify My Email</a>
+
+      <p>Once verified, you can:</p>
+      <ul>
+        <li>Post internship or project opportunities</li>
+        <li>Connect with young, motivated talent</li>
+        <li>Track applications easily</li>
+      </ul>
+
+      <p>We’re excited to have you on board!</p>
+      <p>Team YuvaNext</p>
+
+      <div class="footer">If you did not sign up for YuvaNext, please ignore this email.</div>
+    </div>
+  </body>
+</html>

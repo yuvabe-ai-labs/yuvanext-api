@@ -5,18 +5,24 @@ import { expand } from "dotenv-expand";
 import path from "node:path";
 import { z } from "zod";
 
-expand(config({
-  path: path.resolve(
-    process.cwd(),
-    ".env",
-  ),
-}));
+expand(
+  config({
+    path: path.resolve(process.cwd(), ".env"),
+  }),
+);
 const EnvSchema = z.object({
-  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  NODE_ENV: z
+    .enum(["development", "production", "test"])
+    .default("development"),
   PORT: z.coerce.number().default(3000),
   DATABASE_URL: z.string(),
   BETTER_AUTH_SECRET: z.string(),
   BETTER_AUTH_URL: z.string(),
+
+  SMTP_HOST: z.string(),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_USER: z.string(),
+  SMTP_PASSWORD: z.string(),
 });
 
 export type env = z.infer<typeof EnvSchema>;
