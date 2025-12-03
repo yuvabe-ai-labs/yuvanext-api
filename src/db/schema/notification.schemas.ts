@@ -9,7 +9,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { users } from "./user-schemas";
+import { user } from "./auth.schema";
 
 export const notificationTypeEnum = pgEnum("notification_type", [
   "success",
@@ -24,7 +24,7 @@ export const notifications = pgTable(
     id: uuid("id").primaryKey().notNull().defaultRandom(),
     userId: uuid("user_id")
       .notNull()
-      .references(() => users.userId),
+      .references(() => user.id),
     title: text("title"),
     message: text("message"),
     type: notificationTypeEnum("type").default("info"),
@@ -47,8 +47,8 @@ export const notifications = pgTable(
 );
 
 export const notificationsRelations = relations(notifications, ({ one }) => ({
-  user: one(users, {
+  user: one(user, {
     fields: [notifications.userId],
-    references: [users.userId],
+    references: [user.id],
   }),
 }));

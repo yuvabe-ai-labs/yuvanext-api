@@ -9,9 +9,9 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { user } from "./auth.schema";
 import { internships } from "./internship.schemas";
 import { interviews } from "./interview.schemas";
-import { users } from "./user-schemas";
 
 export const applicationStatusEnum = pgEnum("application_status", [
   "applied",
@@ -32,7 +32,7 @@ export const applications = pgTable(
     id: uuid("id").primaryKey().notNull().defaultRandom(),
     userId: uuid("user_id")
       .notNull()
-      .references(() => users.userId),
+      .references(() => user.id),
     internshipId: uuid("internship_id").references(() => internships.id),
     status: applicationStatusEnum("status").default("applied"),
     createdAt: timestamp("created_at", {
@@ -65,9 +65,9 @@ export const applications = pgTable(
 export const applicationsRelations = relations(
   applications,
   ({ one, many }) => ({
-    user: one(users, {
+    user: one(user, {
       fields: [applications.userId],
-      references: [users.userId],
+      references: [user.id],
     }),
     internship: one(internships, {
       fields: [applications.internshipId],

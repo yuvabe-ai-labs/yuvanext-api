@@ -10,8 +10,8 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { applications } from "./application.schemas";
+import { user } from "./auth.schema";
 import { savedInternship } from "./saved-internship.schemas";
-import { users } from "./user-schemas";
 
 export const candidateTypeEnum = pgEnum("candidate_type", [
   "student",
@@ -62,9 +62,9 @@ export const candidates = pgTable("candidates", {
 });
 
 export const candidatesRelations = relations(candidates, ({ one, many }) => ({
-  user: one(users, {
+  user: one(user, {
     fields: [candidates.userId],
-    references: [users.userId],
+    references: [user.id],
   }),
   savedInternships: many(savedInternship),
   applications: many(applications),

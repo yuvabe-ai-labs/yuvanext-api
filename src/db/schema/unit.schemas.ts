@@ -8,10 +8,10 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { user } from "./auth.schema";
 import { courses } from "./course.schemas";
 import { internships } from "./internship.schemas";
 import { savedInternship } from "./saved-internship.schemas";
-import { users } from "./user-schemas";
 
 export const units = pgTable("units", {
   userId: uuid("user_id").primaryKey().notNull(),
@@ -44,9 +44,9 @@ export const units = pgTable("units", {
 });
 
 export const unitsRelations = relations(units, ({ one, many }) => ({
-  user: one(users, {
+  user: one(user, {
     fields: [units.userId],
-    references: [users.userId],
+    references: [user.id],
   }),
   internships: many(internships),
   courses: many(courses),
