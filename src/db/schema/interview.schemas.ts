@@ -24,7 +24,7 @@ export const interviews = pgTable(
     id: uuid("id").primaryKey().notNull().defaultRandom(),
     applicationId: uuid("application_id")
       .notNull()
-      .references(() => applications.id),
+      .references(() => applications.id, { onDelete: "cascade" }), // ADD THIS
     scheduledDate: timestamp("scheduled_date", {
       withTimezone: true,
       precision: 0,

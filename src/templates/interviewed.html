@@ -1,0 +1,65 @@
+<div
+  style="
+    font-family: Arial, sans-serif;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #f9f9f9;
+  "
+>
+  <div
+    style="
+      background-color: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    "
+  >
+    <h2 style="color: #007bff; margin-bottom: 20px">📅 Interview Scheduled</h2>
+    <p>Dear {{candidateName}},</p>
+    <p>
+      Congratulations! Your interview for
+      <strong>{{internshipTitle}}</strong> has been scheduled.
+    </p>
+    {{#if scheduledAt}}
+    <div
+      style="
+        background-color: #f0f8ff;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 20px 0;
+      "
+    >
+      <strong>📅 Date & Time:</strong> {{scheduledAt}}
+    </div>
+    {{/if}} {{#if meetingLink}}
+    <div
+      style="
+        background-color: #f0f8ff;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 20px 0;
+      "
+    >
+      <strong>🔗 Meeting Link:</strong>
+      <a href="{{meetingLink}}" style="color: #007bff">{{meetingLink}}</a>
+    </div>
+    {{/if}} {{#if notes}}
+    <div
+      style="
+        background-color: #fff3cd;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 20px 0;
+      "
+    >
+      <strong>📝 Additional Notes:</strong><br />{{notes}}
+    </div>
+    {{/if}}
+    <p style="margin-top: 20px">
+      Please join the meeting on time. We look forward to speaking with you!
+    </p>
+    <br />
+    <p>Best regards,<br /><strong>{{unitName}}</strong></p>
+  </div>
+</div>

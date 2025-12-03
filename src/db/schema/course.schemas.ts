@@ -18,7 +18,7 @@ export const courses = pgTable("courses", {
   difficultyLevel: difficultyLevelEnum("difficulty_level"),
   createdBy: uuid("created_by")
     .notNull()
-    .references(() => units.userId),
+    .references(() => units.userId, { onDelete: "cascade" }), // OR "set null" if you want to keep courses
   bannerUrl: text("banner_url"),
   redirectUrl: text("redirect_url"),
   createdAt: timestamp("created_at", { withTimezone: true, precision: 0 })

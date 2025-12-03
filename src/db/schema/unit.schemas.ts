@@ -8,17 +8,21 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { user } from "./auth.schema";
 import { courses } from "./course.schemas";
 import { internships } from "./internship.schemas";
 import { savedInternship } from "./saved-internship.schemas";
-import { users } from "./user-schemas";
 
 export const units = pgTable("units", {
-  userId: uuid("user_id").primaryKey().notNull(),
+  userId: uuid("user_id")
+    .primaryKey()
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }), // ADD THIS
   name: text("name"),
   type: text("type"),
   phone: text("phone"),
   address: text("address"),
+  onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
   websiteUrl: text("website_url"),
   mission: text("mission"),
   values: text("values"),
@@ -27,26 +31,26 @@ export const units = pgTable("units", {
   isAurovillian: boolean("is_aurovillian").default(false),
   bannerUrl: text("banner_url"),
   avatarUrl: text("avatar_url"),
-  galleryImages: jsonb("gallery_images").$type<string[]>().default([]), // JSON array of image URLs
-  galleryVideos: jsonb("gallery_videos").$type<string[]>().default([]), // JSON array of video URLs
+  galleryImages: jsonb("gallery_images").$type<string[]>().default([]),
+  galleryVideos: jsonb("gallery_videos").$type<string[]>().default([]),
   createdAt: timestamp("created_at", { withTimezone: true, precision: 0 })
     .notNull()
     .defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, precision: 0 })
     .notNull()
     .defaultNow(),
-  focusAreas: jsonb("focus_areas").$type<string[]>(), // JSON array of focus areas
-  skillsOffered: jsonb("skills_offered").$type<string[]>(), // JSON array of skills offered
-  opportunitiesOffered: jsonb("opportunities_offered").$type<string[]>(), // JSON array of opportunities
+  focusAreas: jsonb("focus_areas").$type<string[]>(),
+  skillsOffered: jsonb("skills_offered").$type<string[]>(),
   location: text("location"),
+  opportunitiesOffered: jsonb("opportunities_offered").$type<string[]>(),
   projects: jsonb("projects").$type<any[]>(),
   socialLinks: jsonb("social_links").$type<Record<string, string>>(),
 });
 
 export const unitsRelations = relations(units, ({ one, many }) => ({
-  user: one(users, {
+  user: one(user, {
     fields: [units.userId],
-    references: [users.userId],
+    references: [user.id],
   }),
   internships: many(internships),
   courses: many(courses),

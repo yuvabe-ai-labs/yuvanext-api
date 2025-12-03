@@ -32,7 +32,7 @@ export const internships = pgTable(
     id: uuid("id").primaryKey().notNull().defaultRandom(),
     createdBy: uuid("created_by")
       .notNull()
-      .references(() => units.userId),
+      .references(() => units.userId, { onDelete: "cascade" }), // OR "set null"
     title: text("title").notNull(),
     description: text("description"),
     duration: text("duration"),
@@ -50,10 +50,10 @@ export const internships = pgTable(
     isPaid: boolean("is_paid").default(false),
     minAgeRequired: text("min_age_required"),
     jobType: jobTypeEnum("job_type"),
-    benefits: jsonb("benefits").$type<string[]>(), // JSON array of benefits
-    skillsRequired: jsonb("skills_required").$type<string[]>(), // JSON array of required skills
-    responsibilities: jsonb("responsibilities").$type<string[]>(), // JSON array of responsibilities
-    language: jsonb("language").$type<string[]>(), // JSON array of language requirements
+    benefits: jsonb("benefits").$type<string[]>(),
+    skillsRequired: jsonb("skills_required").$type<string[]>(),
+    responsibilities: jsonb("responsibilities").$type<string[]>(),
+    language: jsonb("language").$type<string[]>(),
   },
   (table) => ({
     createdByIdx: index("internships_created_by_index").on(table.createdBy),
