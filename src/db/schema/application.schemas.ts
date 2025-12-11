@@ -34,6 +34,7 @@ export const applications = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }), // ADD THIS
+
     internshipId: uuid("internship_id").references(() => internships.id),
     status: applicationStatusEnum("status").default("applied"),
     createdAt: timestamp("created_at", {
