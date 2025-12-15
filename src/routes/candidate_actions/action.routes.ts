@@ -159,4 +159,20 @@ router.openapi(
   handlers.shareInternship,
 );
 
+router.openapi(
+  {
+    method: "get",
+    path: "internship/application-status",
+    tags: ["InternshipActions"],
+    summary: "Get application status with unit and internship details",
+    security: [{ Bearer: [] }],
+    responses: {
+      [OK]: { description: "Application status fetched" },
+      [UNAUTHORIZED]: { description: "Unauthorized" },
+      [INTERNAL_SERVER_ERROR]: { description: "Internal server error" },
+    },
+  },
+  handlers.getApplicationStatus,
+);
+
 export default router;

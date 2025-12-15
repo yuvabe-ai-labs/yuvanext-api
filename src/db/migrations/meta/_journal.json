@@ -78,6 +78,20 @@
       "when": 1764934100166,
       "tag": "0010_common_sprite",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1765516964639,
+      "tag": "0011_serious_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1765517166572,
+      "tag": "0012_stiff_gravity",
+      "breakpoints": true
     }
   ]
 }

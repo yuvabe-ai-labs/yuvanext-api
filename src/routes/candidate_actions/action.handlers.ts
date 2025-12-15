@@ -10,6 +10,7 @@ import { applications } from "@/db/schema/application.schemas";
 import { internships } from "@/db/schema/internship.schemas";
 import { notifications } from "@/db/schema/notification.schemas";
 import { savedInternship } from "@/db/schema/saved-internship.schemas";
+import { units } from "@/db/schema/unit.schemas";
 import {
   BAD_REQUEST,
   CONFLICT,
@@ -432,6 +433,55 @@ export const shareInternship: AppRouteHandler<any> = async (c) => {
     );
   } catch (err) {
     console.error("Error generating share links:", err);
+    return c.json(
+      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// GET internship/application-status - get application status with unit details
+export const getApplicationStatus: AppRouteHandler<any> = async (c) => {
+  const user = c.get("user");
+
+  // Check if user is a candidate
+  if (user.role !== "candidate") {
+    return c.json(
+      {
+        status_code: FORBIDDEN,
+        message: "Only candidates",
+      },
+      FORBIDDEN,
+    );
+  }
+
+  try {
+    const list = await db
+      .select({
+        id: applications.id,
+        applicationTitle: internships.title,
+        status: applications.status,
+        unitName: units.name,
+        avatarUrl: units.avatarUrl,
+        createdAt: applications.createdAt,
+        updatedAt: applications.updatedAt,
+      })
+      .from(applications)
+      .leftJoin(internships, eq(applications.internshipId, internships.id))
+      .leftJoin(units, eq(internships.createdBy, units.userId))
+      .where(eq(applications.userId, user.id))
+      .orderBy(applications.createdAt);
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Application status fetched",
+        data: list,
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error fetching application status:", err);
     return c.json(
       { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
       INTERNAL_SERVER_ERROR,

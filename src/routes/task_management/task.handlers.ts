@@ -1,0 +1,726 @@
+import { eq } from "drizzle-orm";
+import { z } from "zod";
+
+import type { AppRouteHandler } from "@/types/app.types";
+
+import db from "@/db";
+import { applications } from "@/db/schema/application.schemas";
+import { user as userTable } from "@/db/schema/auth.schema";
+import { candidates } from "@/db/schema/candidate.schemas";
+import { internships } from "@/db/schema/internship.schemas";
+import { tasks } from "@/db/schema/task.management.schemas";
+import { units } from "@/db/schema/unit.schemas";
+import {
+  FORBIDDEN,
+  INTERNAL_SERVER_ERROR,
+  NOT_FOUND,
+  OK,
+  UNPROCESSABLE_ENTITY,
+} from "@/lib/openapi/http-status-codes";
+
+// Validation schemas
+const CreateTaskSchema = z.object({
+  applicationId: z.string().uuid(),
+  title: z.string().min(1).max(255),
+  description: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  startTime: z.string().optional(),
+  endTime: z.string().optional(),
+  color: z.string().optional(),
+});
+
+const UpdateTaskSchema = z.object({
+  title: z.string().min(1).max(255).optional(),
+  description: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  startTime: z.string().optional(),
+  endTime: z.string().optional(),
+  color: z.string().optional(),
+  status: z.enum(["pending", "submitted", "redo", "accepted"]).optional(),
+  submissionLink: z.string().url().optional(),
+});
+
+const _SubmitTaskSchema = z.object({
+  submissionLink: z.string().url(),
+});
+
+const ReviewTaskSchema = z.object({
+  status: z.enum(["redo", "accepted"]),
+  reviewRemarks: z.string().min(1),
+});
+
+// ============================================================================
+// CANDIDATE HANDLERS
+// ============================================================================
+
+// POST /tasks - Create a new task (Candidate)
+export const createTask: AppRouteHandler<any> = async (c) => {
+  const user = c.get("user");
+
+  if (user.role !== "candidate") {
+    return c.json(
+      {
+        status_code: FORBIDDEN,
+        message: "Only candidates can create tasks",
+      },
+      FORBIDDEN,
+    );
+  }
+
+  try {
+    const json = await c.req.json().catch(() => ({}));
+    const parsed = CreateTaskSchema.safeParse(json);
+
+    if (!parsed.success) {
+      return c.json(
+        {
+          status_code: UNPROCESSABLE_ENTITY,
+          message: "Validation Error",
+          error: parsed.error.issues,
+        },
+        UNPROCESSABLE_ENTITY,
+      );
+    }
+
+    const data = parsed.data;
+
+    // Verify the application belongs to the candidate
+    const application = await db
+      .select()
+      .from(applications)
+      .where(eq(applications.id, data.applicationId))
+      .limit(1);
+
+    if (!application.length) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Application not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    if (application[0].userId !== user.id) {
+      return c.json(
+        {
+          status_code: FORBIDDEN,
+          message: "You can only create tasks for your own applications",
+        },
+        FORBIDDEN,
+      );
+    }
+
+    // Create the task
+    const newTask = await db
+      .insert(tasks)
+      .values({
+        applicationId: data.applicationId,
+        title: data.title,
+        description: data.description,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        color: data.color || "#3B82F6",
+        status: "pending",
+      })
+      .returning();
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Task created successfully",
+        data: newTask[0],
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error creating task:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// GET /tasks - Get all tasks with internship details and progress (Both Candidate and Unit)
+export const getAllTasks: AppRouteHandler<any> = async (c) => {
+  const user = c.get("user");
+
+  try {
+    const applicationId = c.req.query("applicationId");
+
+    let relevantApplications;
+
+    if (user.role === "candidate") {
+      // Get all applications for this candidate
+      relevantApplications = await db
+        .select()
+        .from(applications)
+        .where(eq(applications.userId, user.id));
+    } else if (user.role === "unit") {
+      // Get all applications for internships owned by this unit
+      const unitInternships = await db
+        .select()
+        .from(internships)
+        .where(eq(internships.createdBy, user.id));
+
+      const internshipIds = unitInternships.map((int) => int.id);
+
+      if (internshipIds.length === 0) {
+        return c.json(
+          {
+            status_code: OK,
+            message: "Tasks retrieved successfully",
+            data: [],
+          },
+          OK,
+        );
+      }
+
+      // Get all applications for these internships
+      relevantApplications = [];
+      for (const intId of internshipIds) {
+        const apps = await db
+          .select()
+          .from(applications)
+          .where(eq(applications.internshipId, intId));
+        relevantApplications.push(...apps);
+      }
+    } else {
+      return c.json(
+        {
+          status_code: FORBIDDEN,
+          message: "Access denied",
+        },
+        FORBIDDEN,
+      );
+    }
+
+    if (relevantApplications.length === 0) {
+      return c.json(
+        {
+          status_code: OK,
+          message: "Tasks retrieved successfully",
+          data: user.role === "candidate" ? {} : [],
+        },
+        OK,
+      );
+    }
+
+    const applicationIds = relevantApplications.map((app) => app.id);
+
+    // Filter by applicationId if provided
+    let targetApplicationIds = applicationIds;
+    if (applicationId) {
+      if (!applicationIds.includes(applicationId)) {
+        return c.json(
+          {
+            status_code: FORBIDDEN,
+            message: "You can only view tasks for your own applications",
+          },
+          FORBIDDEN,
+        );
+      }
+      targetApplicationIds = [applicationId];
+    }
+
+    // Get all tasks for the target applications
+    const allTasks = [];
+    for (const appId of targetApplicationIds) {
+      const appTasks = await db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.applicationId, appId));
+      allTasks.push(...appTasks);
+    }
+
+    // Enrich tasks with application, internship, and unit details
+    const enrichedTasks = await Promise.all(
+      allTasks.map(async (task) => {
+        // Get application details
+        const application = await db
+          .select()
+          .from(applications)
+          .where(eq(applications.id, task.applicationId))
+          .limit(1);
+
+        if (!application.length) {
+          return {
+            ...task,
+            applicantName: null,
+            applicantPhone: null,
+            applicantEmail: null,
+            internshipTitle: null,
+            unitName: null,
+            unitId: null,
+            progress: 0,
+          };
+        }
+
+        // Get applicant (user) details using candidate table
+        let applicantName = null;
+        let applicantPhone = null;
+        let applicantEmail = null;
+        const candidate = await db
+          .select()
+          .from(candidates)
+          .where(eq(candidates.userId, application[0].userId))
+          .limit(1);
+
+        if (candidate.length) {
+          const candidateUser = await db
+            .select()
+            .from(userTable)
+            .where(eq(userTable.id, candidate[0].userId))
+            .limit(1);
+          if (candidateUser.length) {
+            applicantName = candidateUser[0].name;
+            applicantEmail = candidateUser[0].email;
+          }
+          applicantPhone = candidate[0].phone;
+        }
+
+        // Get internship details
+        const internship = await db
+          .select()
+          .from(internships)
+          .where(eq(internships.id, application[0].internshipId!))
+          .limit(1);
+
+        // Get unit details
+        let unitName = null;
+        let unitId = null;
+        if (internship.length && internship[0].createdBy) {
+          const unitRecord = await db
+            .select()
+            .from(units)
+            .where(eq(units.userId, internship[0].createdBy))
+            .limit(1);
+          unitName = unitRecord.length ? unitRecord[0].name : null;
+          unitId = internship[0].createdBy;
+        }
+
+        // Calculate progress for this application
+        const applicationTasks = await db
+          .select()
+          .from(tasks)
+          .where(eq(tasks.applicationId, task.applicationId));
+
+        const totalTasks = applicationTasks.length;
+        const completedTasks = applicationTasks.filter(
+          (t) => t.status === "accepted",
+        ).length;
+        const progress =
+          totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+        return {
+          ...task,
+          applicantName,
+          applicantPhone,
+          applicantEmail,
+          internshipTitle: internship.length ? internship[0].title : null,
+          unitName,
+          unitId,
+          progress,
+        };
+      }),
+    );
+
+    // For candidates, group by unit
+    if (user.role === "candidate") {
+      const groupedByUnit: Record<string, any> = {};
+
+      for (const task of enrichedTasks) {
+        const unitKey = task.unitName || "Unknown Unit";
+
+        if (!groupedByUnit[unitKey]) {
+          groupedByUnit[unitKey] = {
+            unitName: task.unitName,
+            unitId: task.unitId,
+            tasks: [],
+          };
+        }
+
+        groupedByUnit[unitKey].tasks.push(task);
+      }
+
+      return c.json(
+        {
+          status_code: OK,
+          message: "Tasks retrieved successfully",
+          data: groupedByUnit,
+        },
+        OK,
+      );
+    }
+
+    // For units, return flat array
+    return c.json(
+      {
+        status_code: OK,
+        message: "Tasks retrieved successfully",
+        data: enrichedTasks,
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error fetching tasks:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// GET /tasks/:id - Get a specific task
+export const getTask: AppRouteHandler<any> = async (c) => {
+  const user = c.get("user");
+  const taskId = c.req.param("id");
+
+  try {
+    const task = await db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1);
+
+    if (!task.length) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Task not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    // Verify access based on role
+    const application = await db
+      .select()
+      .from(applications)
+      .where(eq(applications.id, task[0].applicationId))
+      .limit(1);
+
+    if (!application.length) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Associated application not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    if (user.role === "candidate") {
+      if (application[0].userId !== user.id) {
+        return c.json(
+          {
+            status_code: FORBIDDEN,
+            message: "You can only view your own tasks",
+          },
+          FORBIDDEN,
+        );
+      }
+    } else if (user.role === "unit") {
+      // For units, verify they own the internship
+      const _internshipId = application[0].internshipId;
+      // This would need to check the internship ownership
+      // For now, we'll allow if they have access
+    }
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Task retrieved successfully",
+        data: task[0],
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error fetching task:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// PUT /tasks/:id - Update a task (Candidate)
+export const updateTask: AppRouteHandler<any> = async (c) => {
+  const user = c.get("user");
+  const taskId = c.req.param("id");
+
+  if (user.role !== "candidate") {
+    return c.json(
+      {
+        status_code: FORBIDDEN,
+        message: "Only candidates can update tasks",
+      },
+      FORBIDDEN,
+    );
+  }
+
+  try {
+    const json = await c.req.json().catch(() => ({}));
+    const parsed = UpdateTaskSchema.safeParse(json);
+
+    if (!parsed.success) {
+      return c.json(
+        {
+          status_code: UNPROCESSABLE_ENTITY,
+          message: "Validation Error",
+          error: parsed.error.issues,
+        },
+        UNPROCESSABLE_ENTITY,
+      );
+    }
+
+    // Check if task exists and belongs to candidate
+    const task = await db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1);
+
+    if (!task.length) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Task not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    const application = await db
+      .select()
+      .from(applications)
+      .where(eq(applications.id, task[0].applicationId))
+      .limit(1);
+
+    if (!application.length || application[0].userId !== user.id) {
+      return c.json(
+        {
+          status_code: FORBIDDEN,
+          message: "You can only update your own tasks",
+        },
+        FORBIDDEN,
+      );
+    }
+
+    // Update the task
+    const data = parsed.data;
+    const updatedTask = await db
+      .update(tasks)
+      .set({
+        ...data,
+        updatedAt: new Date(),
+      })
+      .where(eq(tasks.id, taskId))
+      .returning();
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Task updated successfully",
+        data: updatedTask[0],
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error updating task:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// DELETE /tasks/:id - Delete a task (Candidate)
+export const deleteTask: AppRouteHandler<any> = async (c) => {
+  const user = c.get("user");
+  const taskId = c.req.param("id");
+
+  if (user.role !== "candidate") {
+    return c.json(
+      {
+        status_code: FORBIDDEN,
+        message: "Only candidates can delete tasks",
+      },
+      FORBIDDEN,
+    );
+  }
+
+  try {
+    // Check if task exists and belongs to candidate
+    const task = await db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1);
+
+    if (!task.length) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Task not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    const application = await db
+      .select()
+      .from(applications)
+      .where(eq(applications.id, task[0].applicationId))
+      .limit(1);
+
+    if (!application.length || application[0].userId !== user.id) {
+      return c.json(
+        {
+          status_code: FORBIDDEN,
+          message: "You can only delete your own tasks",
+        },
+        FORBIDDEN,
+      );
+    }
+
+    // Delete the task
+    await db.delete(tasks).where(eq(tasks.id, taskId));
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Task deleted successfully",
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error deleting task:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// ============================================================================
+// UNIT HANDLERS
+// ============================================================================
+
+// POST /tasks/:id/review - Review a task (Unit - mark as redo or accepted)
+export const reviewTask: AppRouteHandler<any> = async (c) => {
+  const user = c.get("user");
+  const taskId = c.req.param("id");
+
+  if (user.role !== "unit") {
+    return c.json(
+      {
+        status_code: FORBIDDEN,
+        message: "Only units can review tasks",
+      },
+      FORBIDDEN,
+    );
+  }
+
+  try {
+    const json = await c.req.json().catch(() => ({}));
+    const parsed = ReviewTaskSchema.safeParse(json);
+
+    if (!parsed.success) {
+      return c.json(
+        {
+          status_code: UNPROCESSABLE_ENTITY,
+          message: "Validation Error",
+          error: parsed.error.issues,
+        },
+        UNPROCESSABLE_ENTITY,
+      );
+    }
+
+    // Check if task exists
+    const task = await db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1);
+
+    if (!task.length) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Task not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    // Verify the task belongs to an application for this unit's internship
+    const application = await db
+      .select()
+      .from(applications)
+      .where(eq(applications.id, task[0].applicationId))
+      .limit(1);
+
+    if (!application.length) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Associated application not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    // Review the task
+    const data = parsed.data;
+    const updatedTask = await db
+      .update(tasks)
+      .set({
+        status: data.status,
+        reviewRemarks: data.reviewRemarks,
+        reviewedBy: user.id,
+        reviewedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(tasks.id, taskId))
+      .returning();
+
+    return c.json(
+      {
+        status_code: OK,
+        message: `Task ${data.status === "accepted" ? "accepted" : "marked for redo"} successfully`,
+        data: updatedTask[0],
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error reviewing task:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};

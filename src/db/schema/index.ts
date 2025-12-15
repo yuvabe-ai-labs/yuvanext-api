@@ -6,4 +6,5 @@ export * from "./internship.schemas";
 export * from "./interview.schemas";
 export * from "./notification.schemas";
 export * from "./saved-internship.schemas";
+export * from "./task.management.schemas";
 export * from "./unit.schemas";
