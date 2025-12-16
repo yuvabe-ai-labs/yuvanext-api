@@ -1,14 +1,13 @@
 import { and, count, desc, eq, gte } from "drizzle-orm";
 import Fuse from "fuse.js";
-import { z } from "zod";
 
 import type { AppRouteHandler } from "@/types/app.types";
 
 import db from "@/db";
-import { applications } from "@/db/schema/application.schemas";
-import { candidates } from "@/db/schema/candidate.schemas";
-import { internships } from "@/db/schema/internship.schemas";
-import { interviews } from "@/db/schema/interview.schemas";
+import { applications } from "@/db/schema/application.schema";
+import { candidates } from "@/db/schema/candidate.schema";
+import { internships } from "@/db/schema/internship.schema";
+import { interviews } from "@/db/schema/interview.schema";
 import {
   CREATED,
   FORBIDDEN,
@@ -18,44 +17,23 @@ import {
   UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
 
-// Schema for creating internship
-const CreateInternshipSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().optional(),
-  duration: z.string().optional(),
-  payment: z.string().optional(),
-  status: z.enum(["active", "closed", "draft"]).default("draft"),
-  closingDate: z.string().optional(),
-  isPaid: z.boolean().default(false),
-  minAgeRequired: z.string().optional(),
-  jobType: z.enum(["part_time", "full_time", "both"]).optional(),
-  benefits: z.array(z.string()).optional(),
-  skillsRequired: z.array(z.string()).optional(),
-  responsibilities: z.array(z.string()).optional(),
-  language: z.array(z.string()).optional(),
-});
+import type {
+  CreateInternship,
+  DeleteInternship,
+  GetInternshipById,
+  GetInternships,
+  GetRecommendedInternships,
+  GetUnitStats,
+  UpdateInternship,
+} from "./internship.routes";
 
-// Schema for updating internship
-const UpdateInternshipSchema = z
-  .object({
-    title: z.string().min(1).optional(),
-    description: z.string().optional(),
-    duration: z.string().optional(),
-    payment: z.string().optional(),
-    status: z.enum(["active", "closed", "draft"]).optional(),
-    closingDate: z.string().optional(),
-    isPaid: z.boolean().optional(),
-    minAgeRequired: z.string().optional(),
-    jobType: z.enum(["part_time", "full_time", "both"]).optional(),
-    benefits: z.array(z.string()).optional(),
-    skillsRequired: z.array(z.string()).optional(),
-    responsibilities: z.array(z.string()).optional(),
-    language: z.array(z.string()).optional(),
-  })
-  .partial();
+import {
+  CreateInternshipSchema,
+  UpdateInternshipSchema,
+} from "./internship.schema";
 
 // GET /internships - Get all internships (for candidates) or created internships (for units)
-export const getInternships: AppRouteHandler<any> = async (c) => {
+export const getInternships: AppRouteHandler<GetInternships> = async (c) => {
   const user = c.get("user");
 
   try {
@@ -103,10 +81,12 @@ export const getInternships: AppRouteHandler<any> = async (c) => {
 };
 
 // GET /internships/:id - Get specific internship by ID
-export const getInternshipById: AppRouteHandler<any> = async (c) => {
+export const getInternshipById: AppRouteHandler<GetInternshipById> = async (
+  c,
+) => {
   const user = c.get("user");
 
-  const { id } = c.req.param();
+  const { id } = c.req.param() as { id?: string };
 
   if (!id) {
     return c.json(
@@ -174,7 +154,9 @@ export const getInternshipById: AppRouteHandler<any> = async (c) => {
 };
 
 // POST /internships - Create new internship (unit only)
-export const createInternship: AppRouteHandler<any> = async (c) => {
+export const createInternship: AppRouteHandler<CreateInternship> = async (
+  c,
+) => {
   const user = c.get("user");
 
   if (user.role !== "unit") {
@@ -204,12 +186,12 @@ export const createInternship: AppRouteHandler<any> = async (c) => {
 
     const data = parsed.data;
 
-    // Convert closingDate string to Date if provided
-    const internshipData: any = {
+    // Prepare insert payload; keep closingDate as string (schema expects string)
+    const internshipData = {
       ...data,
       createdBy: user.id,
-      closingDate: data.closingDate ? new Date(data.closingDate) : undefined,
-    };
+      closingDate: data.closingDate ? data.closingDate : undefined,
+    } as typeof internships.$inferInsert;
 
     const [newInternship] = await db
       .insert(internships)
@@ -237,7 +219,9 @@ export const createInternship: AppRouteHandler<any> = async (c) => {
 };
 
 // PUT /internships/:id - Update internship (unit only, own internships)
-export const updateInternship: AppRouteHandler<any> = async (c) => {
+export const updateInternship: AppRouteHandler<UpdateInternship> = async (
+  c,
+) => {
   const user = c.get("user");
 
   if (user.role !== "unit") {
@@ -250,7 +234,7 @@ export const updateInternship: AppRouteHandler<any> = async (c) => {
     );
   }
 
-  const { id } = c.req.param();
+  const { id } = c.req.param() as { id?: string };
 
   if (!id) {
     return c.json(
@@ -301,16 +285,17 @@ export const updateInternship: AppRouteHandler<any> = async (c) => {
       );
     }
 
-    const data = parsed.data as Record<string, any>;
+    const data = parsed.data;
 
     // Convert closingDate string to Date if provided
-    if (data.closingDate) {
-      data.closingDate = new Date(data.closingDate);
-    }
+    const updateData = {
+      ...data,
+      closingDate: data.closingDate ? data.closingDate : undefined,
+    } as typeof internships.$inferInsert;
 
     const [updatedInternship] = await db
       .update(internships)
-      .set({ ...data, updatedAt: new Date() })
+      .set({ ...updateData, updatedAt: new Date() })
       .where(eq(internships.id, id))
       .returning();
 
@@ -335,7 +320,9 @@ export const updateInternship: AppRouteHandler<any> = async (c) => {
 };
 
 // GET /internships/recommended - Get recommended internships based on user profile
-export const getRecommendedInternships: AppRouteHandler<any> = async (c) => {
+export const getRecommendedInternships: AppRouteHandler<
+  GetRecommendedInternships
+> = async (c) => {
   const user = c.get("user");
 
   if (user.role !== "candidate") {
@@ -401,7 +388,11 @@ export const getRecommendedInternships: AppRouteHandler<any> = async (c) => {
           status_code: OK,
           message:
             "No profile data available for recommendations. Please add skills, interests, or courses to your profile.",
-          data: [],
+          data: {
+            internships: [],
+            totalMatches: 0,
+            profileKeywords: [],
+          },
         },
         OK,
       );
@@ -433,7 +424,12 @@ export const getRecommendedInternships: AppRouteHandler<any> = async (c) => {
       keys: ["combinedText"],
     });
 
-    const matchedInternships: any[] = [];
+    type MatchedInternship = (typeof internshipCorpus)[number] & {
+      matchScore: number;
+      matchedKeywords: string[];
+    };
+
+    const matchedInternships: MatchedInternship[] = [];
 
     uniqueKeywords.forEach((keyword) => {
       const results = fuse.search(keyword);
@@ -484,7 +480,9 @@ export const getRecommendedInternships: AppRouteHandler<any> = async (c) => {
 };
 
 // DELETE /internships/:id - Delete internship (unit only, own internships)
-export const deleteInternship: AppRouteHandler<any> = async (c) => {
+export const deleteInternship: AppRouteHandler<DeleteInternship> = async (
+  c,
+) => {
   const user = c.get("user");
 
   if (user.role !== "unit") {
@@ -497,7 +495,7 @@ export const deleteInternship: AppRouteHandler<any> = async (c) => {
     );
   }
 
-  const { id } = c.req.param();
+  const { id } = c.req.param() as { id: string };
 
   if (!id) {
     return c.json(
@@ -554,7 +552,7 @@ export const deleteInternship: AppRouteHandler<any> = async (c) => {
   }
 };
 
-export const getUnitStats: AppRouteHandler<any> = async (c) => {
+export const getUnitStats: AppRouteHandler<GetUnitStats> = async (c) => {
   const user = c.get("user");
 
   if (user.role !== "unit") {

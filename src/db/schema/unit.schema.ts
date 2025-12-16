@@ -9,9 +9,9 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { user } from "./auth.schema";
-import { courses } from "./course.schemas";
-import { internships } from "./internship.schemas";
-import { savedInternship } from "./saved-internship.schemas";
+import { courses } from "./course.schema";
+import { internships } from "./internship.schema";
+import { savedInternship } from "./saved-internship.schema";
 
 export const units = pgTable("units", {
   userId: uuid("user_id")

@@ -9,7 +9,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { applications } from "./application.schemas";
+import { applications } from "./application.schema";
 import { user } from "./auth.schema";
 
 export const taskStatusEnum = pgEnum("task_status", [

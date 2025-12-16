@@ -4,7 +4,7 @@ import type { AppRouteHandler } from "@/types/app.types";
 
 import db from "@/db";
 import { user as userTable } from "@/db/schema/auth.schema";
-import { units } from "@/db/schema/unit.schemas";
+import { units } from "@/db/schema/unit.schema";
 import {
   FORBIDDEN,
   INTERNAL_SERVER_ERROR,
@@ -13,8 +13,10 @@ import {
   UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
 
+import type { GetAllUnits, GetUnitById } from "./unit.routes";
+
 // GET /units - Get all units (candidate only)
-export const getAllUnits: AppRouteHandler<any> = async (c) => {
+export const getAllUnits: AppRouteHandler<GetAllUnits> = async (c) => {
   const user = c.get("user");
 
   if (user.role !== "candidate") {
@@ -83,7 +85,7 @@ export const getAllUnits: AppRouteHandler<any> = async (c) => {
 };
 
 // GET /units/:id - Get specific unit by ID (candidate only)
-export const getUnitById: AppRouteHandler<any> = async (c) => {
+export const getUnitById: AppRouteHandler<GetUnitById> = async (c) => {
   const user = c.get("user");
 
   if (user.role !== "candidate") {
@@ -96,7 +98,7 @@ export const getUnitById: AppRouteHandler<any> = async (c) => {
     );
   }
 
-  const { id } = c.req.param();
+  const { id } = c.req.param() as { id: string };
 
   if (!id) {
     return c.json(

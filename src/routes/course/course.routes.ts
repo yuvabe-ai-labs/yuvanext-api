@@ -1,38 +1,14 @@
+import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
 
-// course.routes.ts
-import { createRouter } from "@/lib/create-app";
 import {
+  FORBIDDEN,
   INTERNAL_SERVER_ERROR,
   OK,
   UNAUTHORIZED,
 } from "@/lib/openapi/http-status-codes";
-import { requireAuth } from "@/middleware/auth";
 
-import * as handlers from "./course.handlers";
-
-const router = createRouter();
-
-// ============================================================================
-// SCHEMAS
-// ============================================================================
-
-const CourseSchema = z.object({
-  id: z.uuid(),
-  title: z.string(),
-  description: z.string().nullable(),
-  duration: z.string().nullable(),
-  category: z.string().nullable(),
-  difficultyLevel: z.enum(["beginner", "intermediate", "advanced"]).nullable(),
-  createdBy: z.uuid(),
-  bannerUrl: z.string().nullable(),
-  redirectUrl: z.string().nullable(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  creatorName: z.string().nullable(),
-  creatorAvatarUrl: z.string().nullable(),
-  creatorType: z.string().nullable(),
-});
+import { CourseResponseSchema } from "./course.schema";
 
 // ============================================================================
 // RESPONSE HELPERS
@@ -57,6 +33,7 @@ function getDescription(statusCode: number): string {
   const descriptions: Record<number, string> = {
     [OK]: "Success",
     [UNAUTHORIZED]: "Unauthorized - Authentication required",
+    [FORBIDDEN]: "Forbidden - Candidates only",
     [INTERNAL_SERVER_ERROR]: "Internal server error",
   };
   return descriptions[statusCode] || "Response";
@@ -64,37 +41,29 @@ function getDescription(statusCode: number): string {
 
 const commonErrorResponses = {
   [UNAUTHORIZED]: createResponse(UNAUTHORIZED),
+  [FORBIDDEN]: createResponse(FORBIDDEN),
   [INTERNAL_SERVER_ERROR]: createResponse(INTERNAL_SERVER_ERROR),
 };
 
 // ============================================================================
-// MIDDLEWARE
-// ============================================================================
-
-router.use(requireAuth);
-
-// ============================================================================
-// ROUTES
+// ROUTE DEFINITIONS
 // ============================================================================
 
 /**
  * GET /courses - List all courses
  */
-router.openapi(
-  {
-    method: "get",
-    path: "/courses",
-    tags: ["Courses"],
-    summary: "Get all courses",
-    description:
-      "Retrieve a list of all available courses with creator information",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: createResponse(OK, z.array(CourseSchema)),
-      ...commonErrorResponses,
-    },
+export const getAllCourses = createRoute({
+  method: "get" as const,
+  path: "/courses",
+  tags: ["Courses"],
+  summary: "Get all courses",
+  description:
+    "Retrieve a list of all available courses with creator information (candidates only)",
+  security: [{ Bearer: [] }],
+  responses: {
+    [OK]: createResponse(OK, z.array(CourseResponseSchema)),
+    ...commonErrorResponses,
   },
-  handlers.getAllCourses,
-);
+});
 
-export default router;
+export type GetAllCourses = typeof getAllCourses;

@@ -1,16 +1,15 @@
 import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
 
 import type { AppRouteHandler } from "@/types/app.types";
 
 import env from "@/config/env";
 import db from "@/db";
-import { applications } from "@/db/schema/application.schemas";
-import { internships } from "@/db/schema/internship.schemas";
-import { notifications } from "@/db/schema/notification.schemas";
-import { savedInternship } from "@/db/schema/saved-internship.schemas";
-import { units } from "@/db/schema/unit.schemas";
+import { applications } from "@/db/schema/application.schema";
+import { internships } from "@/db/schema/internship.schema";
+import { notifications } from "@/db/schema/notification.schema";
+import { savedInternship } from "@/db/schema/saved-internship.schema";
+import { units } from "@/db/schema/unit.schema";
 import {
   BAD_REQUEST,
   CONFLICT,
@@ -21,8 +20,26 @@ import {
   OK,
 } from "@/lib/openapi/http-status-codes";
 
-// POST /candidate/actions/save - save an internship for the candidate
-export const saveInternship: AppRouteHandler<any> = async (c) => {
+import type {
+  ApplyToInternship,
+  GetApplicationStatus,
+  GetAppliedInternships,
+  GetCounts,
+  GetSavedInternships,
+  RemoveSavedInternship,
+  SaveInternship,
+  ShareInternship,
+} from "./action.routes";
+
+import {
+  ApplyToInternshipSchema,
+  InternshipIdParamSchema,
+  RemoveSavedInternshipSchema,
+  SaveInternshipSchema,
+} from "./action.schema";
+
+// POST /internship/save - save an internship for the candidate
+export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
   const user = c.get("user");
 
   // Check if user is a candidate
@@ -30,15 +47,14 @@ export const saveInternship: AppRouteHandler<any> = async (c) => {
     return c.json(
       {
         status_code: FORBIDDEN,
-        message: "Only candidates",
+        message: "Only candidates can save internships",
       },
       FORBIDDEN,
     );
   }
 
   const body = await c.req.json().catch(() => ({}));
-  const schema = z.object({ internshipId: z.uuid() });
-  const parse = schema.safeParse(body);
+  const parse = SaveInternshipSchema.safeParse(body);
   if (!parse.success) {
     return c.json(
       {
@@ -97,8 +113,10 @@ export const saveInternship: AppRouteHandler<any> = async (c) => {
   }
 };
 
-// DELETE /candidate/actions/save - remove saved internship (by internshipId in body)
-export const removeSavedInternship: AppRouteHandler<any> = async (c) => {
+// DELETE /internship/save - remove saved internship (by internshipId in body)
+export const removeSavedInternship: AppRouteHandler<
+  RemoveSavedInternship
+> = async (c) => {
   const user = c.get("user");
 
   // Check if user is a candidate
@@ -106,15 +124,14 @@ export const removeSavedInternship: AppRouteHandler<any> = async (c) => {
     return c.json(
       {
         status_code: FORBIDDEN,
-        message: "Only candidates",
+        message: "Only candidates can remove saved internships",
       },
       FORBIDDEN,
     );
   }
 
   const body = await c.req.json().catch(() => ({}));
-  const schema = z.object({ internshipId: z.uuid() });
-  const parse = schema.safeParse(body);
+  const parse = RemoveSavedInternshipSchema.safeParse(body);
   if (!parse.success) {
     return c.json(
       {
@@ -149,14 +166,19 @@ export const removeSavedInternship: AppRouteHandler<any> = async (c) => {
   } catch (err) {
     console.error("Error removing saved internship:", err);
     return c.json(
-      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
       INTERNAL_SERVER_ERROR,
     );
   }
 };
 
-// POST /candidate/actions/apply - apply to internship with includedSections
-export const applyToInternship: AppRouteHandler<any> = async (c) => {
+// POST /internship/apply - apply to internship with includedSections
+export const applyToInternship: AppRouteHandler<ApplyToInternship> = async (
+  c,
+) => {
   const user = c.get("user");
 
   // Check if user is a candidate
@@ -164,18 +186,14 @@ export const applyToInternship: AppRouteHandler<any> = async (c) => {
     return c.json(
       {
         status_code: FORBIDDEN,
-        message: "Only candidates",
+        message: "Only candidates can apply to internships",
       },
       FORBIDDEN,
     );
   }
 
   const body = await c.req.json().catch(() => ({}));
-  const schema = z.object({
-    internshipId: z.uuid(),
-    includedSections: z.array(z.string()).optional(),
-  });
-  const parse = schema.safeParse(body);
+  const parse = ApplyToInternshipSchema.safeParse(body);
   if (!parse.success) {
     return c.json(
       {
@@ -259,15 +277,18 @@ export const applyToInternship: AppRouteHandler<any> = async (c) => {
   }
 };
 
-// GET /candidate/actions/saved - list saved internships for user
-export const getSavedInternships: AppRouteHandler<any> = async (c) => {
+// GET /internship/saved - list saved internships for user
+export const getSavedInternships: AppRouteHandler<GetSavedInternships> = async (
+  c,
+) => {
   const user = c.get("user");
+
   // Check if user is a candidate
   if (user.role !== "candidate") {
     return c.json(
       {
         status_code: FORBIDDEN,
-        message: "Only candidates",
+        message: "Only candidates can view saved internships",
       },
       FORBIDDEN,
     );
@@ -294,14 +315,19 @@ export const getSavedInternships: AppRouteHandler<any> = async (c) => {
   } catch (err) {
     console.error("Error fetching saved internships:", err);
     return c.json(
-      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
       INTERNAL_SERVER_ERROR,
     );
   }
 };
 
-// GET /candidate/actions/applied - list applications for user
-export const getAppliedInternships: AppRouteHandler<any> = async (c) => {
+// GET /internship/applied - list applications for user
+export const getAppliedInternships: AppRouteHandler<
+  GetAppliedInternships
+> = async (c) => {
   const user = c.get("user");
 
   // Check if user is a candidate
@@ -309,7 +335,7 @@ export const getAppliedInternships: AppRouteHandler<any> = async (c) => {
     return c.json(
       {
         status_code: FORBIDDEN,
-        message: "Only candidates",
+        message: "Only candidates can view applied internships",
       },
       FORBIDDEN,
     );
@@ -338,21 +364,25 @@ export const getAppliedInternships: AppRouteHandler<any> = async (c) => {
   } catch (err) {
     console.error("Error fetching applications:", err);
     return c.json(
-      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
       INTERNAL_SERVER_ERROR,
     );
   }
 };
 
-// GET /candidate/actions/counts - get counts for saved and applied
-export const getCounts: AppRouteHandler<any> = async (c) => {
+// GET /internship/counts - get counts for saved and applied
+export const getCounts: AppRouteHandler<GetCounts> = async (c) => {
   const user = c.get("user");
+
   // Check if user is a candidate
   if (user.role !== "candidate") {
     return c.json(
       {
         status_code: FORBIDDEN,
-        message: "Only candidates",
+        message: "Only candidates can view counts",
       },
       FORBIDDEN,
     );
@@ -385,19 +415,17 @@ export const getCounts: AppRouteHandler<any> = async (c) => {
   }
 };
 
-// GET /candidate/actions/share/:id - generate share links for an internship
-export const shareInternship: AppRouteHandler<any> = async (c) => {
-  const { id: internshipId } = c.req.param();
-
-  // Validate UUID format
-  const uuidSchema = z.uuid();
-  const parseId = uuidSchema.safeParse(internshipId);
-  if (!parseId.success) {
+// GET /internship/share/:id - generate share links for an internship
+export const shareInternship: AppRouteHandler<ShareInternship> = async (c) => {
+  const params = c.req.param();
+  const parseParams = InternshipIdParamSchema.safeParse(params);
+  if (!parseParams.success) {
     return c.json(
       { status_code: BAD_REQUEST, message: "Invalid internship ID format" },
       BAD_REQUEST,
     );
   }
+  const { id: internshipId } = parseParams.data;
 
   try {
     const found = await db
@@ -440,8 +468,10 @@ export const shareInternship: AppRouteHandler<any> = async (c) => {
   }
 };
 
-// GET internship/application-status - get application status with unit details
-export const getApplicationStatus: AppRouteHandler<any> = async (c) => {
+// GET /internship/application-status - get application status with unit details
+export const getApplicationStatus: AppRouteHandler<
+  GetApplicationStatus
+> = async (c) => {
   const user = c.get("user");
 
   // Check if user is a candidate
@@ -449,7 +479,7 @@ export const getApplicationStatus: AppRouteHandler<any> = async (c) => {
     return c.json(
       {
         status_code: FORBIDDEN,
-        message: "Only candidates",
+        message: "Only candidates can view application status",
       },
       FORBIDDEN,
     );
@@ -483,7 +513,10 @@ export const getApplicationStatus: AppRouteHandler<any> = async (c) => {
   } catch (err) {
     console.error("Error fetching application status:", err);
     return c.json(
-      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
       INTERNAL_SERVER_ERROR,
     );
   }

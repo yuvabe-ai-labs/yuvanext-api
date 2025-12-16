@@ -1,15 +1,14 @@
 import { eq } from "drizzle-orm";
-import { z } from "zod";
 
 import type { AppRouteHandler } from "@/types/app.types";
 
 import db from "@/db";
-import { applications } from "@/db/schema/application.schemas";
+import { applications } from "@/db/schema/application.schema";
 import { user as userTable } from "@/db/schema/auth.schema";
-import { candidates } from "@/db/schema/candidate.schemas";
-import { internships } from "@/db/schema/internship.schemas";
-import { tasks } from "@/db/schema/task.management.schemas";
-import { units } from "@/db/schema/unit.schemas";
+import { candidates } from "@/db/schema/candidate.schema";
+import { internships } from "@/db/schema/internship.schema";
+import { tasks } from "@/db/schema/task.management.schema";
+import { units } from "@/db/schema/unit.schema";
 import {
   FORBIDDEN,
   INTERNAL_SERVER_ERROR,
@@ -18,45 +17,26 @@ import {
   UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
 
-// Validation schemas
-const CreateTaskSchema = z.object({
-  applicationId: z.string().uuid(),
-  title: z.string().min(1).max(255),
-  description: z.string().optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  startTime: z.string().optional(),
-  endTime: z.string().optional(),
-  color: z.string().optional(),
-});
+import type {
+  CreateTask,
+  DeleteTask,
+  GetAllTasks,
+  ReviewTask,
+  UpdateTask,
+} from "./task.routers";
 
-const UpdateTaskSchema = z.object({
-  title: z.string().min(1).max(255).optional(),
-  description: z.string().optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  startTime: z.string().optional(),
-  endTime: z.string().optional(),
-  color: z.string().optional(),
-  status: z.enum(["pending", "submitted", "redo", "accepted"]).optional(),
-  submissionLink: z.string().url().optional(),
-});
-
-const _SubmitTaskSchema = z.object({
-  submissionLink: z.string().url(),
-});
-
-const ReviewTaskSchema = z.object({
-  status: z.enum(["redo", "accepted"]),
-  reviewRemarks: z.string().min(1),
-});
+import {
+  CreateTaskSchema,
+  ReviewTaskSchema,
+  UpdateTaskSchema,
+} from "./task.schema";
 
 // ============================================================================
 // CANDIDATE HANDLERS
 // ============================================================================
 
 // POST /tasks - Create a new task (Candidate)
-export const createTask: AppRouteHandler<any> = async (c) => {
+export const createTask: AppRouteHandler<CreateTask> = async (c) => {
   const user = c.get("user");
 
   if (user.role !== "candidate") {
@@ -150,13 +130,13 @@ export const createTask: AppRouteHandler<any> = async (c) => {
 };
 
 // GET /tasks - Get all tasks with internship details and progress (Both Candidate and Unit)
-export const getAllTasks: AppRouteHandler<any> = async (c) => {
+export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
   const user = c.get("user");
 
   try {
     const applicationId = c.req.query("applicationId");
 
-    let relevantApplications;
+    let relevantApplications: (typeof applications.$inferSelect)[];
 
     if (user.role === "candidate") {
       // Get all applications for this candidate
@@ -208,7 +188,7 @@ export const getAllTasks: AppRouteHandler<any> = async (c) => {
         {
           status_code: OK,
           message: "Tasks retrieved successfully",
-          data: user.role === "candidate" ? {} : [],
+          data: [],
         },
         OK,
       );
@@ -232,7 +212,7 @@ export const getAllTasks: AppRouteHandler<any> = async (c) => {
     }
 
     // Get all tasks for the target applications
-    const allTasks = [];
+    const allTasks: (typeof tasks.$inferSelect)[] = [];
     for (const appId of targetApplicationIds) {
       const appTasks = await db
         .select()
@@ -265,9 +245,9 @@ export const getAllTasks: AppRouteHandler<any> = async (c) => {
         }
 
         // Get applicant (user) details using candidate table
-        let applicantName = null;
-        let applicantPhone = null;
-        let applicantEmail = null;
+        let applicantName: string | null = null;
+        let applicantPhone: string | null = null;
+        let applicantEmail: string | null = null;
         const candidate = await db
           .select()
           .from(candidates)
@@ -295,8 +275,8 @@ export const getAllTasks: AppRouteHandler<any> = async (c) => {
           .limit(1);
 
         // Get unit details
-        let unitName = null;
-        let unitId = null;
+        let unitName: string | null = null;
+        let unitId: string | null = null;
         if (internship.length && internship[0].createdBy) {
           const unitRecord = await db
             .select()
@@ -333,35 +313,6 @@ export const getAllTasks: AppRouteHandler<any> = async (c) => {
       }),
     );
 
-    // For candidates, group by unit
-    if (user.role === "candidate") {
-      const groupedByUnit: Record<string, any> = {};
-
-      for (const task of enrichedTasks) {
-        const unitKey = task.unitName || "Unknown Unit";
-
-        if (!groupedByUnit[unitKey]) {
-          groupedByUnit[unitKey] = {
-            unitName: task.unitName,
-            unitId: task.unitId,
-            tasks: [],
-          };
-        }
-
-        groupedByUnit[unitKey].tasks.push(task);
-      }
-
-      return c.json(
-        {
-          status_code: OK,
-          message: "Tasks retrieved successfully",
-          data: groupedByUnit,
-        },
-        OK,
-      );
-    }
-
-    // For units, return flat array
     return c.json(
       {
         status_code: OK,
@@ -382,86 +333,20 @@ export const getAllTasks: AppRouteHandler<any> = async (c) => {
   }
 };
 
-// GET /tasks/:id - Get a specific task
-export const getTask: AppRouteHandler<any> = async (c) => {
+// PUT /tasks/:id - Update a task (Candidate)
+export const updateTask: AppRouteHandler<UpdateTask> = async (c) => {
   const user = c.get("user");
   const taskId = c.req.param("id");
 
-  try {
-    const task = await db
-      .select()
-      .from(tasks)
-      .where(eq(tasks.id, taskId))
-      .limit(1);
-
-    if (!task.length) {
-      return c.json(
-        {
-          status_code: NOT_FOUND,
-          message: "Task not found",
-        },
-        NOT_FOUND,
-      );
-    }
-
-    // Verify access based on role
-    const application = await db
-      .select()
-      .from(applications)
-      .where(eq(applications.id, task[0].applicationId))
-      .limit(1);
-
-    if (!application.length) {
-      return c.json(
-        {
-          status_code: NOT_FOUND,
-          message: "Associated application not found",
-        },
-        NOT_FOUND,
-      );
-    }
-
-    if (user.role === "candidate") {
-      if (application[0].userId !== user.id) {
-        return c.json(
-          {
-            status_code: FORBIDDEN,
-            message: "You can only view your own tasks",
-          },
-          FORBIDDEN,
-        );
-      }
-    } else if (user.role === "unit") {
-      // For units, verify they own the internship
-      const _internshipId = application[0].internshipId;
-      // This would need to check the internship ownership
-      // For now, we'll allow if they have access
-    }
-
+  if (!taskId) {
     return c.json(
       {
-        status_code: OK,
-        message: "Task retrieved successfully",
-        data: task[0],
+        status_code: UNPROCESSABLE_ENTITY,
+        message: "Task ID is required",
       },
-      OK,
-    );
-  } catch (err) {
-    console.error("Error fetching task:", err);
-    return c.json(
-      {
-        status_code: INTERNAL_SERVER_ERROR,
-        message: "Internal server error",
-      },
-      INTERNAL_SERVER_ERROR,
+      UNPROCESSABLE_ENTITY,
     );
   }
-};
-
-// PUT /tasks/:id - Update a task (Candidate)
-export const updateTask: AppRouteHandler<any> = async (c) => {
-  const user = c.get("user");
-  const taskId = c.req.param("id");
 
   if (user.role !== "candidate") {
     return c.json(
@@ -553,9 +438,19 @@ export const updateTask: AppRouteHandler<any> = async (c) => {
 };
 
 // DELETE /tasks/:id - Delete a task (Candidate)
-export const deleteTask: AppRouteHandler<any> = async (c) => {
+export const deleteTask: AppRouteHandler<DeleteTask> = async (c) => {
   const user = c.get("user");
   const taskId = c.req.param("id");
+
+  if (!taskId) {
+    return c.json(
+      {
+        status_code: UNPROCESSABLE_ENTITY,
+        message: "Task ID is required",
+      },
+      UNPROCESSABLE_ENTITY,
+    );
+  }
 
   if (user.role !== "candidate") {
     return c.json(
@@ -628,9 +523,19 @@ export const deleteTask: AppRouteHandler<any> = async (c) => {
 // ============================================================================
 
 // POST /tasks/:id/review - Review a task (Unit - mark as redo or accepted)
-export const reviewTask: AppRouteHandler<any> = async (c) => {
+export const reviewTask: AppRouteHandler<ReviewTask> = async (c) => {
   const user = c.get("user");
   const taskId = c.req.param("id");
+
+  if (!taskId) {
+    return c.json(
+      {
+        status_code: UNPROCESSABLE_ENTITY,
+        message: "Task ID is required",
+      },
+      UNPROCESSABLE_ENTITY,
+    );
+  }
 
   if (user.role !== "unit") {
     return c.json(

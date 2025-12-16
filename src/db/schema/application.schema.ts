@@ -10,8 +10,8 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { user } from "./auth.schema";
-import { internships } from "./internship.schemas";
-import { interviews } from "./interview.schemas";
+import { internships } from "./internship.schema";
+import { interviews } from "./interview.schema";
 
 export const applicationStatusEnum = pgEnum("application_status", [
   "applied",

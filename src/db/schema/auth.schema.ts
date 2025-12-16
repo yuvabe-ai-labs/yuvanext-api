@@ -9,10 +9,10 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { applications } from "./application.schemas";
-import { candidates } from "./candidate.schemas";
-import { notifications } from "./notification.schemas";
-import { units } from "./unit.schemas";
+import { applications } from "./application.schema";
+import { candidates } from "./candidate.schema";
+import { notifications } from "./notification.schema";
+import { units } from "./unit.schema";
 
 // =====================================================
 // USER TABLE

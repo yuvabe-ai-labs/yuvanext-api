@@ -1,7 +1,6 @@
+import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
 
-// internship.routes.ts
-import { createRouter } from "@/lib/create-app";
 import {
   CREATED,
   FORBIDDEN,
@@ -11,45 +10,18 @@ import {
   UNAUTHORIZED,
   UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
-import { requireAuth } from "@/middleware/auth";
 
-import * as handlers from "./internship.handlers";
-
-const router = createRouter();
-
-// ============================================================================
-// SCHEMAS
-// ============================================================================
-
-const InternshipBaseSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().optional(),
-  duration: z.string().optional(),
-  payment: z.string().optional(),
-  status: z.enum(["active", "closed", "draft"]),
-  closingDate: z.string().optional(),
-  isPaid: z.boolean(),
-  minAgeRequired: z.string().optional(),
-  jobType: z.enum(["part_time", "full_time", "both"]).optional(),
-  benefits: z.array(z.string()).optional(),
-  skillsRequired: z.array(z.string()).optional(),
-  responsibilities: z.array(z.string()).optional(),
-  language: z.array(z.string()).optional(),
-});
-
-const CreateInternshipSchema = InternshipBaseSchema.extend({
-  status: z.enum(["active", "closed", "draft"]).default("draft"),
-  isPaid: z.boolean().default(false),
-});
-
-const UpdateInternshipSchema = InternshipBaseSchema.partial();
-
-const InternshipIdParamSchema = z.object({
-  id: z.uuid(),
-});
+import {
+  CreateInternshipSchema,
+  InternshipIdParamSchema,
+  InternshipResponseSchema,
+  RecommendedInternshipsDataSchema,
+  UnitStatsResponseSchema,
+  UpdateInternshipSchema,
+} from "./internship.schema";
 
 // ============================================================================
-// RESPONSE SCHEMAS
+// RESPONSE HELPERS
 // ============================================================================
 
 function createSuccessResponse(statusCode: number, dataSchema?: z.ZodTypeAny) {
@@ -108,195 +80,154 @@ const commonCrudErrorResponses = {
 };
 
 // ============================================================================
-// MIDDLEWARE
-// ============================================================================
-
-router.use(requireAuth);
-
-// ============================================================================
-// ROUTES
+// ROUTE DEFINITIONS
 // ============================================================================
 
 /**
  * GET /internships - List internships (role-based filtering)
  */
-router.openapi(
-  {
-    method: "get",
-    path: "/internships",
-    tags: ["Internships"],
-    summary: "List internships with role-based filtering",
-    description:
-      "Candidates see active internships, units see their created internships",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: createSuccessResponse(OK, z.array(z.any())),
-      ...commonErrorResponses,
-    },
+export const getInternships = createRoute({
+  method: "get" as const,
+  path: "/internships",
+  tags: ["Internships"],
+  summary: "List internships with role-based filtering",
+  description:
+    "Candidates see active internships, units see their created internships",
+  security: [{ Bearer: [] }],
+  responses: {
+    [OK]: createSuccessResponse(OK, z.array(InternshipResponseSchema)),
+    ...commonErrorResponses,
   },
-  handlers.getInternships,
-);
+});
 
 /**
  * GET /internships/recommended - Get AI-recommended internships
  */
-router.openapi(
-  {
-    method: "get",
-    path: "/internships/recommended",
-    tags: ["Internships"],
-    summary: "Get recommended internships based on candidate profile",
-    description:
-      "Returns personalized internship recommendations (candidates only)",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: createSuccessResponse(
-        OK,
-        z.object({
-          internships: z.array(z.any()),
-          totalMatches: z.number(),
-          profileKeywords: z.array(z.string()),
-        }),
-      ),
-      ...commonErrorResponses,
-      [NOT_FOUND]: createErrorResponse(NOT_FOUND),
-    },
+export const getRecommendedInternships = createRoute({
+  method: "get" as const,
+  path: "/internships/recommended",
+  tags: ["Internships"],
+  summary: "Get recommended internships based on candidate profile",
+  description:
+    "Returns personalized internship recommendations (candidates only)",
+  security: [{ Bearer: [] }],
+  responses: {
+    [OK]: createSuccessResponse(OK, RecommendedInternshipsDataSchema),
+    ...commonErrorResponses,
+    [NOT_FOUND]: createErrorResponse(NOT_FOUND),
   },
-  handlers.getRecommendedInternships,
-);
+});
 
 /**
  * POST /internships - Create new internship
  */
-router.openapi(
-  {
-    method: "post",
-    path: "/internships",
-    tags: ["Internships"],
-    summary: "Create new internship posting",
-    description: "Create a new internship (units only)",
-    security: [{ Bearer: [] }],
-    request: {
-      body: {
-        content: {
-          "application/json": {
-            schema: CreateInternshipSchema,
-          },
+export const createInternship = createRoute({
+  method: "post" as const,
+  path: "/internships",
+  tags: ["Internships"],
+  summary: "Create new internship posting",
+  description: "Create a new internship (units only)",
+  security: [{ Bearer: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: CreateInternshipSchema,
         },
       },
     },
-    responses: {
-      [CREATED]: createSuccessResponse(CREATED, z.any()),
-      ...commonErrorResponses,
-      [UNPROCESSABLE_ENTITY]: createErrorResponse(UNPROCESSABLE_ENTITY),
-    },
   },
-  handlers.createInternship,
-);
+  responses: {
+    [CREATED]: createSuccessResponse(CREATED, InternshipResponseSchema),
+    ...commonErrorResponses,
+    [UNPROCESSABLE_ENTITY]: createErrorResponse(UNPROCESSABLE_ENTITY),
+  },
+});
 
 /**
  * GET /internships/:id - Get internship details
  */
-router.openapi(
-  {
-    method: "get",
-    path: "/internships/{id}",
-    tags: ["Internships"],
-    summary: "Get internship by ID",
-    description: "Retrieve detailed information about a specific internship",
-    security: [{ Bearer: [] }],
-    request: {
-      params: InternshipIdParamSchema,
-    },
-    responses: {
-      [OK]: createSuccessResponse(OK, z.any()),
-      ...commonCrudErrorResponses,
-    },
+export const getInternshipById = createRoute({
+  method: "get" as const,
+  path: "/internships/{id}",
+  tags: ["Internships"],
+  summary: "Get internship by ID",
+  description: "Retrieve detailed information about a specific internship",
+  security: [{ Bearer: [] }],
+  request: {
+    params: InternshipIdParamSchema,
   },
-  handlers.getInternshipById,
-);
+  responses: {
+    [OK]: createSuccessResponse(OK, InternshipResponseSchema),
+    ...commonCrudErrorResponses,
+  },
+});
 
 /**
  * PUT /internships/:id - Update internship
  */
-router.openapi(
-  {
-    method: "put",
-    path: "/internships/{id}",
-    tags: ["Internships"],
-    summary: "Update internship posting",
-    description: "Update an existing internship (units only, own internships)",
-    security: [{ Bearer: [] }],
-    request: {
-      params: InternshipIdParamSchema,
-      body: {
-        content: {
-          "application/json": {
-            schema: UpdateInternshipSchema,
-          },
+export const updateInternship = createRoute({
+  method: "put" as const,
+  path: "/internships/{id}",
+  tags: ["Internships"],
+  summary: "Update internship posting",
+  description: "Update an existing internship (units only, own internships)",
+  security: [{ Bearer: [] }],
+  request: {
+    params: InternshipIdParamSchema,
+    body: {
+      content: {
+        "application/json": {
+          schema: UpdateInternshipSchema,
         },
       },
     },
-    responses: {
-      [OK]: createSuccessResponse(OK, z.any()),
-      ...commonCrudErrorResponses,
-    },
   },
-  handlers.updateInternship,
-);
+  responses: {
+    [OK]: createSuccessResponse(OK, InternshipResponseSchema),
+    ...commonCrudErrorResponses,
+  },
+});
 
 /**
  * DELETE /internships/:id - Delete internship
  */
-router.openapi(
-  {
-    method: "delete",
-    path: "/internships/{id}",
-    tags: ["Internships"],
-    summary: "Delete internship posting",
-    description:
-      "Permanently delete an internship (units only, own internships)",
-    security: [{ Bearer: [] }],
-    request: {
-      params: InternshipIdParamSchema,
-    },
-    responses: {
-      [OK]: createSuccessResponse(OK),
-      ...commonCrudErrorResponses,
-    },
+export const deleteInternship = createRoute({
+  method: "delete" as const,
+  path: "/internships/{id}",
+  tags: ["Internships"],
+  summary: "Delete internship posting",
+  description: "Permanently delete an internship (units only, own internships)",
+  security: [{ Bearer: [] }],
+  request: {
+    params: InternshipIdParamSchema,
   },
-  handlers.deleteInternship,
-);
+  responses: {
+    [OK]: createSuccessResponse(OK),
+    ...commonCrudErrorResponses,
+  },
+});
 
 /**
  * GET /stats - Get unit statistics
  */
-router.openapi(
-  {
-    method: "get",
-    path: "/stats",
-    tags: ["Internships"],
-    summary: "Get unit dashboard statistics",
-    description: "Retrieve aggregated statistics for the authenticated unit",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: createSuccessResponse(
-        OK,
-        z.object({
-          totalInternships: z.number(),
-          totalApplications: z.number(),
-          totalInterviews: z.number(),
-          hiredThisMonth: z.number(),
-          period: z.object({
-            month: z.string(),
-            year: z.number(),
-          }),
-        }),
-      ),
-      ...commonErrorResponses,
-    },
+export const getUnitStats = createRoute({
+  method: "get" as const,
+  path: "/internships/stats",
+  tags: ["Internships"],
+  summary: "Get unit dashboard statistics",
+  description: "Retrieve aggregated statistics for the authenticated unit",
+  security: [{ Bearer: [] }],
+  responses: {
+    [OK]: createSuccessResponse(OK, UnitStatsResponseSchema),
+    ...commonErrorResponses,
   },
-  handlers.getUnitStats,
-);
+});
 
-export default router;
+export type GetInternships = typeof getInternships;
+export type GetRecommendedInternships = typeof getRecommendedInternships;
+export type CreateInternship = typeof createInternship;
+export type GetInternshipById = typeof getInternshipById;
+export type UpdateInternship = typeof updateInternship;
+export type DeleteInternship = typeof deleteInternship;
+export type GetUnitStats = typeof getUnitStats;

@@ -1,7 +1,6 @@
+import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
 
-// profile.routes.ts
-import { createRouter } from "@/lib/create-app";
 import {
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
@@ -9,21 +8,10 @@ import {
   UNAUTHORIZED,
   UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
-import { requireAuth } from "@/middleware/auth";
-
-import * as handlers from "./profile.handlers";
-
-const router = createRouter();
-
-// ============================================================================
-// SCHEMAS
-// ============================================================================
-
-/**
- * Flexible update schema: allows partial profile updates with any shape
- * This enables different profile types (candidate, unit) to send relevant fields
- */
-const UpdateProfileSchema = z.object({}).catchall(z.any());
+import {
+  ProfileResponseSchema,
+  UpdateProfileSchema,
+} from "@/routes/profile/profile.schema";
 
 // ============================================================================
 // RESPONSE HELPERS
@@ -66,93 +54,48 @@ const profileErrorResponses = {
   [NOT_FOUND]: createResponse(NOT_FOUND),
 };
 
-// ============================================================================
-// MIDDLEWARE
-// ============================================================================
-
-router.use(requireAuth);
-
-// ============================================================================
-// ROUTES
-// ============================================================================
-
 /**
  * GET /profile - Get user profile
  */
-router.openapi(
-  {
-    method: "get",
-    path: "/profile",
-    tags: ["Profile"],
-    summary: "Get user profile",
-    description: "Retrieve the complete profile for the authenticated user",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: createResponse(OK, z.any()),
-      ...profileErrorResponses,
-    },
+export const getProfile = createRoute({
+  method: "get" as const,
+  path: "/profile",
+  tags: ["Profile"],
+  summary: "Get user profile",
+  description: "Retrieve the complete profile for the authenticated user",
+  security: [{ Bearer: [] }],
+  responses: {
+    [OK]: createResponse(OK, ProfileResponseSchema),
+    ...profileErrorResponses,
   },
-  handlers.getProfile,
-);
+});
 
 /**
  * PUT /profile - Update user profile
  */
-router.openapi(
-  {
-    method: "put",
-    path: "/profile",
-    tags: ["Profile"],
-    summary: "Update user profile",
-    description:
-      "Update profile fields (partial updates allowed). Accepts different fields based on user type (candidate/unit)",
-    security: [{ Bearer: [] }],
-    request: {
-      body: {
-        content: {
-          "application/json": {
-            schema: UpdateProfileSchema,
-          },
+export const updateProfile = createRoute({
+  method: "put" as const,
+  path: "/profile",
+  tags: ["Profile"],
+  summary: "Update user profile",
+  description:
+    "Update profile fields (partial updates allowed). Accepts different fields based on user type (candidate/unit)",
+  security: [{ Bearer: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: UpdateProfileSchema,
         },
       },
     },
-    responses: {
-      [OK]: createResponse(
-        OK,
-        z.object({
-          profileSummary: z.string(),
-        }),
-      ),
-      ...commonErrorResponses,
-      [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
-    },
   },
-  handlers.updateProfile,
-);
-
-/**
- * GET /profile/completion-percentage - Get profile completion status
- */
-router.openapi(
-  {
-    method: "get",
-    path: "/profile/completion-percentage",
-    tags: ["Profile"],
-    summary: "Get profile completion percentage",
-    description:
-      "Calculate and return the profile completion percentage based on filled fields",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: createResponse(
-        OK,
-        z.object({
-          completionPercentage: z.number(),
-        }),
-      ),
-      ...commonErrorResponses,
-    },
+  responses: {
+    [OK]: createResponse(OK, UpdateProfileSchema),
+    ...commonErrorResponses,
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
   },
-  handlers.getCompletionPercentage,
-);
+});
 
-export default router;
+export type GetProfile = typeof getProfile;
+export type UpdateProfile = typeof updateProfile;

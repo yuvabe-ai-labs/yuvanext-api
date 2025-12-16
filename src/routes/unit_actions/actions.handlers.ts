@@ -4,13 +4,13 @@ import { z } from "zod";
 import type { AppRouteHandler } from "@/types/app.types";
 
 import db from "@/db";
-import { applications } from "@/db/schema/application.schemas";
+import { applications } from "@/db/schema/application.schema";
 import { user as userTable } from "@/db/schema/auth.schema";
-import { candidates } from "@/db/schema/candidate.schemas";
-import { internships } from "@/db/schema/internship.schemas";
-import { interviews } from "@/db/schema/interview.schemas";
-import { notifications } from "@/db/schema/notification.schemas";
-import { units } from "@/db/schema/unit.schemas";
+import { candidates } from "@/db/schema/candidate.schema";
+import { internships } from "@/db/schema/internship.schema";
+import { interviews } from "@/db/schema/interview.schema";
+import { notifications } from "@/db/schema/notification.schema";
+import { units } from "@/db/schema/unit.schema";
 import {
   BAD_REQUEST,
   FORBIDDEN,
@@ -24,8 +24,48 @@ import {
 } from "@/lib/services/email.service";
 import { createZoomMeeting } from "@/lib/services/zoom.service";
 
-// GET /unit-actions/applications - Get all applications for unit's internships
-export const getUnitApplications: AppRouteHandler<any> = async (c) => {
+import type {
+  GetApplications,
+  UpdateApplicationStatus,
+} from "./actions.routes";
+
+import { UpdateApplicationStatusSchema } from "./actions.shema";
+
+// Helper function to create notification
+async function createNotification(
+  userId: string,
+  title: string,
+  message: string,
+  type: "success" | "info" | "warning" | "error" = "info",
+) {
+  await db.insert(notifications).values({
+    userId,
+    title,
+    message,
+    type,
+    isRead: false,
+  });
+}
+
+// Helper function to determine interview provider
+function determineInterviewProvider(
+  meetingLink?: string,
+): "zoom" | "google_meet" | "teams" | "other" {
+  if (!meetingLink) return "other";
+
+  const link = meetingLink.toLowerCase();
+  if (link.includes("zoom.us")) return "zoom";
+  if (link.includes("meet.google.com")) return "google_meet";
+  if (link.includes("teams.microsoft.com") || link.includes("teams.live.com"))
+    return "teams";
+
+  return "other";
+}
+
+// GET /applications - Get all applications for unit's internships
+export const getUnitApplications: AppRouteHandler<GetApplications> = async (
+  c,
+) => {
   const user = c.get("user");
 
   // Check if user is a unit
@@ -70,8 +110,6 @@ export const getUnitApplications: AppRouteHandler<any> = async (c) => {
         OK,
       );
     }
-
-    const _internshipIds = unitInternships.map((i) => i.id);
 
     // Get all applications for these internships with related data
     const applicationsData = await db
@@ -176,75 +214,15 @@ export const getUnitApplications: AppRouteHandler<any> = async (c) => {
   }
 };
 
-export const updateApplicationStatusSchema = z.object({
-  applicationId: z.uuid(),
-  status: z.enum([
-    "applied",
-    "shortlisted",
-    "rejected",
-    "interviewed",
-    "hired",
-  ]),
-  interviewDetails: z
-    .object({
-      scheduledAt: z.string().datetime().optional(),
-      meetingLink: z.string().url().optional(),
-      notes: z.string().optional(),
-      durationMinutes: z.number().int().positive().optional().default(60),
-      provider: z.enum(["zoom", "google_meet", "teams", "other"]).optional(),
-    })
-    .optional(),
-});
-
-// Helper function to create notification
-async function createNotification(
-  userId: string,
-  title: string,
-  message: string,
-  type: "success" | "info" | "warning" | "error" = "info",
-) {
-  await db.insert(notifications).values({
-    userId,
-    title,
-    message,
-    type,
-    isRead: false,
-  });
-}
-
-// Helper function to determine interview provider
-function determineInterviewProvider(
-  meetingLink?: string,
-): "zoom" | "google_meet" | "teams" | "other" {
-  if (!meetingLink) return "other";
-
-  const link = meetingLink.toLowerCase();
-  if (link.includes("zoom.us")) return "zoom";
-  if (link.includes("meet.google.com")) return "google_meet";
-  if (link.includes("teams.microsoft.com") || link.includes("teams.live.com"))
-    return "teams";
-
-  return "other";
-}
-
-// PUT /unit-actions/applications/status - Update application status
-export const updateApplicationStatus: AppRouteHandler<any> = async (c) => {
+// PUT /applications/status - Update application status
+export const updateApplicationStatus: AppRouteHandler<
+  UpdateApplicationStatus
+> = async (c) => {
   const user = c.get("user");
-
-  // Check if user is a unit
-  if (user.role !== "unit") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only units can update application status",
-      },
-      FORBIDDEN,
-    );
-  }
 
   try {
     const body = await c.req.json();
-    const validatedData = updateApplicationStatusSchema.parse(body);
+    const validatedData = UpdateApplicationStatusSchema.parse(body);
     const { applicationId, status, interviewDetails } = validatedData;
 
     // Get application with related data
@@ -303,29 +281,25 @@ export const updateApplicationStatus: AppRouteHandler<any> = async (c) => {
     // Prepare notification and email content based on status
     let notificationTitle = "";
     let notificationMessage = "";
-    let _emailSubject = "";
-    let _emailBody = "";
     let notificationType: "success" | "info" | "warning" | "error" = "info";
 
     // Keep interview scheduling data available outside switch
     let zoomLink: string | undefined;
     let scheduledAt: string | undefined;
-    let interviewRecord: any = null;
+    let interviewRecord:
+      | (typeof interviews.$inferSelect & { id: string })
+      | undefined;
 
     switch (status) {
       case "shortlisted":
         notificationTitle = "Application Shortlisted! 🎉";
         notificationMessage = `Your application for "${internship.title}" has been shortlisted. The employer will contact you soon.`;
-        _emailSubject = `Great News! You've been shortlisted for ${internship.title}`;
-        _emailBody = `Congratulations! Your application has been shortlisted.`;
         notificationType = "success";
         break;
 
       case "rejected":
         notificationTitle = "Application Update";
         notificationMessage = `Thank you for your interest in "${internship.title}". Unfortunately, we are moving forward with other candidates.`;
-        _emailSubject = `Application Update - ${internship.title}`;
-        _emailBody = `Thank you for your interest. We have decided to move forward with other candidates.`;
         notificationType = "info";
         break;
 
@@ -363,7 +337,7 @@ export const updateApplicationStatus: AppRouteHandler<any> = async (c) => {
               applicationId,
               scheduledDate: new Date(scheduledAt),
               durationMinutes: interviewDetails?.durationMinutes || 60,
-              link: zoomLink,
+              link: zoomLink || null,
               title: `Interview: ${internship.title} - ${candidateUser.name}`,
               description: interviewDetails?.notes || null,
               provider: provider || "other",
@@ -375,8 +349,6 @@ export const updateApplicationStatus: AppRouteHandler<any> = async (c) => {
 
         notificationTitle = "Interview Scheduled! 📅";
         notificationMessage = `Your interview for "${internship.title}" has been scheduled. ${scheduledAt ? `Time: ${new Date(scheduledAt).toLocaleString()}` : ""} ${zoomLink ? `Meeting Link: ${zoomLink}` : ""}`;
-        _emailSubject = `Interview Scheduled - ${internship.title}`;
-        _emailBody = `Your interview has been scheduled. Meeting details: ${zoomLink}`;
         notificationType = "success";
         break;
       }
@@ -384,16 +356,12 @@ export const updateApplicationStatus: AppRouteHandler<any> = async (c) => {
       case "hired":
         notificationTitle = "Congratulations! You're Hired! 🎊";
         notificationMessage = `Congratulations! You have been selected for "${internship.title}". We will send you the offer letter shortly.`;
-        _emailSubject = `Congratulations! Offer Letter - ${internship.title}`;
-        _emailBody = `We are pleased to offer you the position. Offer letter attached.`;
         notificationType = "success";
         break;
 
       case "applied":
         notificationTitle = "Application Received";
         notificationMessage = `Your application for "${internship.title}" has been received.`;
-        _emailSubject = `Application Received - ${internship.title}`;
-        _emailBody = `We have received your application and will review it shortly.`;
         notificationType = "info";
         break;
     }
@@ -450,7 +418,11 @@ export const updateApplicationStatus: AppRouteHandler<any> = async (c) => {
         status_code: OK,
         message: "Application status updated successfully",
         data: {
-          application: updatedApplication,
+          application: {
+            id: updatedApplication.id,
+            status: updatedApplication.status,
+            updatedAt: updatedApplication.updatedAt,
+          },
           interview: status === "interviewed" ? interviewRecord : undefined,
           notificationSent: true,
           candidateEmailSent,

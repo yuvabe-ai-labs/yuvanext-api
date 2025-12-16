@@ -1,7 +1,7 @@
 import { relations } from "drizzle-orm";
 import { pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
-import { units } from "./unit.schemas";
+import { units } from "./unit.schema";
 
 export const difficultyLevelEnum = pgEnum("difficulty_level", [
   "beginner",

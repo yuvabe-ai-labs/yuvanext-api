@@ -2,7 +2,6 @@ import Handlebars from "handlebars";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-// lib/services/email.service.ts
 import nodemailer from "nodemailer";
 
 import env from "@/config/env";
@@ -119,23 +118,13 @@ export async function sendApplicationEmail(
         })
       : "";
 
-    const textFallbackMap: Record<string, string> = {
-      applied: `Dear ${params.candidateName}, thank you for applying to ${params.internshipTitle} at ${params.unitName}.`,
-      shortlisted: `Congratulations ${params.candidateName}! You've been shortlisted for ${params.internshipTitle}.`,
-      rejected: `Dear ${params.candidateName}, thank you for your interest in ${params.internshipTitle}.`,
-      interviewed: `Dear ${params.candidateName}, your interview for ${params.internshipTitle} has been scheduled. ${scheduledAtFormatted ? `Time: ${scheduledAtFormatted}` : ""} ${params.additionalData?.meetingLink ? `Link: ${params.additionalData.meetingLink}` : ""}`,
-      hired: `Congratulations ${params.candidateName}! We are pleased to offer you the ${params.internshipTitle} position.`,
-    };
-
     const subject = subjects[status](params);
-    const text = textFallbackMap[status];
 
     await transporter.sendMail({
       from: env.SMTP_USER,
       to: params.to,
       subject,
       html,
-      text,
     });
 
     console.error(`Email sent successfully: ${status} to ${params.to}`);
@@ -167,14 +156,12 @@ export async function sendUnitInterviewEmail(
       : "";
 
     const subject = `📅 Interview Scheduled - ${params.candidateName} for ${params.internshipTitle}`;
-    const text = `Interview scheduled for ${params.candidateName} (${params.candidateEmail}) for ${params.internshipTitle}. ${scheduledAtFormatted ? `Time: ${scheduledAtFormatted}` : ""} ${params.additionalData?.meetingLink ? `Link: ${params.additionalData.meetingLink}` : ""}`;
 
     await transporter.sendMail({
       from: env.SMTP_USER,
       to: params.to,
       subject,
       html,
-      text,
     });
 
     console.error(`Unit interview email sent successfully to ${params.to}`);

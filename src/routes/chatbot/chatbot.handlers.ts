@@ -1,14 +1,16 @@
-// chatbot.handlers.ts - Enhanced with Unit support
+// chatbot.handlers.ts - Fixed type compatibility
 
 import { eq } from "drizzle-orm";
-import { z } from "zod";
 
 import type { AppRouteHandler } from "@/types/app.types";
 
 import db from "@/db";
-import { candidates } from "@/db/schema/candidate.schemas";
-import { units } from "@/db/schema/unit.schemas";
+import { candidates } from "@/db/schema/candidate.schema";
+import { units } from "@/db/schema/unit.schema";
 
+import type { Chat } from "./chatbot.routes";
+
+import { ChatRequestSchema } from "./chatbot.schema";
 import {
   addToConversation,
   detectAndExtractFields,
@@ -19,16 +21,18 @@ import {
 } from "./chatbot.service";
 import { CANDIDATE_SYSTEM_PROMPT, UNIT_SYSTEM_PROMPT } from "./prompts";
 
-const ChatSchema = z.object({
-  message: z.string().min(1),
-});
-
-export const chat: AppRouteHandler<any> = async (c) => {
+export const chat: AppRouteHandler<Chat> = async (c) => {
   const json = await c.req.json().catch(() => ({}));
-  const parsed = ChatSchema.safeParse(json);
+  const parsed = ChatRequestSchema.safeParse(json);
 
   if (!parsed.success) {
-    return c.json({ success: false, error: "Invalid request" }, 400);
+    return c.json(
+      {
+        success: false as const,
+        error: "Invalid request",
+      },
+      400,
+    );
   }
 
   const { message } = parsed.data;
@@ -487,7 +491,7 @@ export const chat: AppRouteHandler<any> = async (c) => {
     } else {
       return c.json(
         {
-          success: false,
+          success: false as const,
           error: "Invalid user role",
         },
         400,
@@ -497,7 +501,7 @@ export const chat: AppRouteHandler<any> = async (c) => {
     if (!onboardingStatus.exists) {
       return c.json(
         {
-          success: false,
+          success: false as const,
           error: `Failed to access ${role} profile`,
         },
         500,
@@ -511,12 +515,15 @@ export const chat: AppRouteHandler<any> = async (c) => {
           ? "You have already completed the onboarding process! Your profile is all set up. You can now explore internships, courses, and opportunities on the platform."
           : "You have already completed the unit registration! Your unit profile is all set up. You can now start posting opportunities and finding candidates.";
 
-      return c.json({
-        success: true,
-        response: completionMessage,
-        onboardingCompleted: true,
-        skipQuestions: true,
-      });
+      return c.json(
+        {
+          success: true as const,
+          response: completionMessage,
+          onboardingCompleted: true,
+          skipQuestions: true,
+        },
+        200,
+      );
     }
 
     // Get conversation history
@@ -582,7 +589,7 @@ export const chat: AppRouteHandler<any> = async (c) => {
       const retryMessage = failedFields[0].error;
       return c.json(
         {
-          success: false,
+          success: false as const,
           error: retryMessage,
           needsRetry: true,
           fieldsFailed: failedFields.map((f) => f.field),
@@ -638,21 +645,24 @@ export const chat: AppRouteHandler<any> = async (c) => {
       console.warn("Failed to persist conversation:", err);
     }
 
-    return c.json({
-      success: true,
-      response: botResponse
-        .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "")
-        .trim(),
-      ...(isCompletionMessage && { onboardingCompleted: true }),
-    });
+    return c.json(
+      {
+        success: true as const,
+        response: botResponse
+          .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "")
+          .trim(),
+        ...(isCompletionMessage && { onboardingCompleted: true }),
+      },
+      200,
+    );
   } catch (err: any) {
     if (err?.message === "Request timeout") {
       return c.json(
         {
-          success: false,
+          success: false as const,
           error:
             "The request took too long. Please try with a shorter message.",
-          errorType: "TIMEOUT",
+          errorType: "TIMEOUT" as const,
         },
         408,
       );
@@ -661,15 +671,21 @@ export const chat: AppRouteHandler<any> = async (c) => {
     if (err?.name === "ThrottlingException") {
       return c.json(
         {
-          success: false,
+          success: false as const,
           error:
             "The AI service is currently busy. Please try again in a moment.",
-          errorType: "THROTTLING",
+          errorType: "THROTTLING" as const,
         },
         429,
       );
     }
 
-    return c.json({ success: false, error: String(err?.message || err) }, 500);
+    return c.json(
+      {
+        success: false as const,
+        error: String(err?.message || err),
+      },
+      500,
+    );
   }
 };

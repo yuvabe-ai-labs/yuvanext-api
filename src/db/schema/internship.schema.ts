@@ -11,9 +11,9 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { applications } from "./application.schemas";
-import { savedInternship } from "./saved-internship.schemas";
-import { units } from "./unit.schemas";
+import { applications } from "./application.schema";
+import { savedInternship } from "./saved-internship.schema";
+import { units } from "./unit.schema";
 
 export const internshipStatusEnum = pgEnum("internship_status", [
   "active",

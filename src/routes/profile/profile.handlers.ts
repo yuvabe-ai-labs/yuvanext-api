@@ -1,12 +1,11 @@
 import { eq } from "drizzle-orm";
-import { z } from "zod";
 
 import type { AppRouteHandler } from "@/types/app.types";
 
 import db from "@/db";
 import { user as userTable } from "@/db/schema/auth.schema";
-import { candidates } from "@/db/schema/candidate.schemas";
-import { units } from "@/db/schema/unit.schemas";
+import { candidates } from "@/db/schema/candidate.schema";
+import { units } from "@/db/schema/unit.schema";
 import {
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
@@ -14,60 +13,12 @@ import {
   UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
 
-// Flexible update schema: accept any of the profile fields as optional
-const UpdateProfileSchema = z
-  .object({
-    // user fields
-    name: z.string().min(1).optional(),
-    image: z.string().url().optional(),
+import type { GetProfile, UpdateProfile } from "./profile.routes";
 
-    // candidate/unit shared/simple fields
-    profileSummary: z.string().min(1).max(2000).optional(),
-    avatarUrl: z.string().url().optional(),
-    phone: z.string().optional(),
-    location: z.string().optional(),
-
-    // candidate-specific complex fields (allow loose types to keep flexibility)
-    type: z.string().optional(),
-    experienceLevel: z.string().optional(),
-    maritalStatus: z.string().optional(),
-    isDifferentlyAbled: z.boolean().optional(),
-    hasCareerBreak: z.boolean().optional(),
-    skills: z.array(z.string()).optional(),
-    interests: z.array(z.string()).optional(),
-    lookingFor: z.array(z.string()).optional(),
-    gender: z.string().optional(),
-    dateOfBirth: z.string().optional(),
-    onboardingCompleted: z.boolean().optional(),
-    education: z.array(z.any()).optional(),
-    language: z.array(z.string()).optional(),
-    course: z.array(z.any()).optional(),
-    internship: z.array(z.any()).optional(),
-    projects: z.array(z.any()).optional(),
-    socialLinks: z.record(z.string(), z.string()).optional(),
-    // unit-specific fields
-    websiteUrl: z.string().url().optional(),
-    mission: z.string().optional(),
-    values: z.string().optional(),
-    description: z.string().optional(),
-    industry: z.string().optional(),
-    isAurovillian: z.boolean().optional(),
-    bannerUrl: z.string().url().optional(),
-    galleryImages: z.array(z.string()).optional(),
-    galleryVideos: z.array(z.string()).optional(),
-    focusAreas: z.array(z.string()).optional(),
-    skillsOffered: z.array(z.string()).optional(),
-    opportunitiesOffered: z.array(z.any()).optional(),
-  })
-  .partial()
-  .catchall(z.any());
-
-const _UpdateAvatarSchema = z.object({
-  avatarUrl: z.string().url(),
-});
+import { UpdateProfileSchema } from "./profile.schema";
 
 // GET /profile - Get user profile
-export const getProfile: AppRouteHandler<any> = async (c) => {
+export const getProfile: AppRouteHandler<GetProfile> = async (c) => {
   const user = c.get("user");
 
   try {
@@ -87,7 +38,7 @@ export const getProfile: AppRouteHandler<any> = async (c) => {
     const foundUser = userData[0];
 
     // Fetch role-specific profile data
-    let profileData: any = {
+    let profileData = {
       id: foundUser.id,
       name: foundUser.name,
       email: foundUser.email,
@@ -108,7 +59,7 @@ export const getProfile: AppRouteHandler<any> = async (c) => {
         profileData = {
           ...profileData,
           ...candidateData[0],
-        };
+        } as typeof profileData & (typeof candidateData)[0];
       }
     } else if (foundUser.role === "unit") {
       const unitData = await db
@@ -121,7 +72,7 @@ export const getProfile: AppRouteHandler<any> = async (c) => {
         profileData = {
           ...profileData,
           ...unitData[0],
-        };
+        } as typeof profileData & (typeof unitData)[0];
       }
     }
 
@@ -146,7 +97,7 @@ export const getProfile: AppRouteHandler<any> = async (c) => {
 };
 
 // PUT /profile - Update profile
-export const updateProfile: AppRouteHandler<any> = async (c) => {
+export const updateProfile: AppRouteHandler<UpdateProfile> = async (c) => {
   const user = c.get("user");
 
   try {
@@ -164,12 +115,12 @@ export const updateProfile: AppRouteHandler<any> = async (c) => {
       );
     }
 
-    const data = parsed.data as Record<string, any>;
+    const data = parsed.data;
 
     // Prepare updates for user and role-specific tables
-    const userUpdates: Record<string, any> = {};
-    const candidateUpdates: Record<string, any> = {};
-    const unitUpdates: Record<string, any> = {};
+    const userUpdates: Partial<typeof userTable.$inferInsert> = {};
+    const candidateUpdates: Partial<typeof candidates.$inferInsert> = {};
+    const unitUpdates: Partial<typeof units.$inferInsert> = {};
 
     // Map common user fields
     if (data.name !== undefined) userUpdates.name = data.name;
@@ -198,19 +149,19 @@ export const updateProfile: AppRouteHandler<any> = async (c) => {
       "internship",
       "projects",
       "socialLinks",
-    ];
+    ] as const;
 
     for (const key of candidateFields) {
       if (data[key] !== undefined) {
         // Special handling: convert date strings to Date for dateOfBirth
         if (key === "dateOfBirth") {
           try {
-            candidateUpdates.dateOfBirth = new Date(data[key]);
+            candidateUpdates.dateOfBirth = new Date(data[key] as string);
           } catch {
-            candidateUpdates.dateOfBirth = data[key];
+            candidateUpdates.dateOfBirth = data[key] as unknown as Date;
           }
         } else {
-          candidateUpdates[key] = data[key];
+          (candidateUpdates as Record<string, unknown>)[key] = data[key];
         }
       }
     }
@@ -238,11 +189,11 @@ export const updateProfile: AppRouteHandler<any> = async (c) => {
       "opportunitiesOffered",
       "projects",
       "socialLinks",
-    ];
+    ] as const;
 
     for (const key of unitFields) {
       if (data[key] !== undefined) {
-        unitUpdates[key] = data[key];
+        (unitUpdates as Record<string, unknown>)[key] = data[key];
       }
     }
 
@@ -301,92 +252,6 @@ export const updateProfile: AppRouteHandler<any> = async (c) => {
     );
   } catch (_err) {
     console.error("Error updating profile:", _err);
-    return c.json(
-      {
-        status_code: INTERNAL_SERVER_ERROR,
-        message: "Internal server error",
-      },
-      INTERNAL_SERVER_ERROR,
-    );
-  }
-};
-
-// GET /profile/completion-percentage - Get profile completion %
-export const getCompletionPercentage: AppRouteHandler<any> = async (c) => {
-  const user = c.get("user");
-
-  try {
-    let completionPercentage = 0;
-
-    if (user.role === "candidate") {
-      const candidateData = await db
-        .select()
-        .from(candidates)
-        .where(eq(candidates.userId, user.id))
-        .limit(1);
-
-      if (candidateData.length > 0) {
-        const profile = candidateData[0];
-        let filledFields = 0;
-        const totalFields = 12; // Adjust based on profile fields
-
-        // Check which fields are filled
-        if (profile.type) filledFields++;
-        if (profile.profileSummary) filledFields++;
-        if (profile.location) filledFields++;
-        if (profile.skills && profile.skills.length > 0) filledFields++;
-        if (profile.interests && profile.interests.length > 0) filledFields++;
-        if (profile.phone) filledFields++;
-        if (profile.gender) filledFields++;
-        if (profile.dateOfBirth) filledFields++;
-        if (profile.education && profile.education.length > 0) filledFields++;
-        if (profile.experienceLevel) filledFields++;
-        if (profile.avatarUrl) filledFields++;
-        if (profile.language && profile.language.length > 0) filledFields++;
-
-        completionPercentage = Math.round((filledFields / totalFields) * 100);
-      }
-    } else if (user.role === "unit") {
-      const unitData = await db
-        .select()
-        .from(units)
-        .where(eq(units.userId, user.id))
-        .limit(1);
-
-      if (unitData.length > 0) {
-        const profile = unitData[0];
-        let filledFields = 0;
-        const totalFields = 11; // Adjust based on profile fields
-
-        // Check which fields are filled
-        if (profile.name) filledFields++;
-        if (profile.phone) filledFields++;
-        if (profile.address) filledFields++;
-        if (profile.websiteUrl) filledFields++;
-        if (profile.description) filledFields++;
-        if (profile.industry) filledFields++;
-        if (profile.focusAreas && profile.focusAreas.length > 0) filledFields++;
-        if (profile.skillsOffered && profile.skillsOffered.length > 0)
-          filledFields++;
-        if (profile.avatarUrl) filledFields++;
-        if (profile.bannerUrl) filledFields++;
-        if (profile.socialLinks && Object.keys(profile.socialLinks).length > 0)
-          filledFields++;
-
-        completionPercentage = Math.round((filledFields / totalFields) * 100);
-      }
-    }
-
-    return c.json(
-      {
-        status_code: OK,
-        message: "Profile completion percentage retrieved successfully",
-        data: { completionPercentage },
-      },
-      OK,
-    );
-  } catch (_err) {
-    console.error("Error calculating completion percentage:", _err);
     return c.json(
       {
         status_code: INTERNAL_SERVER_ERROR,

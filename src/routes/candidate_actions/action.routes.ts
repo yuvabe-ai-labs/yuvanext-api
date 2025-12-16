@@ -1,178 +1,255 @@
+import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
 
-import { createRouter } from "@/lib/create-app";
 import {
+  BAD_REQUEST,
+  CONFLICT,
   CREATED,
+  FORBIDDEN,
   INTERNAL_SERVER_ERROR,
+  NOT_FOUND,
   OK,
   UNAUTHORIZED,
 } from "@/lib/openapi/http-status-codes";
-import { requireAuth } from "@/middleware/auth";
 
-import * as handlers from "./action.handlers";
+import {
+  ApplicationResponseSchema,
+  ApplicationStatusItemSchema,
+  AppliedInternshipListItemSchema,
+  ApplyToInternshipSchema,
+  CountsResponseSchema,
+  InternshipIdParamSchema,
+  RemoveSavedInternshipSchema,
+  SavedInternshipListItemSchema,
+  SavedInternshipResponseSchema,
+  SaveInternshipSchema,
+  ShareLinksResponseSchema,
+} from "./action.schema";
 
-const router = createRouter();
-router.use(requireAuth);
+// ============================================================================
+// RESPONSE HELPERS
+// ============================================================================
 
-// Save internship
-router.openapi(
-  {
-    method: "post",
-    path: "internship/save",
-    tags: ["InternshipActions"],
-    summary: "Save an internship",
-    security: [{ Bearer: [] }],
-    requestBody: {
-      content: {
-        "application/json": {
-          schema: z.object({ internshipId: z.uuid() }),
-        },
-      },
-    },
-    responses: {
-      [CREATED]: { description: "Saved" },
-      [OK]: { description: "Already saved" },
-      [UNAUTHORIZED]: { description: "Unauthorized" },
-      [INTERNAL_SERVER_ERROR]: { description: "Internal server error" },
-    },
-  },
-  handlers.saveInternship,
-);
-
-// Remove saved internship
-router.openapi(
-  {
-    method: "delete",
-    path: "internship/save",
-    tags: ["InternshipActions"],
-    summary: "Remove saved internship",
-    security: [{ Bearer: [] }],
-    requestBody: {
-      content: {
-        "application/json": {
-          schema: z.object({ internshipId: z.uuid() }),
-        },
-      },
-    },
-    responses: {
-      [OK]: { description: "Removed" },
-      [UNAUTHORIZED]: { description: "Unauthorized" },
-      [INTERNAL_SERVER_ERROR]: { description: "Internal server error" },
-    },
-  },
-  handlers.removeSavedInternship,
-);
-
-// Apply to internship
-router.openapi(
-  {
-    method: "post",
-    path: "internship/apply",
-    tags: ["InternshipActions"],
-    summary: "Apply to an internship",
-    security: [{ Bearer: [] }],
-    requestBody: {
-      content: {
-        "application/json": {
-          schema: z.object({
-            internshipId: z.uuid(),
-            includedSections: z.array(z.string()).optional(),
+function createResponse(statusCode: number, dataSchema?: z.ZodTypeAny) {
+  return {
+    description: getDescription(statusCode),
+    content: {
+      "application/json": {
+        schema: z.object({
+          status_code: z.literal(statusCode),
+          message: z.string(),
+          ...(dataSchema && { data: dataSchema }),
+          ...(statusCode === BAD_REQUEST && {
+            errors: z.array(z.any()).optional(),
           }),
+        }),
+      },
+    },
+  };
+}
+
+function getDescription(statusCode: number): string {
+  const descriptions: Record<number, string> = {
+    [OK]: "Success",
+    [CREATED]: "Resource created successfully",
+    [BAD_REQUEST]: "Bad request",
+    [UNAUTHORIZED]: "Unauthorized - Authentication required",
+    [FORBIDDEN]: "Forbidden - Candidates only",
+    [NOT_FOUND]: "Resource not found",
+    [CONFLICT]: "Conflict - Resource already exists",
+    [INTERNAL_SERVER_ERROR]: "Internal server error",
+  };
+  return descriptions[statusCode] || "Response";
+}
+
+const commonErrorResponses = {
+  [UNAUTHORIZED]: createResponse(UNAUTHORIZED),
+  [FORBIDDEN]: createResponse(FORBIDDEN),
+  [INTERNAL_SERVER_ERROR]: createResponse(INTERNAL_SERVER_ERROR),
+};
+
+// ============================================================================
+// ROUTE DEFINITIONS
+// ============================================================================
+
+/**
+ * POST /internship/save - Save an internship
+ */
+export const saveInternship = createRoute({
+  method: "post" as const,
+  path: "/internship/save",
+  tags: ["InternshipActions"],
+  summary: "Save an internship",
+  description: "Save an internship for later viewing (candidates only)",
+  security: [{ Bearer: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: SaveInternshipSchema,
         },
       },
     },
-    responses: {
-      [CREATED]: { description: "Applied" },
-      [OK]: { description: "Already applied" },
-      [UNAUTHORIZED]: { description: "Unauthorized" },
-      [INTERNAL_SERVER_ERROR]: { description: "Internal server error" },
+  },
+  responses: {
+    [CREATED]: createResponse(CREATED, SavedInternshipResponseSchema),
+    [OK]: createResponse(OK),
+    [BAD_REQUEST]: createResponse(BAD_REQUEST),
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+    ...commonErrorResponses,
+  },
+});
+
+/**
+ * DELETE /internship/save - Remove saved internship
+ */
+export const removeSavedInternship = createRoute({
+  method: "delete" as const,
+  path: "/internship/save",
+  tags: ["InternshipActions"],
+  summary: "Remove saved internship",
+  description: "Remove an internship from saved list (candidates only)",
+  security: [{ Bearer: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: RemoveSavedInternshipSchema,
+        },
+      },
     },
   },
-  handlers.applyToInternship,
-);
+  responses: {
+    [OK]: createResponse(OK),
+    [BAD_REQUEST]: createResponse(BAD_REQUEST),
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+    ...commonErrorResponses,
+  },
+});
 
-// Get saved internships
-router.openapi(
-  {
-    method: "get",
-    path: "internship/saved",
-    tags: ["InternshipActions"],
-    summary: "Get saved internships",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: { description: "Saved internships" },
-      [UNAUTHORIZED]: { description: "Unauthorized" },
-      [INTERNAL_SERVER_ERROR]: { description: "Internal server error" },
+/**
+ * POST /internship/apply - Apply to an internship
+ */
+export const applyToInternship = createRoute({
+  method: "post" as const,
+  path: "/internship/apply",
+  tags: ["InternshipActions"],
+  summary: "Apply to an internship",
+  description:
+    "Submit an application to an internship with optional profile sections (candidates only)",
+  security: [{ Bearer: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: ApplyToInternshipSchema,
+        },
+      },
     },
   },
-  handlers.getSavedInternships,
-);
-
-// Get applied internships
-router.openapi(
-  {
-    method: "get",
-    path: "internship/applied",
-    tags: ["InternshipActions"],
-    summary: "Get applied internships",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: { description: "Applications" },
-      [UNAUTHORIZED]: { description: "Unauthorized" },
-      [INTERNAL_SERVER_ERROR]: { description: "Internal server error" },
-    },
+  responses: {
+    [CREATED]: createResponse(CREATED, ApplicationResponseSchema),
+    [BAD_REQUEST]: createResponse(BAD_REQUEST),
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+    [CONFLICT]: createResponse(CONFLICT),
+    ...commonErrorResponses,
   },
-  handlers.getAppliedInternships,
-);
+});
 
-// Get counts
-router.openapi(
-  {
-    method: "get",
-    path: "internship/counts",
-    tags: ["InternshipActions"],
-    summary: "Get count of saved and applied internships",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: { description: "Counts" },
-      [UNAUTHORIZED]: { description: "Unauthorized" },
-      [INTERNAL_SERVER_ERROR]: { description: "Internal server error" },
-    },
+/**
+ * GET /internship/saved - Get saved internships
+ */
+export const getSavedInternships = createRoute({
+  method: "get" as const,
+  path: "/internship/saved",
+  tags: ["InternshipActions"],
+  summary: "Get saved internships",
+  description:
+    "Retrieve list of internships saved by the candidate (candidates only)",
+  security: [{ Bearer: [] }],
+  responses: {
+    [OK]: createResponse(OK, z.array(SavedInternshipListItemSchema)),
+    ...commonErrorResponses,
   },
-  handlers.getCounts,
-);
+});
 
-// Share internship
-router.openapi(
-  {
-    method: "get",
-    path: "internship/share/:id",
-    tags: ["InternshipActions"],
-    summary: "Generate share links for an internship",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: { description: "Share links" },
-      [UNAUTHORIZED]: { description: "Unauthorized" },
-      [INTERNAL_SERVER_ERROR]: { description: "Internal server error" },
-    },
+/**
+ * GET /internship/applied - Get applied internships
+ */
+export const getAppliedInternships = createRoute({
+  method: "get" as const,
+  path: "/internship/applied",
+  tags: ["InternshipActions"],
+  summary: "Get applied internships",
+  description:
+    "Retrieve list of internships the candidate has applied to (candidates only)",
+  security: [{ Bearer: [] }],
+  responses: {
+    [OK]: createResponse(OK, z.array(AppliedInternshipListItemSchema)),
+    ...commonErrorResponses,
   },
-  handlers.shareInternship,
-);
+});
 
-router.openapi(
-  {
-    method: "get",
-    path: "internship/application-status",
-    tags: ["InternshipActions"],
-    summary: "Get application status with unit and internship details",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: { description: "Application status fetched" },
-      [UNAUTHORIZED]: { description: "Unauthorized" },
-      [INTERNAL_SERVER_ERROR]: { description: "Internal server error" },
-    },
+/**
+ * GET /internship/counts - Get counts
+ */
+export const getCounts = createRoute({
+  method: "get" as const,
+  path: "/internship/counts",
+  tags: ["InternshipActions"],
+  summary: "Get saved and applied counts",
+  description:
+    "Get count of saved and applied internships for the candidate (candidates only)",
+  security: [{ Bearer: [] }],
+  responses: {
+    [OK]: createResponse(OK, CountsResponseSchema),
+    ...commonErrorResponses,
   },
-  handlers.getApplicationStatus,
-);
+});
 
-export default router;
+/**
+ * GET /internship/share/:id - Generate share links
+ */
+export const shareInternship = createRoute({
+  method: "get" as const,
+  path: "/internship/share/{id}",
+  tags: ["InternshipActions"],
+  summary: "Generate share links for an internship",
+  description: "Generate social media share links for a specific internship",
+  security: [{ Bearer: [] }],
+  request: {
+    params: InternshipIdParamSchema,
+  },
+  responses: {
+    [OK]: createResponse(OK, ShareLinksResponseSchema),
+    [BAD_REQUEST]: createResponse(BAD_REQUEST),
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+    ...commonErrorResponses,
+  },
+});
+
+/**
+ * GET /internship/application-status - Get application status
+ */
+export const getApplicationStatus = createRoute({
+  method: "get" as const,
+  path: "/internship/application-status",
+  tags: ["InternshipActions"],
+  summary: "Get application status with unit details",
+  description:
+    "Retrieve application status with internship and unit information (candidates only)",
+  security: [{ Bearer: [] }],
+  responses: {
+    [OK]: createResponse(OK, z.array(ApplicationStatusItemSchema)),
+    ...commonErrorResponses,
+  },
+});
+
+export type SaveInternship = typeof saveInternship;
+export type RemoveSavedInternship = typeof removeSavedInternship;
+export type ApplyToInternship = typeof applyToInternship;
+export type GetSavedInternships = typeof getSavedInternships;
+export type GetAppliedInternships = typeof getAppliedInternships;
+export type GetCounts = typeof getCounts;
+export type ShareInternship = typeof shareInternship;
+export type GetApplicationStatus = typeof getApplicationStatus;

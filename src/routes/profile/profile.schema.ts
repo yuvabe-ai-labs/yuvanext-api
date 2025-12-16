@@ -1,0 +1,124 @@
+import { z } from "zod";
+
+export const UpdateProfileSchema = z
+  .object({
+    // user fields
+    name: z.string().min(1).optional(),
+    image: z.url().optional(),
+
+    // candidate/unit shared/simple fields
+    profileSummary: z.string().min(1).max(2000).optional(),
+    avatarUrl: z.url().optional(),
+    phone: z.string().optional(),
+    location: z.string().optional(),
+
+    // candidate-specific complex fields (allow loose types to keep flexibility)
+    type: z.string().optional(),
+    experienceLevel: z.string().optional(),
+    maritalStatus: z.string().optional(),
+    isDifferentlyAbled: z.boolean().optional(),
+    hasCareerBreak: z.boolean().optional(),
+    skills: z.array(z.string()).optional(),
+    interests: z.array(z.string()).optional(),
+    lookingFor: z.array(z.string()).optional(),
+    gender: z.string().optional(),
+    dateOfBirth: z.string().optional(),
+    onboardingCompleted: z.boolean().optional(),
+    education: z.array(z.any()).optional(),
+    language: z.array(z.string()).optional(),
+    course: z.array(z.any()).optional(),
+    internship: z.array(z.any()).optional(),
+    projects: z.array(z.any()).optional(),
+    socialLinks: z.record(z.string(), z.string()).optional(),
+    // unit-specific fields
+    websiteUrl: z.url().optional(),
+    mission: z.string().optional(),
+    values: z.string().optional(),
+    description: z.string().optional(),
+    industry: z.string().optional(),
+    isAurovillian: z.boolean().optional(),
+    bannerUrl: z.url().optional(),
+    galleryImages: z.array(z.string()).optional(),
+    galleryVideos: z.array(z.string()).optional(),
+    focusAreas: z.array(z.string()).optional(),
+    skillsOffered: z.array(z.string()).optional(),
+    opportunitiesOffered: z.array(z.any()).optional(),
+  })
+  .partial()
+  .catchall(z.any());
+
+// Base user fields that are always present
+const BaseUserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().email(),
+  image: z.string().nullable(),
+  role: z.enum(["candidate", "unit", "admin"]),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+// Candidate-specific fields
+const CandidateFieldsSchema = z.object({
+  userId: z.string(),
+  type: z.string().nullable(),
+  experienceLevel: z.string().nullable(),
+  profileSummary: z.string().nullable(),
+  location: z.string().nullable(),
+  maritalStatus: z.string().nullable(),
+  isDifferentlyAbled: z.boolean().nullable(),
+  hasCareerBreak: z.boolean().nullable(),
+  skills: z.array(z.string()).nullable(),
+  interests: z.array(z.string()).nullable(),
+  lookingFor: z.array(z.string()).nullable(),
+  avatarUrl: z.string().nullable(),
+  phone: z.string().nullable(),
+  gender: z.string().nullable(),
+  dateOfBirth: z.date().nullable(),
+  onboardingCompleted: z.boolean().nullable(),
+  education: z.array(z.any()).nullable(),
+  language: z.array(z.string()).nullable(),
+  course: z.array(z.any()).nullable(),
+  internship: z.array(z.any()).nullable(),
+  projects: z.array(z.any()).nullable(),
+  socialLinks: z.record(z.string(), z.string()).nullable(),
+});
+
+// Unit-specific fields
+const UnitFieldsSchema = z.object({
+  userId: z.string(),
+  name: z.string().nullable(),
+  type: z.string().nullable(),
+  phone: z.string().nullable(),
+  address: z.string().nullable(),
+  location: z.string().nullable(),
+  onboardingCompleted: z.boolean().nullable(),
+  websiteUrl: z.string().nullable(),
+  mission: z.string().nullable(),
+  values: z.string().nullable(),
+  description: z.string().nullable(),
+  industry: z.string().nullable(),
+  isAurovillian: z.boolean().nullable(),
+  bannerUrl: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+  galleryImages: z.array(z.string()).nullable(),
+  galleryVideos: z.array(z.string()).nullable(),
+  focusAreas: z.array(z.string()).nullable(),
+  skillsOffered: z.array(z.string()).nullable(),
+  opportunitiesOffered: z.array(z.any()).nullable(),
+  projects: z.array(z.any()).nullable(),
+  socialLinks: z.record(z.string(), z.string()).nullable(),
+});
+
+// Profile response can be user + candidate fields or user + unit fields
+export const ProfileResponseSchema = z.union([
+  BaseUserSchema.merge(CandidateFieldsSchema.partial()),
+  BaseUserSchema.merge(UnitFieldsSchema.partial()),
+  BaseUserSchema, // Just base user if no role-specific data
+]);
+
+const _UpdateAvatarSchema = z.object({
+  avatarUrl: z.url(),
+});
+
+export { _UpdateAvatarSchema };

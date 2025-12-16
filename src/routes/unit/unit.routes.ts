@@ -1,7 +1,6 @@
+import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
 
-// unit.routes.ts
-import { createRouter } from "@/lib/create-app";
 import {
   FORBIDDEN,
   INTERNAL_SERVER_ERROR,
@@ -10,19 +9,8 @@ import {
   UNAUTHORIZED,
   UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
-import { requireAuth } from "@/middleware/auth";
 
-import * as handlers from "./unit.handlers";
-
-const router = createRouter();
-
-// ============================================================================
-// SCHEMAS
-// ============================================================================
-
-const UnitIdParamSchema = z.object({
-  id: z.uuid(),
-});
+import { UnitIdParamSchema, UnitResponseSchema } from "./unit.schema";
 
 // ============================================================================
 // RESPONSE HELPERS
@@ -68,56 +56,45 @@ const unitByIdErrorResponses = {
 };
 
 // ============================================================================
-// MIDDLEWARE
-// ============================================================================
-
-router.use(requireAuth);
-
-// ============================================================================
-// ROUTES
+// ROUTE DEFINITIONS
 // ============================================================================
 
 /**
  * GET /units - List all units
  */
-router.openapi(
-  {
-    method: "get",
-    path: "/units",
-    tags: ["Units"],
-    summary: "Get all units",
-    description:
-      "Retrieve a list of all organization units/companies (candidate only)",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: createResponse(OK, z.array(z.any())),
-      ...commonErrorResponses,
-    },
+export const getAllUnits = createRoute({
+  method: "get" as const,
+  path: "/units",
+  tags: ["Units"],
+  summary: "Get all units",
+  description:
+    "Retrieve a list of all organization units/companies (candidate only)",
+  security: [{ Bearer: [] }],
+  responses: {
+    [OK]: createResponse(OK, z.array(UnitResponseSchema)),
+    ...commonErrorResponses,
   },
-  handlers.getAllUnits,
-);
+});
 
 /**
  * GET /units/:id - Get unit details by ID
  */
-router.openapi(
-  {
-    method: "get",
-    path: "/units/{id}",
-    tags: ["Units"],
-    summary: "Get unit details by ID",
-    description:
-      "Retrieve detailed information about a specific organization unit (candidate only)",
-    security: [{ Bearer: [] }],
-    request: {
-      params: UnitIdParamSchema,
-    },
-    responses: {
-      [OK]: createResponse(OK, z.any()),
-      ...unitByIdErrorResponses,
-    },
+export const getUnitById = createRoute({
+  method: "get" as const,
+  path: "/units/{id}",
+  tags: ["Units"],
+  summary: "Get unit details by ID",
+  description:
+    "Retrieve detailed information about a specific organization unit (candidate only)",
+  security: [{ Bearer: [] }],
+  request: {
+    params: UnitIdParamSchema,
   },
-  handlers.getUnitById,
-);
+  responses: {
+    [OK]: createResponse(OK, UnitResponseSchema),
+    ...unitByIdErrorResponses,
+  },
+});
 
-export default router;
+export type GetAllUnits = typeof getAllUnits;
+export type GetUnitById = typeof getUnitById;

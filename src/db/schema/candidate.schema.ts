@@ -9,9 +9,9 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { applications } from "./application.schemas";
+import { applications } from "./application.schema";
 import { user } from "./auth.schema";
-import { savedInternship } from "./saved-internship.schemas";
+import { savedInternship } from "./saved-internship.schema";
 
 export const candidateTypeEnum = pgEnum("candidate_type", [
   "student",

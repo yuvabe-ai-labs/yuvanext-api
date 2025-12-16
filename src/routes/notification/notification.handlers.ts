@@ -3,7 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import type { AppRouteHandler } from "@/types/app.types";
 
 import db from "@/db";
-import { notifications } from "@/db/schema/notification.schemas";
+import { notifications } from "@/db/schema/notification.schema";
 import {
   BAD_REQUEST,
   FORBIDDEN,
@@ -12,8 +12,18 @@ import {
   OK,
 } from "@/lib/openapi/http-status-codes";
 
+import type {
+  DeleteAllNotifications,
+  DeleteNotification,
+  GetUserNotifications,
+  MarkAllNotificationsAsRead,
+  MarkNotificationAsRead,
+} from "./notification.routes";
+
 // GET /notifications - Get all notifications for the authenticated user
-export const getUserNotifications: AppRouteHandler<any> = async (c) => {
+export const getUserNotifications: AppRouteHandler<
+  GetUserNotifications
+> = async (c) => {
   const user = c.get("user");
 
   try {
@@ -52,7 +62,9 @@ export const getUserNotifications: AppRouteHandler<any> = async (c) => {
 };
 
 // PUT /notifications/:id/mark-read - Mark a notification as read
-export const markNotificationAsRead: AppRouteHandler<any> = async (c) => {
+export const markNotificationAsRead: AppRouteHandler<
+  MarkNotificationAsRead
+> = async (c) => {
   const user = c.get("user");
   const notificationId = c.req.param("id");
 
@@ -126,7 +138,9 @@ export const markNotificationAsRead: AppRouteHandler<any> = async (c) => {
 };
 
 // PUT /notifications/mark-all-read - Mark all notifications as read for the user
-export const markAllNotificationsAsRead: AppRouteHandler<any> = async (c) => {
+export const markAllNotificationsAsRead: AppRouteHandler<
+  MarkAllNotificationsAsRead
+> = async (c) => {
   const user = c.get("user");
 
   try {
@@ -163,7 +177,9 @@ export const markAllNotificationsAsRead: AppRouteHandler<any> = async (c) => {
 };
 
 // DELETE /notifications/:id - Delete a notification by ID
-export const deleteNotification: AppRouteHandler<any> = async (c) => {
+export const deleteNotification: AppRouteHandler<DeleteNotification> = async (
+  c,
+) => {
   const user = c.get("user");
   const notificationId = c.req.param("id");
 
@@ -229,7 +245,9 @@ export const deleteNotification: AppRouteHandler<any> = async (c) => {
 };
 
 // DELETE /notifications - Delete all notifications for the user
-export const deleteAllNotifications: AppRouteHandler<any> = async (c) => {
+export const deleteAllNotifications: AppRouteHandler<
+  DeleteAllNotifications
+> = async (c) => {
   const user = c.get("user");
 
   try {

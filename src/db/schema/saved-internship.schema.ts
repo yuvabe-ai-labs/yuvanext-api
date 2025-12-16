@@ -1,8 +1,8 @@
 import { relations } from "drizzle-orm";
 import { index, pgTable, timestamp, uuid } from "drizzle-orm/pg-core";
 
-import { candidates } from "./candidate.schemas";
-import { internships } from "./internship.schemas";
+import { candidates } from "./candidate.schema";
+import { internships } from "./internship.schema";
 
 export const savedInternship = pgTable(
   "saved_internship",

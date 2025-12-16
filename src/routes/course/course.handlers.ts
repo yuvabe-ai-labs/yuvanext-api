@@ -3,23 +3,26 @@ import { desc, eq } from "drizzle-orm";
 import type { AppRouteHandler } from "@/types/app.types";
 
 import db from "@/db";
-import { courses } from "@/db/schema/course.schemas";
-import { units } from "@/db/schema/unit.schemas";
+import { courses } from "@/db/schema/course.schema";
+import { units } from "@/db/schema/unit.schema";
 import {
   FORBIDDEN,
   INTERNAL_SERVER_ERROR,
   OK,
 } from "@/lib/openapi/http-status-codes";
 
+import type { GetAllCourses } from "./course.routes";
+
 // GET /courses - Get all courses
-export const getAllCourses: AppRouteHandler<any> = async (c) => {
+export const getAllCourses: AppRouteHandler<GetAllCourses> = async (c) => {
   const user = c.get("user");
+
   // Check if user is a candidate
   if (user.role !== "candidate") {
     return c.json(
       {
         status_code: FORBIDDEN,
-        message: "Only candidates",
+        message: "Only candidates can view courses",
       },
       FORBIDDEN,
     );

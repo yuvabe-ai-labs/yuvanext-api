@@ -1,7 +1,6 @@
+import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
 
-// notification.routes.ts
-import { createRouter } from "@/lib/create-app";
 import {
   BAD_REQUEST,
   FORBIDDEN,
@@ -10,30 +9,14 @@ import {
   OK,
   UNAUTHORIZED,
 } from "@/lib/openapi/http-status-codes";
-import { requireAuth } from "@/middleware/auth";
 
-import * as handlers from "./notification.handlers";
-
-const router = createRouter();
-
-// ============================================================================
-// SCHEMAS
-// ============================================================================
-
-const NotificationSchema = z.object({
-  id: z.uuid(),
-  userId: z.uuid(),
-  title: z.string().nullable(),
-  message: z.string().nullable(),
-  type: z.enum(["success", "info", "warning", "error"]),
-  isRead: z.boolean(),
-  createdAt: z.string().or(z.date()),
-  updatedAt: z.string().or(z.date()),
-});
-
-const NotificationIdParamSchema = z.object({
-  id: z.uuid().describe("Notification ID"),
-});
+import {
+  DeleteAllResponseSchema,
+  GetNotificationsResponseSchema,
+  MarkAllReadResponseSchema,
+  NotificationIdParamSchema,
+  NotificationResponseSchema,
+} from "./notification.schema";
 
 // ============================================================================
 // RESPONSE HELPERS
@@ -80,135 +63,101 @@ const notificationCrudErrorResponses = {
 };
 
 // ============================================================================
-// MIDDLEWARE
-// ============================================================================
-
-router.use(requireAuth);
-
-// ============================================================================
-// ROUTES
+// ROUTE DEFINITIONS
 // ============================================================================
 
 /**
- * GET / - Get all user notifications
+ * GET /notifications - Get all user notifications
  */
-router.openapi(
-  {
-    method: "get",
-    path: "/",
-    tags: ["Notifications"],
-    summary: "Get user notifications",
-    description:
-      "Returns all notifications for the authenticated user (both candidates and units), ordered by creation date",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: createResponse(
-        OK,
-        z.object({
-          notifications: z.array(NotificationSchema),
-          total: z.number(),
-          unreadCount: z.number(),
-        }),
-      ),
-      ...baseErrorResponses,
-    },
+export const getUserNotifications = createRoute({
+  method: "get" as const,
+  path: "/notifications",
+  tags: ["Notifications"],
+  summary: "Get user notifications",
+  description:
+    "Returns all notifications for the authenticated user (both candidates and units), ordered by creation date",
+  security: [{ Bearer: [] }],
+  responses: {
+    [OK]: createResponse(OK, GetNotificationsResponseSchema),
+    ...baseErrorResponses,
   },
-  handlers.getUserNotifications,
-);
+});
 
 /**
- * PUT /:id/mark-read - Mark single notification as read
+ * PUT /notifications/:id/mark-read - Mark single notification as read
  */
-router.openapi(
-  {
-    method: "put",
-    path: "/{id}/mark-read",
-    tags: ["Notifications"],
-    summary: "Mark notification as read",
-    description:
-      "Marks a specific notification as read for the authenticated user",
-    security: [{ Bearer: [] }],
-    request: {
-      params: NotificationIdParamSchema,
-    },
-    responses: {
-      [OK]: createResponse(OK, NotificationSchema),
-      ...notificationCrudErrorResponses,
-    },
+export const markNotificationAsRead = createRoute({
+  method: "put" as const,
+  path: "/notifications/{id}/mark-read",
+  tags: ["Notifications"],
+  summary: "Mark notification as read",
+  description:
+    "Marks a specific notification as read for the authenticated user",
+  security: [{ Bearer: [] }],
+  request: {
+    params: NotificationIdParamSchema,
   },
-  handlers.markNotificationAsRead,
-);
+  responses: {
+    [OK]: createResponse(OK, NotificationResponseSchema),
+    ...notificationCrudErrorResponses,
+  },
+});
 
 /**
- * PUT /mark-all-read - Mark all notifications as read
+ * PUT /notifications/mark-all-read - Mark all notifications as read
  */
-router.openapi(
-  {
-    method: "put",
-    path: "/mark-all-read",
-    tags: ["Notifications"],
-    summary: "Mark all notifications as read",
-    description: "Marks all notifications as read for the authenticated user",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: createResponse(
-        OK,
-        z.object({
-          updatedCount: z.number(),
-        }),
-      ),
-      ...baseErrorResponses,
-    },
+export const markAllNotificationsAsRead = createRoute({
+  method: "put" as const,
+  path: "/notifications/mark-all-read",
+  tags: ["Notifications"],
+  summary: "Mark all notifications as read",
+  description: "Marks all notifications as read for the authenticated user",
+  security: [{ Bearer: [] }],
+  responses: {
+    [OK]: createResponse(OK, MarkAllReadResponseSchema),
+    ...baseErrorResponses,
   },
-  handlers.markAllNotificationsAsRead,
-);
+});
 
 /**
- * DELETE /:id - Delete single notification
+ * DELETE /notifications/:id - Delete single notification
  */
-router.openapi(
-  {
-    method: "delete",
-    path: "/{id}",
-    tags: ["Notifications"],
-    summary: "Delete notification",
-    description:
-      "Deletes a specific notification. Users can only delete their own notifications.",
-    security: [{ Bearer: [] }],
-    request: {
-      params: NotificationIdParamSchema,
-    },
-    responses: {
-      [OK]: createResponse(OK),
-      ...notificationCrudErrorResponses,
-    },
+export const deleteNotification = createRoute({
+  method: "delete" as const,
+  path: "/notifications/{id}",
+  tags: ["Notifications"],
+  summary: "Delete notification",
+  description:
+    "Deletes a specific notification. Users can only delete their own notifications.",
+  security: [{ Bearer: [] }],
+  request: {
+    params: NotificationIdParamSchema,
   },
-  handlers.deleteNotification,
-);
+  responses: {
+    [OK]: createResponse(OK),
+    ...notificationCrudErrorResponses,
+  },
+});
 
 /**
- * DELETE / - Delete all notifications
+ * DELETE /notifications - Delete all notifications
  */
-router.openapi(
-  {
-    method: "delete",
-    path: "/",
-    tags: ["Notifications"],
-    summary: "Delete all notifications",
-    description:
-      "Deletes all notifications for the authenticated user. Each user can only delete their own notifications.",
-    security: [{ Bearer: [] }],
-    responses: {
-      [OK]: createResponse(
-        OK,
-        z.object({
-          deletedCount: z.number(),
-        }),
-      ),
-      ...baseErrorResponses,
-    },
+export const deleteAllNotifications = createRoute({
+  method: "delete" as const,
+  path: "/notifications",
+  tags: ["Notifications"],
+  summary: "Delete all notifications",
+  description:
+    "Deletes all notifications for the authenticated user. Each user can only delete their own notifications.",
+  security: [{ Bearer: [] }],
+  responses: {
+    [OK]: createResponse(OK, DeleteAllResponseSchema),
+    ...baseErrorResponses,
   },
-  handlers.deleteAllNotifications,
-);
+});
 
-export default router;
+export type GetUserNotifications = typeof getUserNotifications;
+export type MarkNotificationAsRead = typeof markNotificationAsRead;
+export type MarkAllNotificationsAsRead = typeof markAllNotificationsAsRead;
+export type DeleteNotification = typeof deleteNotification;
+export type DeleteAllNotifications = typeof deleteAllNotifications;

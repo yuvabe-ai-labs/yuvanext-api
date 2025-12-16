@@ -9,7 +9,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { applications } from "./application.schemas";
+import { applications } from "./application.schema";
 
 export const interviewProviderEnum = pgEnum("interview_provider", [
   "zoom",
