@@ -2,65 +2,32 @@ import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
 
 import {
-  BAD_REQUEST,
-  FORBIDDEN,
-  INTERNAL_SERVER_ERROR,
   NOT_FOUND,
   OK,
-  UNAUTHORIZED,
   UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
 import {
-  CreateTaskSchema,
-  EnrichedTaskResponseSchema,
-  GetTasksQuerySchema,
-  ReviewTaskSchema,
-  TaskIdParamSchema,
-  TaskResponseSchema,
-  UpdateTaskSchema,
+  createResponse,
+  restrictedErrorResponses,
+} from "@/lib/openapi/response-helpers";
+import { requireRole } from "@/middleware/auth";
+import {
+  createTaskSchema,
+  enrichedtaskResponseSchema,
+  getTasksQuerySchema,
+  reviewTaskSchema,
+  taskIdParamSchema,
+  taskResponseSchema,
+  updateTaskSchema,
 } from "@/routes/task_management/task.schema";
 
 // ============================================================================
-// RESPONSE HELPERS
+// CUSTOM ERROR RESPONSES FOR TASKS
 // ============================================================================
 
-function createResponse(statusCode: number, dataSchema?: z.ZodTypeAny) {
-  return {
-    description: getDescription(statusCode),
-    content: {
-      "application/json": {
-        schema: z.object({
-          status_code: z.literal(statusCode),
-          message: z.string(),
-          ...(dataSchema && { data: dataSchema }),
-          ...(statusCode === UNPROCESSABLE_ENTITY && { error: z.any() }),
-        }),
-      },
-    },
-  };
-}
-
-function getDescription(statusCode: number): string {
-  const descriptions: Record<number, string> = {
-    [OK]: "Success",
-    [BAD_REQUEST]: "Bad request",
-    [UNAUTHORIZED]: "Unauthorized - Authentication required",
-    [FORBIDDEN]: "Forbidden - Insufficient permissions",
-    [NOT_FOUND]: "Resource not found",
-    [UNPROCESSABLE_ENTITY]: "Validation error",
-    [INTERNAL_SERVER_ERROR]: "Internal server error",
-  };
-  return descriptions[statusCode] || "Response";
-}
-
-const commonErrorResponses = {
-  [UNAUTHORIZED]: createResponse(UNAUTHORIZED),
-  [FORBIDDEN]: createResponse(FORBIDDEN),
-  [INTERNAL_SERVER_ERROR]: createResponse(INTERNAL_SERVER_ERROR),
-};
-
+// Task routes need FORBIDDEN + NOT_FOUND + UNPROCESSABLE_ENTITY
 const taskErrorResponses = {
-  ...commonErrorResponses,
+  ...restrictedErrorResponses,
   [NOT_FOUND]: createResponse(NOT_FOUND),
   [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
 };
@@ -76,20 +43,20 @@ export const createTask = createRoute({
   method: "post" as const,
   path: "/tasks",
   tags: ["Tasks - Candidate"],
+  middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Create a new task",
   description: "Create a new task for a specific application (Candidate only)",
-  security: [{ Bearer: [] }],
   request: {
     body: {
       content: {
         "application/json": {
-          schema: CreateTaskSchema,
+          schema: createTaskSchema,
         },
       },
     },
   },
   responses: {
-    [OK]: createResponse(OK, TaskResponseSchema),
+    [OK]: createResponse(OK, taskResponseSchema),
     ...taskErrorResponses,
   },
 });
@@ -102,15 +69,15 @@ export const getAllTasks = createRoute({
   path: "/tasks",
   tags: ["Tasks - Candidate"],
   summary: "Get all tasks",
+  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
   description:
     "Get all tasks for the authenticated candidate. Optionally filter by applicationId",
-  security: [{ Bearer: [] }],
   request: {
-    query: GetTasksQuerySchema,
+    query: getTasksQuerySchema,
   },
   responses: {
-    [OK]: createResponse(OK, z.array(EnrichedTaskResponseSchema)),
-    ...commonErrorResponses,
+    [OK]: createResponse(OK, z.array(enrichedtaskResponseSchema)),
+    ...restrictedErrorResponses,
   },
 });
 
@@ -121,21 +88,21 @@ export const updateTask = createRoute({
   method: "put" as const,
   path: "/tasks/{id}",
   tags: ["Tasks - Candidate"],
+  middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Update a task",
   description: "Update task details (Candidate only)",
-  security: [{ Bearer: [] }],
   request: {
-    params: TaskIdParamSchema,
+    params: taskIdParamSchema,
     body: {
       content: {
         "application/json": {
-          schema: UpdateTaskSchema,
+          schema: updateTaskSchema,
         },
       },
     },
   },
   responses: {
-    [OK]: createResponse(OK, TaskResponseSchema),
+    [OK]: createResponse(OK, taskResponseSchema),
     ...taskErrorResponses,
   },
 });
@@ -147,11 +114,11 @@ export const deleteTask = createRoute({
   method: "delete" as const,
   path: "/tasks/{id}",
   tags: ["Tasks - Candidate"],
+  middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Delete a task",
   description: "Delete a task by ID (Candidate only)",
-  security: [{ Bearer: [] }],
   request: {
-    params: TaskIdParamSchema,
+    params: taskIdParamSchema,
   },
   responses: {
     [OK]: createResponse(OK),
@@ -170,22 +137,22 @@ export const reviewTask = createRoute({
   method: "post" as const,
   path: "/tasks/{id}/review",
   tags: ["Tasks - Unit"],
+  middleware: requireRole({ allowedRoles: ["unit"] }),
   summary: "Review a task",
   description:
     "Review a submitted task - mark as 'redo' or 'accepted' with remarks (Unit only)",
-  security: [{ Bearer: [] }],
   request: {
-    params: TaskIdParamSchema,
+    params: taskIdParamSchema,
     body: {
       content: {
         "application/json": {
-          schema: ReviewTaskSchema,
+          schema: reviewTaskSchema,
         },
       },
     },
   },
   responses: {
-    [OK]: createResponse(OK, TaskResponseSchema),
+    [OK]: createResponse(OK, taskResponseSchema),
     ...taskErrorResponses,
   },
 });

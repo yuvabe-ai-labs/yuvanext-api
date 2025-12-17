@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Enums
-export const ApplicationStatusEnum = z.enum([
+export const applicationStatusEnum = z.enum([
   "applied",
   "shortlisted",
   "rejected",
@@ -10,36 +10,36 @@ export const ApplicationStatusEnum = z.enum([
 ]);
 
 // Request Schemas
-export const SaveInternshipSchema = z.object({
+export const saveInternshipSchema = z.object({
   internshipId: z.uuid(),
 });
 
-export const RemoveSavedInternshipSchema = z.object({
+export const removeSavedInternshipSchema = z.object({
   internshipId: z.uuid(),
 });
 
-export const ApplyToInternshipSchema = z.object({
+export const applyToInternshipSchema = z.object({
   internshipId: z.uuid(),
   includedSections: z.array(z.string()).optional(),
 });
 
-export const InternshipIdParamSchema = z.object({
+export const internshipIdParamSchema = z.object({
   id: z.uuid(),
 });
 
 // Response Schemas
-export const SavedInternshipResponseSchema = z.object({
+export const savedinternshipResponseSchema = z.object({
   id: z.uuid(),
   candidateId: z.uuid(),
   internshipId: z.uuid(),
   createdAt: z.union([z.string(), z.date()]),
 });
 
-export const ApplicationResponseSchema = z.object({
+export const applicationResponseSchema = z.object({
   id: z.uuid(),
   userId: z.uuid(),
   internshipId: z.uuid(),
-  status: ApplicationStatusEnum,
+  status: applicationStatusEnum,
   includedSections: z.array(z.string()).nullable(),
   profileScore: z.number().nullable(),
   candidateOfferDecision: z.enum(["accept", "reject", "pending"]),
@@ -47,7 +47,7 @@ export const ApplicationResponseSchema = z.object({
   updatedAt: z.union([z.string(), z.date()]),
 });
 
-export const SavedInternshipListItemSchema = z.object({
+export const savedInternshipListItemSchema = z.object({
   id: z.uuid(),
   internshipId: z.uuid(),
   createdAt: z.union([z.string(), z.date()]),
@@ -56,10 +56,10 @@ export const SavedInternshipListItemSchema = z.object({
   internshipCreatedBy: z.uuid().nullable(),
 });
 
-export const AppliedInternshipListItemSchema = z.object({
+export const appliedInternshipListItemSchema = z.object({
   id: z.uuid(),
   internshipId: z.uuid(),
-  status: ApplicationStatusEnum,
+  status: applicationStatusEnum,
   includedSections: z.array(z.string()).nullable(),
   createdAt: z.union([z.string(), z.date()]),
   internshipTitle: z.string().nullable(),
@@ -67,12 +67,12 @@ export const AppliedInternshipListItemSchema = z.object({
   internshipCreatedBy: z.uuid().nullable(),
 });
 
-export const CountsResponseSchema = z.object({
+export const countsResponseSchema = z.object({
   savedCount: z.number(),
   appliedCount: z.number(),
 });
 
-export const ShareLinksResponseSchema = z.object({
+export const shareLinksResponseSchema = z.object({
   facebook: z.url(),
   linkedin: z.url(),
   x: z.url(),
@@ -80,10 +80,10 @@ export const ShareLinksResponseSchema = z.object({
   url: z.url(),
 });
 
-export const ApplicationStatusItemSchema = z.object({
+export const applicationStatusItemSchema = z.object({
   id: z.uuid(),
   applicationTitle: z.string().nullable(),
-  status: ApplicationStatusEnum,
+  status: applicationStatusEnum,
   unitName: z.string().nullable(),
   avatarUrl: z.string().nullable(),
   createdAt: z.union([z.string(), z.date()]),

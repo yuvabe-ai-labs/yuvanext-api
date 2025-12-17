@@ -14,7 +14,6 @@ import {
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
   OK,
-  UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
 
 import type {
@@ -26,11 +25,6 @@ import type {
   GetUnitStats,
   UpdateInternship,
 } from "./internship.routes";
-
-import {
-  CreateInternshipSchema,
-  UpdateInternshipSchema,
-} from "./internship.schema";
 
 // GET /internships - Get all internships (for candidates) or created internships (for units)
 export const getInternships: AppRouteHandler<GetInternships> = async (c) => {
@@ -86,17 +80,7 @@ export const getInternshipById: AppRouteHandler<GetInternshipById> = async (
 ) => {
   const user = c.get("user");
 
-  const { id } = c.req.param() as { id?: string };
-
-  if (!id) {
-    return c.json(
-      {
-        status_code: UNPROCESSABLE_ENTITY,
-        message: "Internship ID is required",
-      },
-      UNPROCESSABLE_ENTITY,
-    );
-  }
+  const { id } = c.req.valid("param");
 
   try {
     const internshipData = await db
@@ -170,21 +154,7 @@ export const createInternship: AppRouteHandler<CreateInternship> = async (
   }
 
   try {
-    const json = await c.req.json().catch(() => ({}));
-    const parsed = CreateInternshipSchema.safeParse(json);
-
-    if (!parsed.success) {
-      return c.json(
-        {
-          status_code: UNPROCESSABLE_ENTITY,
-          message: "Validation Error",
-          error: parsed.error.issues,
-        },
-        UNPROCESSABLE_ENTITY,
-      );
-    }
-
-    const data = parsed.data;
+    const data = c.req.valid("json");
 
     // Prepare insert payload; keep closingDate as string (schema expects string)
     const internshipData = {
@@ -234,17 +204,7 @@ export const updateInternship: AppRouteHandler<UpdateInternship> = async (
     );
   }
 
-  const { id } = c.req.param() as { id?: string };
-
-  if (!id) {
-    return c.json(
-      {
-        status_code: UNPROCESSABLE_ENTITY,
-        message: "Internship ID is required",
-      },
-      UNPROCESSABLE_ENTITY,
-    );
-  }
+  const { id } = c.req.valid("param");
 
   try {
     // Check if internship exists and belongs to user
@@ -270,22 +230,7 @@ export const updateInternship: AppRouteHandler<UpdateInternship> = async (
         FORBIDDEN,
       );
     }
-
-    const json = await c.req.json().catch(() => ({}));
-    const parsed = UpdateInternshipSchema.safeParse(json);
-
-    if (!parsed.success) {
-      return c.json(
-        {
-          status_code: UNPROCESSABLE_ENTITY,
-          message: "Validation Error",
-          error: parsed.error.issues,
-        },
-        UNPROCESSABLE_ENTITY,
-      );
-    }
-
-    const data = parsed.data;
+    const data = c.req.valid("json");
 
     // Convert closingDate string to Date if provided
     const updateData = {
@@ -324,16 +269,6 @@ export const getRecommendedInternships: AppRouteHandler<
   GetRecommendedInternships
 > = async (c) => {
   const user = c.get("user");
-
-  if (user.role !== "candidate") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only candidates can get recommendations",
-      },
-      FORBIDDEN,
-    );
-  }
 
   try {
     const profile = await db
@@ -485,27 +420,7 @@ export const deleteInternship: AppRouteHandler<DeleteInternship> = async (
 ) => {
   const user = c.get("user");
 
-  if (user.role !== "unit") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only units can delete internships",
-      },
-      FORBIDDEN,
-    );
-  }
-
-  const { id } = c.req.param() as { id: string };
-
-  if (!id) {
-    return c.json(
-      {
-        status_code: UNPROCESSABLE_ENTITY,
-        message: "Internship ID is required",
-      },
-      UNPROCESSABLE_ENTITY,
-    );
-  }
+  const { id } = c.req.valid("param");
 
   try {
     const existingInternship = await db
@@ -554,16 +469,6 @@ export const deleteInternship: AppRouteHandler<DeleteInternship> = async (
 
 export const getUnitStats: AppRouteHandler<GetUnitStats> = async (c) => {
   const user = c.get("user");
-
-  if (user.role !== "unit") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only units can access statistics",
-      },
-      FORBIDDEN,
-    );
-  }
 
   try {
     // Get start of current month

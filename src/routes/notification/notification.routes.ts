@@ -1,70 +1,31 @@
 import { createRoute } from "@hono/zod-openapi";
-import { z } from "zod";
 
 import {
-  BAD_REQUEST,
   FORBIDDEN,
-  INTERNAL_SERVER_ERROR,
   NOT_FOUND,
   OK,
-  UNAUTHORIZED,
+  UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
+import {
+  commonErrorResponses,
+  createResponse,
+} from "@/lib/openapi/response-helpers";
+import { requireRole } from "@/middleware/auth";
 
 import {
-  DeleteAllResponseSchema,
-  GetNotificationsResponseSchema,
-  MarkAllReadResponseSchema,
-  NotificationIdParamSchema,
-  NotificationResponseSchema,
+  deleteAllResponseSchema,
+  getNotificationsResponseSchema,
+  markAllReadResponseSchema,
+  notificationIdParamSchema,
+  notificationResponseSchema,
 } from "./notification.schema";
 
-// ============================================================================
-// RESPONSE HELPERS
-// ============================================================================
-
-function createResponse(statusCode: number, dataSchema?: z.ZodTypeAny) {
-  return {
-    description: getDescription(statusCode),
-    content: {
-      "application/json": {
-        schema: z.object({
-          status_code: z.literal(statusCode),
-          message: z.string(),
-          ...(dataSchema && { data: dataSchema }),
-        }),
-      },
-    },
-  };
-}
-
-function getDescription(statusCode: number): string {
-  const descriptions: Record<number, string> = {
-    [OK]: "Success",
-    [BAD_REQUEST]: "Invalid request parameters",
-    [UNAUTHORIZED]: "Unauthorized - User not authenticated",
-    [FORBIDDEN]: "Forbidden - Insufficient permissions",
-    [NOT_FOUND]: "Resource not found",
-    [INTERNAL_SERVER_ERROR]: "Internal server error",
-  };
-  return descriptions[statusCode] || "Response";
-}
-
-// Common error response sets
-const baseErrorResponses = {
-  [UNAUTHORIZED]: createResponse(UNAUTHORIZED),
-  [INTERNAL_SERVER_ERROR]: createResponse(INTERNAL_SERVER_ERROR),
-};
-
 const notificationCrudErrorResponses = {
-  ...baseErrorResponses,
-  [BAD_REQUEST]: createResponse(BAD_REQUEST),
+  ...commonErrorResponses,
+  [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
   [FORBIDDEN]: createResponse(FORBIDDEN),
   [NOT_FOUND]: createResponse(NOT_FOUND),
 };
-
-// ============================================================================
-// ROUTE DEFINITIONS
-// ============================================================================
 
 /**
  * GET /notifications - Get all user notifications
@@ -73,13 +34,13 @@ export const getUserNotifications = createRoute({
   method: "get" as const,
   path: "/notifications",
   tags: ["Notifications"],
+  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
   summary: "Get user notifications",
   description:
     "Returns all notifications for the authenticated user (both candidates and units), ordered by creation date",
-  security: [{ Bearer: [] }],
   responses: {
-    [OK]: createResponse(OK, GetNotificationsResponseSchema),
-    ...baseErrorResponses,
+    [OK]: createResponse(OK, getNotificationsResponseSchema),
+    ...commonErrorResponses,
   },
 });
 
@@ -90,15 +51,15 @@ export const markNotificationAsRead = createRoute({
   method: "put" as const,
   path: "/notifications/{id}/mark-read",
   tags: ["Notifications"],
+  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
   summary: "Mark notification as read",
   description:
     "Marks a specific notification as read for the authenticated user",
-  security: [{ Bearer: [] }],
   request: {
-    params: NotificationIdParamSchema,
+    params: notificationIdParamSchema,
   },
   responses: {
-    [OK]: createResponse(OK, NotificationResponseSchema),
+    [OK]: createResponse(OK, notificationResponseSchema),
     ...notificationCrudErrorResponses,
   },
 });
@@ -110,12 +71,12 @@ export const markAllNotificationsAsRead = createRoute({
   method: "put" as const,
   path: "/notifications/mark-all-read",
   tags: ["Notifications"],
+  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
   summary: "Mark all notifications as read",
   description: "Marks all notifications as read for the authenticated user",
-  security: [{ Bearer: [] }],
   responses: {
-    [OK]: createResponse(OK, MarkAllReadResponseSchema),
-    ...baseErrorResponses,
+    [OK]: createResponse(OK, markAllReadResponseSchema),
+    ...commonErrorResponses,
   },
 });
 
@@ -126,12 +87,12 @@ export const deleteNotification = createRoute({
   method: "delete" as const,
   path: "/notifications/{id}",
   tags: ["Notifications"],
+  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
   summary: "Delete notification",
   description:
     "Deletes a specific notification. Users can only delete their own notifications.",
-  security: [{ Bearer: [] }],
   request: {
-    params: NotificationIdParamSchema,
+    params: notificationIdParamSchema,
   },
   responses: {
     [OK]: createResponse(OK),
@@ -146,13 +107,13 @@ export const deleteAllNotifications = createRoute({
   method: "delete" as const,
   path: "/notifications",
   tags: ["Notifications"],
+  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
   summary: "Delete all notifications",
   description:
     "Deletes all notifications for the authenticated user. Each user can only delete their own notifications.",
-  security: [{ Bearer: [] }],
   responses: {
-    [OK]: createResponse(OK, DeleteAllResponseSchema),
-    ...baseErrorResponses,
+    [OK]: createResponse(OK, deleteAllResponseSchema),
+    ...commonErrorResponses,
   },
 });
 

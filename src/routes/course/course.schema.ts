@@ -1,20 +1,20 @@
 import { z } from "zod";
 
 // Enums
-export const DifficultyLevelEnum = z.enum([
+export const difficultyLevelEnum = z.enum([
   "beginner",
   "intermediate",
   "advanced",
 ]);
 
 // Response Schemas
-export const CourseResponseSchema = z.object({
+export const courseResponseSchema = z.object({
   id: z.uuid(),
   title: z.string(),
   description: z.string().nullable(),
   duration: z.string().nullable(),
   category: z.string().nullable(),
-  difficultyLevel: DifficultyLevelEnum.nullable(),
+  difficultyLevel: difficultyLevelEnum.nullable(),
   createdBy: z.uuid(),
   bannerUrl: z.string().nullable(),
   redirectUrl: z.string().nullable(),

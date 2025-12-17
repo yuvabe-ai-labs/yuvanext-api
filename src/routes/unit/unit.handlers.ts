@@ -6,29 +6,15 @@ import db from "@/db";
 import { user as userTable } from "@/db/schema/auth.schema";
 import { units } from "@/db/schema/unit.schema";
 import {
-  FORBIDDEN,
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
   OK,
-  UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
 
 import type { GetAllUnits, GetUnitById } from "./unit.routes";
 
 // GET /units - Get all units (candidate only)
 export const getAllUnits: AppRouteHandler<GetAllUnits> = async (c) => {
-  const user = c.get("user");
-
-  if (user.role !== "candidate") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only candidates can view all units",
-      },
-      FORBIDDEN,
-    );
-  }
-
   try {
     // Get all units with their basic user information
     const unitsList = await db
@@ -86,29 +72,7 @@ export const getAllUnits: AppRouteHandler<GetAllUnits> = async (c) => {
 
 // GET /units/:id - Get specific unit by ID (candidate only)
 export const getUnitById: AppRouteHandler<GetUnitById> = async (c) => {
-  const user = c.get("user");
-
-  if (user.role !== "candidate") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only candidates can view unit details",
-      },
-      FORBIDDEN,
-    );
-  }
-
-  const { id } = c.req.param() as { id: string };
-
-  if (!id) {
-    return c.json(
-      {
-        status_code: UNPROCESSABLE_ENTITY,
-        message: "Unit ID is required",
-      },
-      UNPROCESSABLE_ENTITY,
-    );
-  }
+  const { id } = c.req.valid("param");
 
   try {
     // Get specific unit with user information

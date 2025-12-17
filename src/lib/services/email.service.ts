@@ -44,8 +44,9 @@ const transporter = nodemailer.createTransport({
 
 // Resolve templates directory
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const templatesDir = path.join(__dirname, "../../routes/templates");
+const templatesDir = path.join(__dirname, "../../templates");
 
+// FIXED: Use forward slashes or let path.join handle it
 const templateFiles: Record<string, string> = {
   applied: path.join(templatesDir, "applied.html"),
   shortlisted: path.join(templatesDir, "shortlisted.html"),
@@ -56,20 +57,52 @@ const templateFiles: Record<string, string> = {
 };
 
 const compiledTemplates: Record<string, Handlebars.TemplateDelegate> = {};
+let templatesLoaded = false;
+let loadingPromise: Promise<void> | null = null;
 
 async function loadTemplates() {
-  const keys = Object.keys(templateFiles);
-  await Promise.all(
-    keys.map(async (k) => {
-      if (compiledTemplates[k]) return;
-      try {
-        const content = await readFile(templateFiles[k], "utf-8");
+  // If already loaded, return immediately
+  if (templatesLoaded) return;
+
+  // If currently loading, wait for that to complete
+  if (loadingPromise) {
+    await loadingPromise;
+    return;
+  }
+
+  // Start loading
+  loadingPromise = (async () => {
+    const keys = Object.keys(templateFiles);
+    const results = await Promise.allSettled(
+      keys.map(async (k) => {
+        const filePath = templateFiles[k];
+
+        const content = await readFile(filePath, "utf-8");
         compiledTemplates[k] = Handlebars.compile(content);
-      } catch {
-        // Silently handle template loading errors
-      }
-    }),
-  );
+      }),
+    );
+
+    // Check for failures
+    const failures = results
+      .map((result, index) => ({ result, key: keys[index] }))
+      .filter(({ result }) => result.status === "rejected");
+
+    if (failures.length > 0) {
+      console.error("Failed to load templates:");
+      failures.forEach(({ key, result }) => {
+        if (result.status === "rejected") {
+          console.error(`  - ${key}: ${result.reason}`);
+        }
+      });
+      throw new Error(
+        `Failed to load ${failures.length} template(s): ${failures.map((f) => f.key).join(", ")}`,
+      );
+    }
+
+    templatesLoaded = true;
+  })();
+
+  await loadingPromise;
 }
 
 function formatScheduledAt(iso?: string) {
@@ -88,12 +121,11 @@ function formatScheduledAt(iso?: string) {
 const subjects = {
   applied: (p: EmailParams) => `Application Received - ${p.internshipTitle}`,
   shortlisted: (p: EmailParams) =>
-    `🎉 Great News! You've been shortlisted - ${p.internshipTitle}`,
+    `Great News! You've been shortlisted - ${p.internshipTitle}`,
   rejected: (p: EmailParams) => `Application Update - ${p.internshipTitle}`,
-  interviewed: (p: EmailParams) =>
-    `📅 Interview Scheduled - ${p.internshipTitle}`,
+  interviewed: (p: EmailParams) => `Interview Scheduled - ${p.internshipTitle}`,
   hired: (p: EmailParams) =>
-    `🎊 Congratulations! Offer Letter - ${p.internshipTitle}`,
+    `Congratulations! Offer Letter - ${p.internshipTitle}`,
 };
 
 // Send application-related email
@@ -102,21 +134,28 @@ export async function sendApplicationEmail(
   params: EmailParams,
 ): Promise<boolean> {
   try {
+    // Ensure templates are loaded
     await loadTemplates();
 
     const template = compiledTemplates[status];
+
+    if (!template) {
+      const availableTemplates = Object.keys(compiledTemplates).join(", ");
+      const errorMsg = `Template not found for status: ${status}. Available templates: ${availableTemplates || "NONE"}`;
+      console.warn(errorMsg);
+      throw new Error(errorMsg);
+    }
+
     const scheduledAtFormatted = formatScheduledAt(
       params.additionalData?.scheduledAt,
     );
 
-    const html = template
-      ? template({
-          ...params,
-          scheduledAt: scheduledAtFormatted,
-          meetingLink: params.additionalData?.meetingLink,
-          notes: params.additionalData?.notes,
-        })
-      : "";
+    const html = template({
+      ...params,
+      scheduledAt: scheduledAtFormatted,
+      meetingLink: params.additionalData?.meetingLink,
+      notes: params.additionalData?.notes,
+    });
 
     const subject = subjects[status](params);
 
@@ -127,10 +166,8 @@ export async function sendApplicationEmail(
       html,
     });
 
-    console.error(`Email sent successfully: ${status} to ${params.to}`);
     return true;
-  } catch (error) {
-    console.error(`Failed to send ${status} email:`, error);
+  } catch {
     return false;
   }
 }
@@ -142,20 +179,19 @@ export async function sendUnitInterviewEmail(
   try {
     await loadTemplates();
     const template = compiledTemplates.unitInterview;
+
     const scheduledAtFormatted = formatScheduledAt(
       params.additionalData?.scheduledAt,
     );
 
-    const html = template
-      ? template({
-          ...params,
-          scheduledAt: scheduledAtFormatted,
-          meetingLink: params.additionalData?.meetingLink,
-          notes: params.additionalData?.notes,
-        })
-      : "";
+    const html = template({
+      ...params,
+      scheduledAt: scheduledAtFormatted,
+      meetingLink: params.additionalData?.meetingLink,
+      notes: params.additionalData?.notes,
+    });
 
-    const subject = `📅 Interview Scheduled - ${params.candidateName} for ${params.internshipTitle}`;
+    const subject = `Interview Scheduled - ${params.candidateName} for ${params.internshipTitle}`;
 
     await transporter.sendMail({
       from: env.SMTP_USER,
@@ -164,10 +200,8 @@ export async function sendUnitInterviewEmail(
       html,
     });
 
-    console.error(`Unit interview email sent successfully to ${params.to}`);
     return true;
-  } catch (error) {
-    console.error("Failed to send unit interview email:", error);
+  } catch {
     return false;
   }
 }
@@ -176,10 +210,10 @@ export async function sendUnitInterviewEmail(
 export async function verifyEmailConfiguration(): Promise<boolean> {
   try {
     await transporter.verify();
-    console.error("Email configuration verified successfully");
     return true;
-  } catch (error) {
-    console.error("Email configuration verification failed:", error);
+  } catch {
     return false;
   }
 }
+
+loadTemplates().catch(() => {});

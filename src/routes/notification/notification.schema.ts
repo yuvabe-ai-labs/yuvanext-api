@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Enums
-export const NotificationTypeEnum = z.enum([
+export const notificationTypeEnum = z.enum([
   "success",
   "info",
   "warning",
@@ -9,32 +9,32 @@ export const NotificationTypeEnum = z.enum([
 ]);
 
 // Request Schemas
-export const NotificationIdParamSchema = z.object({
+export const notificationIdParamSchema = z.object({
   id: z.uuid().describe("Notification ID"),
 });
 
 // Response Schemas
-export const NotificationResponseSchema = z.object({
+export const notificationResponseSchema = z.object({
   id: z.uuid(),
   userId: z.uuid(),
   title: z.string().nullable(),
   message: z.string().nullable(),
-  type: NotificationTypeEnum,
+  type: notificationTypeEnum,
   isRead: z.boolean(),
   createdAt: z.union([z.string(), z.date()]),
   updatedAt: z.union([z.string(), z.date()]),
 });
 
-export const GetNotificationsResponseSchema = z.object({
-  notifications: z.array(NotificationResponseSchema),
+export const getNotificationsResponseSchema = z.object({
+  notifications: z.array(notificationResponseSchema),
   total: z.number(),
   unreadCount: z.number(),
 });
 
-export const MarkAllReadResponseSchema = z.object({
+export const markAllReadResponseSchema = z.object({
   updatedCount: z.number(),
 });
 
-export const DeleteAllResponseSchema = z.object({
+export const deleteAllResponseSchema = z.object({
   deletedCount: z.number(),
 });

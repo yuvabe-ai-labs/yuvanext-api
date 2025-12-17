@@ -10,7 +10,6 @@ import { units } from "@/db/schema/unit.schema";
 
 import type { Chat } from "./chatbot.routes";
 
-import { ChatRequestSchema } from "./chatbot.schema";
 import {
   addToConversation,
   detectAndExtractFields,
@@ -22,20 +21,8 @@ import {
 import { CANDIDATE_SYSTEM_PROMPT, UNIT_SYSTEM_PROMPT } from "./prompts";
 
 export const chat: AppRouteHandler<Chat> = async (c) => {
-  const json = await c.req.json().catch(() => ({}));
-  const parsed = ChatRequestSchema.safeParse(json);
+  const { message } = c.req.valid("json");
 
-  if (!parsed.success) {
-    return c.json(
-      {
-        success: false as const,
-        error: "Invalid request",
-      },
-      400,
-    );
-  }
-
-  const { message } = parsed.data;
   const user = c.get("user");
 
   const userId = user.id as string;
@@ -494,7 +481,7 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
           success: false as const,
           error: "Invalid user role",
         },
-        400,
+        422,
       );
     }
 
@@ -594,7 +581,7 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
           needsRetry: true,
           fieldsFailed: failedFields.map((f) => f.field),
         },
-        400,
+        422,
       );
     }
 

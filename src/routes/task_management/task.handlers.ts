@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { AppRouteHandler } from "@/types/app.types";
 
@@ -14,7 +14,6 @@ import {
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
   OK,
-  UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
 
 import type {
@@ -25,12 +24,6 @@ import type {
   UpdateTask,
 } from "./task.routers";
 
-import {
-  CreateTaskSchema,
-  ReviewTaskSchema,
-  UpdateTaskSchema,
-} from "./task.schema";
-
 // ============================================================================
 // CANDIDATE HANDLERS
 // ============================================================================
@@ -39,32 +32,8 @@ import {
 export const createTask: AppRouteHandler<CreateTask> = async (c) => {
   const user = c.get("user");
 
-  if (user.role !== "candidate") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only candidates can create tasks",
-      },
-      FORBIDDEN,
-    );
-  }
-
   try {
-    const json = await c.req.json().catch(() => ({}));
-    const parsed = CreateTaskSchema.safeParse(json);
-
-    if (!parsed.success) {
-      return c.json(
-        {
-          status_code: UNPROCESSABLE_ENTITY,
-          message: "Validation Error",
-          error: parsed.error.issues,
-        },
-        UNPROCESSABLE_ENTITY,
-      );
-    }
-
-    const data = parsed.data;
+    const data = c.req.valid("json");
 
     // Verify the application belongs to the candidate
     const application = await db
@@ -134,7 +103,7 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
   const user = c.get("user");
 
   try {
-    const applicationId = c.req.query("applicationId");
+    const { applicationId } = c.req.valid("query");
 
     let relevantApplications: (typeof applications.$inferSelect)[];
 
@@ -336,102 +305,50 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
 // PUT /tasks/:id - Update a task (Candidate)
 export const updateTask: AppRouteHandler<UpdateTask> = async (c) => {
   const user = c.get("user");
-  const taskId = c.req.param("id");
-
-  if (!taskId) {
-    return c.json(
-      {
-        status_code: UNPROCESSABLE_ENTITY,
-        message: "Task ID is required",
-      },
-      UNPROCESSABLE_ENTITY,
-    );
-  }
-
-  if (user.role !== "candidate") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only candidates can update tasks",
-      },
-      FORBIDDEN,
-    );
-  }
+  const { id: taskId } = c.req.valid("param");
+  const body = c.req.valid("json");
 
   try {
-    const json = await c.req.json().catch(() => ({}));
-    const parsed = UpdateTaskSchema.safeParse(json);
+    // Update only if task exists AND belongs to the candidate's application
+    const [updatedTask] = await db
+      .update(tasks)
+      .set({ ...body, updatedAt: new Date() })
+      .where(
+        and(
+          eq(tasks.id, taskId),
+          eq(
+            tasks.applicationId,
+            db
+              .select({ id: applications.id })
+              .from(applications)
+              .where(eq(applications.userId, user.id)),
+          ),
+        ),
+      )
+      .returning();
 
-    if (!parsed.success) {
-      return c.json(
-        {
-          status_code: UNPROCESSABLE_ENTITY,
-          message: "Validation Error",
-          error: parsed.error.issues,
-        },
-        UNPROCESSABLE_ENTITY,
-      );
-    }
-
-    // Check if task exists and belongs to candidate
-    const task = await db
-      .select()
-      .from(tasks)
-      .where(eq(tasks.id, taskId))
-      .limit(1);
-
-    if (!task.length) {
+    if (!updatedTask) {
       return c.json(
         {
           status_code: NOT_FOUND,
-          message: "Task not found",
+          message: "Task not found or you do not own it",
         },
         NOT_FOUND,
       );
     }
 
-    const application = await db
-      .select()
-      .from(applications)
-      .where(eq(applications.id, task[0].applicationId))
-      .limit(1);
-
-    if (!application.length || application[0].userId !== user.id) {
-      return c.json(
-        {
-          status_code: FORBIDDEN,
-          message: "You can only update your own tasks",
-        },
-        FORBIDDEN,
-      );
-    }
-
-    // Update the task
-    const data = parsed.data;
-    const updatedTask = await db
-      .update(tasks)
-      .set({
-        ...data,
-        updatedAt: new Date(),
-      })
-      .where(eq(tasks.id, taskId))
-      .returning();
-
     return c.json(
       {
         status_code: OK,
         message: "Task updated successfully",
-        data: updatedTask[0],
+        data: updatedTask,
       },
       OK,
     );
   } catch (err) {
     console.error("Error updating task:", err);
     return c.json(
-      {
-        status_code: INTERNAL_SERVER_ERROR,
-        message: "Internal server error",
-      },
+      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
       INTERNAL_SERVER_ERROR,
     );
   }
@@ -440,27 +357,7 @@ export const updateTask: AppRouteHandler<UpdateTask> = async (c) => {
 // DELETE /tasks/:id - Delete a task (Candidate)
 export const deleteTask: AppRouteHandler<DeleteTask> = async (c) => {
   const user = c.get("user");
-  const taskId = c.req.param("id");
-
-  if (!taskId) {
-    return c.json(
-      {
-        status_code: UNPROCESSABLE_ENTITY,
-        message: "Task ID is required",
-      },
-      UNPROCESSABLE_ENTITY,
-    );
-  }
-
-  if (user.role !== "candidate") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only candidates can delete tasks",
-      },
-      FORBIDDEN,
-    );
-  }
+  const { id: taskId } = c.req.valid("param");
 
   try {
     // Check if task exists and belongs to candidate
@@ -525,106 +422,60 @@ export const deleteTask: AppRouteHandler<DeleteTask> = async (c) => {
 // POST /tasks/:id/review - Review a task (Unit - mark as redo or accepted)
 export const reviewTask: AppRouteHandler<ReviewTask> = async (c) => {
   const user = c.get("user");
-  const taskId = c.req.param("id");
 
-  if (!taskId) {
-    return c.json(
-      {
-        status_code: UNPROCESSABLE_ENTITY,
-        message: "Task ID is required",
-      },
-      UNPROCESSABLE_ENTITY,
-    );
-  }
-
-  if (user.role !== "unit") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only units can review tasks",
-      },
-      FORBIDDEN,
-    );
-  }
+  const { id: taskId } = c.req.valid("param");
+  const body = c.req.valid("json");
 
   try {
-    const json = await c.req.json().catch(() => ({}));
-    const parsed = ReviewTaskSchema.safeParse(json);
-
-    if (!parsed.success) {
-      return c.json(
-        {
-          status_code: UNPROCESSABLE_ENTITY,
-          message: "Validation Error",
-          error: parsed.error.issues,
-        },
-        UNPROCESSABLE_ENTITY,
-      );
-    }
-
-    // Check if task exists
-    const task = await db
-      .select()
-      .from(tasks)
-      .where(eq(tasks.id, taskId))
-      .limit(1);
-
-    if (!task.length) {
-      return c.json(
-        {
-          status_code: NOT_FOUND,
-          message: "Task not found",
-        },
-        NOT_FOUND,
-      );
-    }
-
-    // Verify the task belongs to an application for this unit's internship
-    const application = await db
-      .select()
-      .from(applications)
-      .where(eq(applications.id, task[0].applicationId))
-      .limit(1);
-
-    if (!application.length) {
-      return c.json(
-        {
-          status_code: NOT_FOUND,
-          message: "Associated application not found",
-        },
-        NOT_FOUND,
-      );
-    }
-
-    // Review the task
-    const data = parsed.data;
-    const updatedTask = await db
+    const [updatedTask] = await db
       .update(tasks)
       .set({
-        status: data.status,
-        reviewRemarks: data.reviewRemarks,
+        status: body.status,
+        reviewRemarks: body.reviewRemarks,
         reviewedBy: user.id,
         reviewedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(tasks.id, taskId))
+      .where(
+        and(
+          eq(tasks.id, taskId),
+          inArray(
+            tasks.applicationId,
+            db
+              .select({ id: applications.id })
+              .from(applications)
+              .innerJoin(
+                internships,
+                eq(applications.internshipId, internships.id),
+              )
+              .where(eq(internships.createdBy, user.id)),
+          ),
+        ),
+      )
       .returning();
+
+    if (!updatedTask) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Task not found or not assignable to your unit",
+        },
+        NOT_FOUND,
+      );
+    }
 
     return c.json(
       {
         status_code: OK,
-        message: `Task ${data.status === "accepted" ? "accepted" : "marked for redo"} successfully`,
-        data: updatedTask[0],
+        message: `Task ${body.status === "accepted" ? "accepted" : "marked for redo"} successfully`,
+        data: updatedTask,
       },
       OK,
     );
   } catch (err) {
     console.error("Error reviewing task:", err);
     return c.json(
-      {
-        status_code: INTERNAL_SERVER_ERROR,
-        message: "Internal server error",
-      },
+      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
       INTERNAL_SERVER_ERROR,
     );
   }

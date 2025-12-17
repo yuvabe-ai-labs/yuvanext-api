@@ -11,10 +11,8 @@ import { notifications } from "@/db/schema/notification.schema";
 import { savedInternship } from "@/db/schema/saved-internship.schema";
 import { units } from "@/db/schema/unit.schema";
 import {
-  BAD_REQUEST,
   CONFLICT,
   CREATED,
-  FORBIDDEN,
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
   OK,
@@ -31,42 +29,11 @@ import type {
   ShareInternship,
 } from "./action.routes";
 
-import {
-  ApplyToInternshipSchema,
-  InternshipIdParamSchema,
-  RemoveSavedInternshipSchema,
-  SaveInternshipSchema,
-} from "./action.schema";
-
 // POST /internship/save - save an internship for the candidate
 export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
   const user = c.get("user");
 
-  // Check if user is a candidate
-  if (user.role !== "candidate") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only candidates can save internships",
-      },
-      FORBIDDEN,
-    );
-  }
-
-  const body = await c.req.json().catch(() => ({}));
-  const parse = SaveInternshipSchema.safeParse(body);
-  if (!parse.success) {
-    return c.json(
-      {
-        status_code: BAD_REQUEST,
-        message: "Invalid request",
-        errors: parse.error.issues,
-      },
-      BAD_REQUEST,
-    );
-  }
-  const { internshipId } = parse.data;
-
+  const { internshipId } = c.req.valid("json");
   try {
     // check internship exists
     const found = await db
@@ -119,30 +86,7 @@ export const removeSavedInternship: AppRouteHandler<
 > = async (c) => {
   const user = c.get("user");
 
-  // Check if user is a candidate
-  if (user.role !== "candidate") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only candidates can remove saved internships",
-      },
-      FORBIDDEN,
-    );
-  }
-
-  const body = await c.req.json().catch(() => ({}));
-  const parse = RemoveSavedInternshipSchema.safeParse(body);
-  if (!parse.success) {
-    return c.json(
-      {
-        status_code: BAD_REQUEST,
-        message: "Invalid request",
-        errors: parse.error.issues,
-      },
-      BAD_REQUEST,
-    );
-  }
-  const { internshipId } = parse.data;
+  const { internshipId } = c.req.valid("json");
 
   try {
     const result = await db
@@ -181,31 +125,7 @@ export const applyToInternship: AppRouteHandler<ApplyToInternship> = async (
 ) => {
   const user = c.get("user");
 
-  // Check if user is a candidate
-  if (user.role !== "candidate") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only candidates can apply to internships",
-      },
-      FORBIDDEN,
-    );
-  }
-
-  const body = await c.req.json().catch(() => ({}));
-  const parse = ApplyToInternshipSchema.safeParse(body);
-  if (!parse.success) {
-    return c.json(
-      {
-        status_code: BAD_REQUEST,
-        message: "Invalid request",
-        errors: parse.error.issues,
-      },
-      BAD_REQUEST,
-    );
-  }
-  const { internshipId, includedSections } = parse.data;
-
+  const { internshipId, includedSections } = c.req.valid("json");
   try {
     // check internship exists
     const found = await db
@@ -283,17 +203,6 @@ export const getSavedInternships: AppRouteHandler<GetSavedInternships> = async (
 ) => {
   const user = c.get("user");
 
-  // Check if user is a candidate
-  if (user.role !== "candidate") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only candidates can view saved internships",
-      },
-      FORBIDDEN,
-    );
-  }
-
   try {
     const list = await db
       .select({
@@ -329,17 +238,6 @@ export const getAppliedInternships: AppRouteHandler<
   GetAppliedInternships
 > = async (c) => {
   const user = c.get("user");
-
-  // Check if user is a candidate
-  if (user.role !== "candidate") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only candidates can view applied internships",
-      },
-      FORBIDDEN,
-    );
-  }
 
   try {
     const list = await db
@@ -377,17 +275,6 @@ export const getAppliedInternships: AppRouteHandler<
 export const getCounts: AppRouteHandler<GetCounts> = async (c) => {
   const user = c.get("user");
 
-  // Check if user is a candidate
-  if (user.role !== "candidate") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only candidates can view counts",
-      },
-      FORBIDDEN,
-    );
-  }
-
   try {
     const saved = await db
       .select()
@@ -417,16 +304,7 @@ export const getCounts: AppRouteHandler<GetCounts> = async (c) => {
 
 // GET /internship/share/:id - generate share links for an internship
 export const shareInternship: AppRouteHandler<ShareInternship> = async (c) => {
-  const params = c.req.param();
-  const parseParams = InternshipIdParamSchema.safeParse(params);
-  if (!parseParams.success) {
-    return c.json(
-      { status_code: BAD_REQUEST, message: "Invalid internship ID format" },
-      BAD_REQUEST,
-    );
-  }
-  const { id: internshipId } = parseParams.data;
-
+  const { id: internshipId } = c.req.valid("param");
   try {
     const found = await db
       .select()
@@ -473,17 +351,6 @@ export const getApplicationStatus: AppRouteHandler<
   GetApplicationStatus
 > = async (c) => {
   const user = c.get("user");
-
-  // Check if user is a candidate
-  if (user.role !== "candidate") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only candidates can view application status",
-      },
-      FORBIDDEN,
-    );
-  }
 
   try {
     const list = await db

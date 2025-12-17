@@ -1,17 +1,21 @@
 import { createRoute } from "@hono/zod-openapi";
 
 import {
-  BAD_REQUEST,
-  INTERNAL_SERVER_ERROR,
   OK,
   REQUEST_TIMEOUT,
   TOO_MANY_REQUESTS,
+  UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
+import {
+  commonErrorResponses,
+  createResponse,
+} from "@/lib/openapi/response-helpers";
+import { requireRole } from "@/middleware/auth";
 
 import {
-  ChatErrorResponseSchema,
-  ChatRequestSchema,
-  ChatSuccessResponseSchema,
+  chatErrorResponseSchema,
+  chatRequestSchema,
+  chatSuccessResponseSchema,
 } from "./chatbot.schema";
 
 // ============================================================================
@@ -80,6 +84,7 @@ export const chat = createRoute({
   method: "post" as const,
   path: "/chatbot",
   tags: ["Chatbot"],
+  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
   summary: "Chat with onboarding bot",
   description: `
 Interactive AI-powered chatbot for onboarding new users.
@@ -103,13 +108,12 @@ Collects: name, type, phone, location, focus areas, skills offered, opportunitie
 3. Answer questions conversationally
 4. Onboarding completes automatically when all fields are filled
   `.trim(),
-  security: [{ Bearer: [] }],
   request: {
     body: {
       required: true,
       content: {
         "application/json": {
-          schema: ChatRequestSchema,
+          schema: chatRequestSchema,
           examples: {
             greeting: {
               summary: "Start conversation",
@@ -137,44 +141,26 @@ Collects: name, type, phone, location, focus areas, skills offered, opportunitie
       description: "Successful chat response",
       content: {
         "application/json": {
-          schema: ChatSuccessResponseSchema,
+          schema: chatSuccessResponseSchema,
           examples: successExamples,
         },
       },
     },
-    [BAD_REQUEST]: {
+    [UNPROCESSABLE_ENTITY]: {
       description: "Validation error or invalid input",
       content: {
         "application/json": {
-          schema: ChatErrorResponseSchema,
+          schema: chatErrorResponseSchema,
           examples: errorExamples,
         },
       },
     },
-    [REQUEST_TIMEOUT]: {
-      description: "Request timeout - Message took too long to process",
-      content: {
-        "application/json": {
-          schema: ChatErrorResponseSchema,
-        },
-      },
-    },
-    [TOO_MANY_REQUESTS]: {
-      description: "Rate limit exceeded - AI service is busy",
-      content: {
-        "application/json": {
-          schema: ChatErrorResponseSchema,
-        },
-      },
-    },
-    [INTERNAL_SERVER_ERROR]: {
-      description: "Internal server error",
-      content: {
-        "application/json": {
-          schema: ChatErrorResponseSchema,
-        },
-      },
-    },
+    [REQUEST_TIMEOUT]: createResponse(REQUEST_TIMEOUT, chatErrorResponseSchema),
+    [TOO_MANY_REQUESTS]: createResponse(
+      TOO_MANY_REQUESTS,
+      chatErrorResponseSchema,
+    ),
+    ...commonErrorResponses,
   },
 });
 

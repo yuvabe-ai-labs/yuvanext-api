@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Enums
-export const TaskStatusEnum = z.enum([
+export const taskStatusEnum = z.enum([
   "pending",
   "submitted",
   "redo",
@@ -9,7 +9,7 @@ export const TaskStatusEnum = z.enum([
 ]);
 
 // Request Schemas
-export const CreateTaskSchema = z.object({
+export const createTaskSchema = z.object({
   applicationId: z.uuid(),
   title: z.string().min(1).max(255),
   description: z.string().optional(),
@@ -20,7 +20,7 @@ export const CreateTaskSchema = z.object({
   color: z.string().optional(),
 });
 
-export const UpdateTaskSchema = z.object({
+export const updateTaskSchema = z.object({
   title: z.string().min(1).max(255).optional(),
   description: z.string().optional(),
   startDate: z.string().optional(),
@@ -28,32 +28,32 @@ export const UpdateTaskSchema = z.object({
   startTime: z.string().optional(),
   endTime: z.string().optional(),
   color: z.string().optional(),
-  status: TaskStatusEnum.optional(),
+  status: taskStatusEnum.optional(),
   submissionLink: z.string().url().optional(),
 });
 
-export const ReviewTaskSchema = z.object({
+export const reviewTaskSchema = z.object({
   status: z.enum(["redo", "accepted"]),
   reviewRemarks: z.string().min(1),
 });
 
-export const TaskIdParamSchema = z.object({
+export const taskIdParamSchema = z.object({
   id: z.uuid(),
 });
 
-export const GetTasksQuerySchema = z.object({
+export const getTasksQuerySchema = z.object({
   applicationId: z.uuid().optional(),
 });
 
 // Response Schemas
-export const TaskResponseSchema = z.object({
+export const taskResponseSchema = z.object({
   id: z.uuid(),
   applicationId: z.uuid(),
   title: z.string(),
   description: z.string().nullable(),
   startDate: z.string().nullable(),
   endDate: z.string().nullable(),
-  status: TaskStatusEnum,
+  status: taskStatusEnum,
   submittedAt: z.union([z.string(), z.date()]).nullable(),
   reviewedBy: z.uuid().nullable(),
   reviewRemarks: z.string().nullable(),
@@ -66,7 +66,7 @@ export const TaskResponseSchema = z.object({
   submissionLink: z.string().nullable(),
 });
 
-export const EnrichedTaskResponseSchema = TaskResponseSchema.extend({
+export const enrichedtaskResponseSchema = taskResponseSchema.extend({
   applicantName: z.string().nullable(),
   applicantPhone: z.string().nullable(),
   applicantEmail: z.string().nullable(),

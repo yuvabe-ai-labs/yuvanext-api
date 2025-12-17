@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const UpdateProfileSchema = z
+export const updateProfileSchema = z
   .object({
     // user fields
     name: z.string().min(1).optional(),
@@ -48,7 +48,7 @@ export const UpdateProfileSchema = z
   .catchall(z.any());
 
 // Base user fields that are always present
-const BaseUserSchema = z.object({
+const baseUserSchema = z.object({
   id: z.string(),
   name: z.string(),
   email: z.string().email(),
@@ -59,7 +59,7 @@ const BaseUserSchema = z.object({
 });
 
 // Candidate-specific fields
-const CandidateFieldsSchema = z.object({
+const candidateFieldsSchema = z.object({
   userId: z.string(),
   type: z.string().nullable(),
   experienceLevel: z.string().nullable(),
@@ -85,7 +85,7 @@ const CandidateFieldsSchema = z.object({
 });
 
 // Unit-specific fields
-const UnitFieldsSchema = z.object({
+const unitFieldsSchema = z.object({
   userId: z.string(),
   name: z.string().nullable(),
   type: z.string().nullable(),
@@ -110,15 +110,23 @@ const UnitFieldsSchema = z.object({
   socialLinks: z.record(z.string(), z.string()).nullable(),
 });
 
+// Profile score field (always included in GET /profile response)
+const profileScoreSchema = z.object({
+  profileScore: z.number().min(0).max(100),
+});
+
 // Profile response can be user + candidate fields or user + unit fields
-export const ProfileResponseSchema = z.union([
-  BaseUserSchema.merge(CandidateFieldsSchema.partial()),
-  BaseUserSchema.merge(UnitFieldsSchema.partial()),
-  BaseUserSchema, // Just base user if no role-specific data
+// Always includes profileScore
+export const profileResponseSchema = z.union([
+  baseUserSchema
+    .merge(candidateFieldsSchema.partial())
+    .merge(profileScoreSchema),
+  baseUserSchema.merge(unitFieldsSchema.partial()).merge(profileScoreSchema),
+  baseUserSchema.merge(profileScoreSchema), // Just base user if no role-specific data
 ]);
 
-const _UpdateAvatarSchema = z.object({
+const _updateAvatarSchema = z.object({
   avatarUrl: z.url(),
 });
 
-export { _UpdateAvatarSchema };
+export { _updateAvatarSchema };

@@ -1,12 +1,12 @@
 import { z } from "zod";
 
 // Request Schemas
-export const UnitIdParamSchema = z.object({
+export const unitIdParamSchema = z.object({
   id: z.uuid(),
 });
 
 // Response Schemas
-export const UnitResponseSchema = z.object({
+export const unitResponseSchema = z.object({
   userId: z.string(),
   name: z.string().nullable(),
   type: z.string().nullable(),

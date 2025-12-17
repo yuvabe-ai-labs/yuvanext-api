@@ -3,7 +3,6 @@ import { createMiddleware } from "hono/factory";
 
 import { auth } from "@/config/auth";
 
-// Define your context variables type
 export interface AuthVariables {
   user: {
     id: string;
@@ -12,44 +11,35 @@ export interface AuthVariables {
   };
 }
 
-export const requireAuth = createMiddleware<{ Variables: AuthVariables }>(
-  async (c, next) => {
-    try {
-      const session = await auth.api.getSession({
-        headers: c.req.raw.headers,
-      });
+export function requireRole({ allowedRoles }: { allowedRoles: string[] }) {
+  return createMiddleware<{ Variables: AuthVariables }>(async (c, next) => {
+    // First, authenticate
+    const session = await auth.api.getSession({
+      headers: c.req.raw.headers,
+    });
 
-      if (!session?.user) {
-        return c.json(
-          { status_code: 401, message: "Unauthorized: No session found" },
-          401,
-        );
-      }
-
-      const { id, email, role } = session.user;
-
-      // Validate that required fields exist
-      if (!id || !email || !role) {
-        return c.json(
-          { status_code: 401, message: "Unauthorized: Invalid session data" },
-          401,
-        );
-      }
-
-      // Now TypeScript knows these are strings, not null/undefined
-      c.set("user", {
-        id,
-        email,
-        role,
-      });
-
-      await next();
-    } catch (err) {
-      console.error("[requireAuth] error:", err);
+    if (!session?.user) {
       return c.json(
-        { status_code: 401, message: "Unauthorized: Authentication failed" },
+        { status_code: 401, message: "Unauthorized: No session found" },
         401,
       );
     }
-  },
-);
+
+    const { id, email, role } = session.user;
+
+    // Then, check role
+    if (!role || !allowedRoles.includes(role)) {
+      return c.json(
+        {
+          status_code: 403,
+          message: `Forbidden: Requires one of the following roles: ${allowedRoles.join(", ")}`,
+        },
+        403,
+      );
+    }
+
+    c.set("user", { id, email, role });
+
+    await next();
+  });
+}

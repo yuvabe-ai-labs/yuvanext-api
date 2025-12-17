@@ -29,8 +29,6 @@ import type {
   UpdateApplicationStatus,
 } from "./actions.routes";
 
-import { UpdateApplicationStatusSchema } from "./actions.shema";
-
 // Helper function to create notification
 async function createNotification(
   userId: string,
@@ -67,18 +65,6 @@ export const getUnitApplications: AppRouteHandler<GetApplications> = async (
   c,
 ) => {
   const user = c.get("user");
-
-  // Check if user is a unit
-  if (user.role !== "unit") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only units can access this endpoint",
-      },
-      FORBIDDEN,
-    );
-  }
-
   try {
     // Verify unit exists
     const unitData = await db
@@ -221,9 +207,7 @@ export const updateApplicationStatus: AppRouteHandler<
   const user = c.get("user");
 
   try {
-    const body = await c.req.json();
-    const validatedData = UpdateApplicationStatusSchema.parse(body);
-    const { applicationId, status, interviewDetails } = validatedData;
+    const { applicationId, status, interviewDetails } = c.req.valid("json");
 
     // Get application with related data
     const applicationData = await db

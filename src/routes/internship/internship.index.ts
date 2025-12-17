@@ -1,13 +1,9 @@
 import { createRouter } from "@/lib/create-app";
-import { requireAuth } from "@/middleware/auth";
 
 import * as handlers from "./internship.handlers";
 import * as routes from "./internship.routes";
 
 const router = createRouter();
-
-// Apply authentication middleware
-router.use(requireAuth);
 
 // Register routes
 router

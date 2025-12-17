@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Enums
-export const ApplicationStatusEnum = z.enum([
+export const applicationStatusEnum = z.enum([
   "applied",
   "shortlisted",
   "rejected",
@@ -9,13 +9,13 @@ export const ApplicationStatusEnum = z.enum([
   "hired",
 ]);
 
-export const CandidateOfferDecisionEnum = z.enum([
+export const candidateOfferDecisionEnum = z.enum([
   "accept",
   "reject",
   "pending",
 ]);
 
-export const InterviewProviderEnum = z.enum([
+export const interviewProviderEnum = z.enum([
   "zoom",
   "google_meet",
   "teams",
@@ -23,9 +23,9 @@ export const InterviewProviderEnum = z.enum([
 ]);
 
 // Request Schemas
-export const UpdateApplicationStatusSchema = z.object({
-  applicationId: z.string().uuid(),
-  status: ApplicationStatusEnum,
+export const updateApplicationStatusSchema = z.object({
+  applicationId: z.uuid(),
+  status: applicationStatusEnum,
   interviewDetails: z
     .object({
       scheduledAt: z
@@ -42,19 +42,19 @@ export const UpdateApplicationStatusSchema = z.object({
         .optional()
         .default(60)
         .describe("Interview duration in minutes"),
-      provider: InterviewProviderEnum.optional(),
+      provider: interviewProviderEnum.optional(),
     })
     .optional()
     .describe("Required when status is 'interviewed'"),
 });
 
 // Response Schemas
-export const ApplicationResponseSchema = z.object({
+export const applicationResponseSchema = z.object({
   application: z.object({
     id: z.string(),
-    status: ApplicationStatusEnum,
+    status: applicationStatusEnum,
     profileScore: z.number().nullable(),
-    candidateOfferDecision: CandidateOfferDecisionEnum,
+    candidateOfferDecision: candidateOfferDecisionEnum,
     createdAt: z.union([z.string(), z.date()]),
     updatedAt: z.union([z.string(), z.date()]),
   }),
@@ -85,7 +85,7 @@ export const ApplicationResponseSchema = z.object({
   }),
 });
 
-export const InterviewResponseSchema = z.object({
+export const interviewResponseSchema = z.object({
   id: z.string(),
   applicationId: z.string(),
   scheduledDate: z.date(),
@@ -93,24 +93,24 @@ export const InterviewResponseSchema = z.object({
   link: z.string().nullable(),
   title: z.string(),
   description: z.string().nullable(),
-  provider: InterviewProviderEnum,
+  provider: interviewProviderEnum,
   createdAt: z.date(),
   updatedAt: z.date(),
 });
 
-export const UpdateApplicationStatusResponseSchema = z.object({
+export const updateApplicationStatusResponseSchema = z.object({
   application: z.object({
     id: z.string(),
-    status: ApplicationStatusEnum,
+    status: applicationStatusEnum,
     updatedAt: z.union([z.string(), z.date()]),
   }),
-  interview: InterviewResponseSchema.optional(),
+  interview: interviewResponseSchema.optional(),
   notificationSent: z.boolean(),
   candidateEmailSent: z.boolean(),
   unitEmailSent: z.boolean().optional(),
 });
 
-export const GetApplicationsResponseSchema = z
+export const getApplicationsResponseSchema = z
   .object({
     total: z.number(),
   })

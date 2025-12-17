@@ -1,11 +1,10 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import type { AppRouteHandler } from "@/types/app.types";
 
 import db from "@/db";
 import { notifications } from "@/db/schema/notification.schema";
 import {
-  BAD_REQUEST,
   FORBIDDEN,
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
@@ -61,32 +60,29 @@ export const getUserNotifications: AppRouteHandler<
   }
 };
 
-// PUT /notifications/:id/mark-read - Mark a notification as read
+// PUT /notifications/:id/mark-read
 export const markNotificationAsRead: AppRouteHandler<
   MarkNotificationAsRead
 > = async (c) => {
   const user = c.get("user");
-  const notificationId = c.req.param("id");
-
-  if (!notificationId) {
-    return c.json(
-      {
-        status_code: BAD_REQUEST,
-        message: "Notification ID is required",
-      },
-      BAD_REQUEST,
-    );
-  }
+  const { id: notificationId } = c.req.valid("param");
 
   try {
-    // Check if notification exists and belongs to user
-    const notification = await db
-      .select()
-      .from(notifications)
-      .where(eq(notifications.id, notificationId))
-      .limit(1);
+    const [updatedNotification] = await db
+      .update(notifications)
+      .set({
+        isRead: true,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(notifications.id, notificationId),
+          eq(notifications.userId, user.id),
+        ),
+      )
+      .returning();
 
-    if (!notification || notification.length === 0) {
+    if (!updatedNotification) {
       return c.json(
         {
           status_code: NOT_FOUND,
@@ -95,27 +91,6 @@ export const markNotificationAsRead: AppRouteHandler<
         NOT_FOUND,
       );
     }
-
-    // Verify the notification belongs to this user
-    if (notification[0].userId !== user.id) {
-      return c.json(
-        {
-          status_code: FORBIDDEN,
-          message: "You can only update your own notifications",
-        },
-        FORBIDDEN,
-      );
-    }
-
-    // Mark as read
-    const [updatedNotification] = await db
-      .update(notifications)
-      .set({
-        isRead: true,
-        updatedAt: new Date(),
-      })
-      .where(eq(notifications.id, notificationId))
-      .returning();
 
     return c.json(
       {
@@ -181,17 +156,7 @@ export const deleteNotification: AppRouteHandler<DeleteNotification> = async (
   c,
 ) => {
   const user = c.get("user");
-  const notificationId = c.req.param("id");
-
-  if (!notificationId) {
-    return c.json(
-      {
-        status_code: BAD_REQUEST,
-        message: "Notification ID is required",
-      },
-      BAD_REQUEST,
-    );
-  }
+  const { id: notificationId } = c.req.valid("param");
 
   try {
     // Check if notification exists and belongs to user

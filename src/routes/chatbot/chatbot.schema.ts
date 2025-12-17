@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Request Schemas
-export const ChatRequestSchema = z.object({
+export const chatRequestSchema = z.object({
   message: z
     .string()
     .min(1, "Message cannot be empty")
@@ -9,7 +9,7 @@ export const ChatRequestSchema = z.object({
 });
 
 // Response Schemas
-export const ChatSuccessResponseSchema = z.object({
+export const chatSuccessResponseSchema = z.object({
   success: z.literal(true),
   response: z.string().describe("Chatbot's response message"),
   onboardingCompleted: z
@@ -22,7 +22,7 @@ export const ChatSuccessResponseSchema = z.object({
     .describe("Whether to skip further onboarding questions"),
 });
 
-export const ChatErrorResponseSchema = z.object({
+export const chatErrorResponseSchema = z.object({
   success: z.literal(false),
   error: z.string().describe("Error message"),
   needsRetry: z

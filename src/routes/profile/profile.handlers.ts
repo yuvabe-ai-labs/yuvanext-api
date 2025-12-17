@@ -10,12 +10,148 @@ import {
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
   OK,
-  UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
 
 import type { GetProfile, UpdateProfile } from "./profile.routes";
 
-import { UpdateProfileSchema } from "./profile.schema";
+// Helper function to calculate candidate profile score
+function calculateCandidateScore(candidate: any): number {
+  let score = 0;
+  const weights = {
+    // Basic info (30 points)
+    name: 5,
+    email: 5,
+    phone: 5,
+    location: 5,
+    avatarUrl: 5,
+    dateOfBirth: 5,
+
+    // Profile details (25 points)
+    profileSummary: 10,
+    type: 5,
+    experienceLevel: 5,
+    gender: 5,
+
+    // Professional info (25 points)
+    skills: 10,
+    interests: 5,
+    lookingFor: 5,
+    education: 5,
+
+    // Additional info (20 points)
+    language: 5,
+    projects: 5,
+    course: 5,
+    internship: 5,
+    socialLinks: 5,
+  };
+
+  // Check basic fields
+  if (candidate.name) score += weights.name;
+  if (candidate.email) score += weights.email;
+  if (candidate.phone) score += weights.phone;
+  if (candidate.location) score += weights.location;
+  if (candidate.avatarUrl) score += weights.avatarUrl;
+  if (candidate.dateOfBirth) score += weights.dateOfBirth;
+
+  // Check profile details
+  if (candidate.profileSummary && candidate.profileSummary.length > 50)
+    score += weights.profileSummary;
+  if (candidate.type) score += weights.type;
+  if (candidate.experienceLevel) score += weights.experienceLevel;
+  if (candidate.gender) score += weights.gender;
+
+  // Check professional info
+  if (candidate.skills && candidate.skills.length > 0) score += weights.skills;
+  if (candidate.interests && candidate.interests.length > 0)
+    score += weights.interests;
+  if (candidate.lookingFor && candidate.lookingFor.length > 0)
+    score += weights.lookingFor;
+  if (candidate.education && candidate.education.length > 0)
+    score += weights.education;
+
+  // Check additional info
+  if (candidate.language && candidate.language.length > 0)
+    score += weights.language;
+  if (candidate.projects && candidate.projects.length > 0)
+    score += weights.projects;
+  if (candidate.course && candidate.course.length > 0) score += weights.course;
+  if (candidate.internship && candidate.internship.length > 0)
+    score += weights.internship;
+  if (candidate.socialLinks && Object.keys(candidate.socialLinks).length > 0)
+    score += weights.socialLinks;
+
+  return Math.min(score, 100);
+}
+
+// Helper function to calculate unit profile score
+function calculateUnitScore(unit: any): number {
+  let score = 0;
+  const weights = {
+    // Basic info (30 points)
+    name: 10,
+    email: 5,
+    phone: 5,
+    location: 5,
+    avatarUrl: 5,
+
+    // Profile details (30 points)
+    description: 10,
+    type: 5,
+    industry: 5,
+    mission: 5,
+    values: 5,
+
+    // Visual content (20 points)
+    bannerUrl: 5,
+    galleryImages: 10,
+    galleryVideos: 5,
+
+    // Professional info (20 points)
+    focusAreas: 5,
+    skillsOffered: 5,
+    opportunitiesOffered: 5,
+    projects: 5,
+    websiteUrl: 5,
+    socialLinks: 5,
+  };
+
+  // Check basic fields
+  if (unit.name) score += weights.name;
+  if (unit.email) score += weights.email;
+  if (unit.phone) score += weights.phone;
+  if (unit.location) score += weights.location;
+  if (unit.avatarUrl) score += weights.avatarUrl;
+
+  // Check profile details
+  if (unit.description && unit.description.length > 50)
+    score += weights.description;
+  if (unit.type) score += weights.type;
+  if (unit.industry) score += weights.industry;
+  if (unit.mission) score += weights.mission;
+  if (unit.values) score += weights.values;
+
+  // Check visual content
+  if (unit.bannerUrl) score += weights.bannerUrl;
+  if (unit.galleryImages && unit.galleryImages.length > 0)
+    score += weights.galleryImages;
+  if (unit.galleryVideos && unit.galleryVideos.length > 0)
+    score += weights.galleryVideos;
+
+  // Check professional info
+  if (unit.focusAreas && unit.focusAreas.length > 0)
+    score += weights.focusAreas;
+  if (unit.skillsOffered && unit.skillsOffered.length > 0)
+    score += weights.skillsOffered;
+  if (unit.opportunitiesOffered && unit.opportunitiesOffered.length > 0)
+    score += weights.opportunitiesOffered;
+  if (unit.projects && unit.projects.length > 0) score += weights.projects;
+  if (unit.websiteUrl) score += weights.websiteUrl;
+  if (unit.socialLinks && Object.keys(unit.socialLinks).length > 0)
+    score += weights.socialLinks;
+
+  return Math.min(score, 100);
+}
 
 // GET /profile - Get user profile
 export const getProfile: AppRouteHandler<GetProfile> = async (c) => {
@@ -48,6 +184,8 @@ export const getProfile: AppRouteHandler<GetProfile> = async (c) => {
       updatedAt: foundUser.updatedAt,
     };
 
+    let profileScore = 0;
+
     if (foundUser.role === "candidate") {
       const candidateData = await db
         .select()
@@ -60,6 +198,9 @@ export const getProfile: AppRouteHandler<GetProfile> = async (c) => {
           ...profileData,
           ...candidateData[0],
         } as typeof profileData & (typeof candidateData)[0];
+
+        // Calculate candidate profile score
+        profileScore = calculateCandidateScore(profileData);
       }
     } else if (foundUser.role === "unit") {
       const unitData = await db
@@ -73,6 +214,9 @@ export const getProfile: AppRouteHandler<GetProfile> = async (c) => {
           ...profileData,
           ...unitData[0],
         } as typeof profileData & (typeof unitData)[0];
+
+        // Calculate unit profile score
+        profileScore = calculateUnitScore(profileData);
       }
     }
 
@@ -80,7 +224,10 @@ export const getProfile: AppRouteHandler<GetProfile> = async (c) => {
       {
         status_code: OK,
         message: "Profile retrieved successfully",
-        data: profileData,
+        data: {
+          ...profileData,
+          profileScore,
+        },
       },
       OK,
     );
@@ -101,22 +248,7 @@ export const updateProfile: AppRouteHandler<UpdateProfile> = async (c) => {
   const user = c.get("user");
 
   try {
-    const json = await c.req.json().catch(() => ({}));
-    const parsed = UpdateProfileSchema.safeParse(json);
-
-    if (!parsed.success) {
-      return c.json(
-        {
-          status_code: UNPROCESSABLE_ENTITY,
-          message: "Validation Error",
-          error: parsed.error.issues,
-        },
-        UNPROCESSABLE_ENTITY,
-      );
-    }
-
-    const data = parsed.data;
-
+    const data = c.req.valid("json");
     // Prepare updates for user and role-specific tables
     const userUpdates: Partial<typeof userTable.$inferInsert> = {};
     const candidateUpdates: Partial<typeof candidates.$inferInsert> = {};

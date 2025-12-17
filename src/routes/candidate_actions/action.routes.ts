@@ -2,71 +2,31 @@ import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
 
 import {
-  BAD_REQUEST,
   CONFLICT,
   CREATED,
-  FORBIDDEN,
-  INTERNAL_SERVER_ERROR,
   NOT_FOUND,
   OK,
-  UNAUTHORIZED,
+  UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
+import {
+  createResponse,
+  restrictedErrorResponses,
+} from "@/lib/openapi/response-helpers";
+import { requireRole } from "@/middleware/auth";
 
 import {
-  ApplicationResponseSchema,
-  ApplicationStatusItemSchema,
-  AppliedInternshipListItemSchema,
-  ApplyToInternshipSchema,
-  CountsResponseSchema,
-  InternshipIdParamSchema,
-  RemoveSavedInternshipSchema,
-  SavedInternshipListItemSchema,
-  SavedInternshipResponseSchema,
-  SaveInternshipSchema,
-  ShareLinksResponseSchema,
+  applicationResponseSchema,
+  applicationStatusItemSchema,
+  appliedInternshipListItemSchema,
+  applyToInternshipSchema,
+  countsResponseSchema,
+  internshipIdParamSchema,
+  removeSavedInternshipSchema,
+  savedInternshipListItemSchema,
+  savedinternshipResponseSchema,
+  saveInternshipSchema,
+  shareLinksResponseSchema,
 } from "./action.schema";
-
-// ============================================================================
-// RESPONSE HELPERS
-// ============================================================================
-
-function createResponse(statusCode: number, dataSchema?: z.ZodTypeAny) {
-  return {
-    description: getDescription(statusCode),
-    content: {
-      "application/json": {
-        schema: z.object({
-          status_code: z.literal(statusCode),
-          message: z.string(),
-          ...(dataSchema && { data: dataSchema }),
-          ...(statusCode === BAD_REQUEST && {
-            errors: z.array(z.any()).optional(),
-          }),
-        }),
-      },
-    },
-  };
-}
-
-function getDescription(statusCode: number): string {
-  const descriptions: Record<number, string> = {
-    [OK]: "Success",
-    [CREATED]: "Resource created successfully",
-    [BAD_REQUEST]: "Bad request",
-    [UNAUTHORIZED]: "Unauthorized - Authentication required",
-    [FORBIDDEN]: "Forbidden - Candidates only",
-    [NOT_FOUND]: "Resource not found",
-    [CONFLICT]: "Conflict - Resource already exists",
-    [INTERNAL_SERVER_ERROR]: "Internal server error",
-  };
-  return descriptions[statusCode] || "Response";
-}
-
-const commonErrorResponses = {
-  [UNAUTHORIZED]: createResponse(UNAUTHORIZED),
-  [FORBIDDEN]: createResponse(FORBIDDEN),
-  [INTERNAL_SERVER_ERROR]: createResponse(INTERNAL_SERVER_ERROR),
-};
 
 // ============================================================================
 // ROUTE DEFINITIONS
@@ -79,24 +39,24 @@ export const saveInternship = createRoute({
   method: "post" as const,
   path: "/internship/save",
   tags: ["InternshipActions"],
+  middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Save an internship",
   description: "Save an internship for later viewing (candidates only)",
-  security: [{ Bearer: [] }],
   request: {
     body: {
       content: {
         "application/json": {
-          schema: SaveInternshipSchema,
+          schema: saveInternshipSchema,
         },
       },
     },
   },
   responses: {
-    [CREATED]: createResponse(CREATED, SavedInternshipResponseSchema),
+    [CREATED]: createResponse(CREATED, savedinternshipResponseSchema),
     [OK]: createResponse(OK),
-    [BAD_REQUEST]: createResponse(BAD_REQUEST),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
     [NOT_FOUND]: createResponse(NOT_FOUND),
-    ...commonErrorResponses,
+    ...restrictedErrorResponses,
   },
 });
 
@@ -107,23 +67,23 @@ export const removeSavedInternship = createRoute({
   method: "delete" as const,
   path: "/internship/save",
   tags: ["InternshipActions"],
+  middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Remove saved internship",
   description: "Remove an internship from saved list (candidates only)",
-  security: [{ Bearer: [] }],
   request: {
     body: {
       content: {
         "application/json": {
-          schema: RemoveSavedInternshipSchema,
+          schema: removeSavedInternshipSchema,
         },
       },
     },
   },
   responses: {
     [OK]: createResponse(OK),
-    [BAD_REQUEST]: createResponse(BAD_REQUEST),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
     [NOT_FOUND]: createResponse(NOT_FOUND),
-    ...commonErrorResponses,
+    ...restrictedErrorResponses,
   },
 });
 
@@ -134,25 +94,25 @@ export const applyToInternship = createRoute({
   method: "post" as const,
   path: "/internship/apply",
   tags: ["InternshipActions"],
+  middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Apply to an internship",
   description:
     "Submit an application to an internship with optional profile sections (candidates only)",
-  security: [{ Bearer: [] }],
   request: {
     body: {
       content: {
         "application/json": {
-          schema: ApplyToInternshipSchema,
+          schema: applyToInternshipSchema,
         },
       },
     },
   },
   responses: {
-    [CREATED]: createResponse(CREATED, ApplicationResponseSchema),
-    [BAD_REQUEST]: createResponse(BAD_REQUEST),
+    [CREATED]: createResponse(CREATED, applicationResponseSchema),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
     [NOT_FOUND]: createResponse(NOT_FOUND),
     [CONFLICT]: createResponse(CONFLICT),
-    ...commonErrorResponses,
+    ...restrictedErrorResponses,
   },
 });
 
@@ -163,13 +123,13 @@ export const getSavedInternships = createRoute({
   method: "get" as const,
   path: "/internship/saved",
   tags: ["InternshipActions"],
+  middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Get saved internships",
   description:
     "Retrieve list of internships saved by the candidate (candidates only)",
-  security: [{ Bearer: [] }],
   responses: {
-    [OK]: createResponse(OK, z.array(SavedInternshipListItemSchema)),
-    ...commonErrorResponses,
+    [OK]: createResponse(OK, z.array(savedInternshipListItemSchema)),
+    ...restrictedErrorResponses,
   },
 });
 
@@ -180,13 +140,13 @@ export const getAppliedInternships = createRoute({
   method: "get" as const,
   path: "/internship/applied",
   tags: ["InternshipActions"],
+  middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Get applied internships",
   description:
     "Retrieve list of internships the candidate has applied to (candidates only)",
-  security: [{ Bearer: [] }],
   responses: {
-    [OK]: createResponse(OK, z.array(AppliedInternshipListItemSchema)),
-    ...commonErrorResponses,
+    [OK]: createResponse(OK, z.array(appliedInternshipListItemSchema)),
+    ...restrictedErrorResponses,
   },
 });
 
@@ -196,14 +156,14 @@ export const getAppliedInternships = createRoute({
 export const getCounts = createRoute({
   method: "get" as const,
   path: "/internship/counts",
+  middleware: requireRole({ allowedRoles: ["candidate"] }),
   tags: ["InternshipActions"],
   summary: "Get saved and applied counts",
   description:
     "Get count of saved and applied internships for the candidate (candidates only)",
-  security: [{ Bearer: [] }],
   responses: {
-    [OK]: createResponse(OK, CountsResponseSchema),
-    ...commonErrorResponses,
+    [OK]: createResponse(OK, countsResponseSchema),
+    ...restrictedErrorResponses,
   },
 });
 
@@ -213,18 +173,18 @@ export const getCounts = createRoute({
 export const shareInternship = createRoute({
   method: "get" as const,
   path: "/internship/share/{id}",
+  middleware: requireRole({ allowedRoles: ["candidate"] }),
   tags: ["InternshipActions"],
   summary: "Generate share links for an internship",
   description: "Generate social media share links for a specific internship",
-  security: [{ Bearer: [] }],
   request: {
-    params: InternshipIdParamSchema,
+    params: internshipIdParamSchema,
   },
   responses: {
-    [OK]: createResponse(OK, ShareLinksResponseSchema),
-    [BAD_REQUEST]: createResponse(BAD_REQUEST),
+    [OK]: createResponse(OK, shareLinksResponseSchema),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
     [NOT_FOUND]: createResponse(NOT_FOUND),
-    ...commonErrorResponses,
+    ...restrictedErrorResponses,
   },
 });
 
@@ -238,10 +198,9 @@ export const getApplicationStatus = createRoute({
   summary: "Get application status with unit details",
   description:
     "Retrieve application status with internship and unit information (candidates only)",
-  security: [{ Bearer: [] }],
   responses: {
-    [OK]: createResponse(OK, z.array(ApplicationStatusItemSchema)),
-    ...commonErrorResponses,
+    [OK]: createResponse(OK, z.array(applicationStatusItemSchema)),
+    ...restrictedErrorResponses,
   },
 });
 
