@@ -18,6 +18,7 @@ import {
   applicationResponseSchema,
   applicationStatusItemSchema,
   appliedInternshipListItemSchema,
+  applyToInternshipIdSchema,
   applyToInternshipSchema,
   countsResponseSchema,
   internshipIdParamSchema,
@@ -33,23 +34,51 @@ import {
 // ============================================================================
 
 /**
+ * GET /internship/save - Get saved internships
+ */
+export const getSavedInternships = createRoute({
+  method: "get" as const,
+  path: "/candidate/internship/save",
+  tags: ["InternshipActions"],
+  middleware: requireRole({ allowedRoles: ["candidate"] }),
+  summary: "Get saved internships",
+  description:
+    "Retrieve list of internships saved by the candidate (candidates only)",
+  responses: {
+    [OK]: createResponse(OK, z.array(savedInternshipListItemSchema)),
+    ...restrictedErrorResponses,
+  },
+});
+
+/**
+ * GET /internship/apply - Get applied internships
+ */
+export const getAppliedInternships = createRoute({
+  method: "get" as const,
+  path: "/candidate/internship/apply",
+  tags: ["InternshipActions"],
+  middleware: requireRole({ allowedRoles: ["candidate"] }),
+  summary: "Get applied internships",
+  description:
+    "Retrieve list of internships the candidate has applied to (candidates only)",
+  responses: {
+    [OK]: createResponse(OK, z.array(appliedInternshipListItemSchema)),
+    ...restrictedErrorResponses,
+  },
+});
+
+/**
  * POST /internship/save - Save an internship
  */
 export const saveInternship = createRoute({
   method: "post" as const,
-  path: "/internship/save",
+  path: "/candidate/internship/:internshipId/save",
   tags: ["InternshipActions"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Save an internship",
   description: "Save an internship for later viewing (candidates only)",
   request: {
-    body: {
-      content: {
-        "application/json": {
-          schema: saveInternshipSchema,
-        },
-      },
-    },
+    params: saveInternshipSchema,
   },
   responses: {
     [CREATED]: createResponse(CREATED, savedinternshipResponseSchema),
@@ -65,19 +94,13 @@ export const saveInternship = createRoute({
  */
 export const removeSavedInternship = createRoute({
   method: "delete" as const,
-  path: "/internship/save",
+  path: "/candidate/internship/:internshipId/save",
   tags: ["InternshipActions"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Remove saved internship",
   description: "Remove an internship from saved list (candidates only)",
   request: {
-    body: {
-      content: {
-        "application/json": {
-          schema: removeSavedInternshipSchema,
-        },
-      },
-    },
+    params: removeSavedInternshipSchema,
   },
   responses: {
     [OK]: createResponse(OK),
@@ -92,13 +115,14 @@ export const removeSavedInternship = createRoute({
  */
 export const applyToInternship = createRoute({
   method: "post" as const,
-  path: "/internship/apply",
+  path: "/candidate/internship/:internshipId/apply",
   tags: ["InternshipActions"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Apply to an internship",
   description:
     "Submit an application to an internship with optional profile sections (candidates only)",
   request: {
+    params: applyToInternshipIdSchema,
     body: {
       content: {
         "application/json": {
@@ -117,45 +141,11 @@ export const applyToInternship = createRoute({
 });
 
 /**
- * GET /internship/saved - Get saved internships
- */
-export const getSavedInternships = createRoute({
-  method: "get" as const,
-  path: "/internship/saved",
-  tags: ["InternshipActions"],
-  middleware: requireRole({ allowedRoles: ["candidate"] }),
-  summary: "Get saved internships",
-  description:
-    "Retrieve list of internships saved by the candidate (candidates only)",
-  responses: {
-    [OK]: createResponse(OK, z.array(savedInternshipListItemSchema)),
-    ...restrictedErrorResponses,
-  },
-});
-
-/**
- * GET /internship/applied - Get applied internships
- */
-export const getAppliedInternships = createRoute({
-  method: "get" as const,
-  path: "/internship/applied",
-  tags: ["InternshipActions"],
-  middleware: requireRole({ allowedRoles: ["candidate"] }),
-  summary: "Get applied internships",
-  description:
-    "Retrieve list of internships the candidate has applied to (candidates only)",
-  responses: {
-    [OK]: createResponse(OK, z.array(appliedInternshipListItemSchema)),
-    ...restrictedErrorResponses,
-  },
-});
-
-/**
  * GET /internship/counts - Get counts
  */
 export const getCounts = createRoute({
   method: "get" as const,
-  path: "/internship/counts",
+  path: "/candidate/internship/counts",
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   tags: ["InternshipActions"],
   summary: "Get saved and applied counts",
@@ -172,7 +162,7 @@ export const getCounts = createRoute({
  */
 export const shareInternship = createRoute({
   method: "get" as const,
-  path: "/internship/share/{id}",
+  path: "/candidate/internship/share/{id}",
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   tags: ["InternshipActions"],
   summary: "Generate share links for an internship",
@@ -193,8 +183,9 @@ export const shareInternship = createRoute({
  */
 export const getApplicationStatus = createRoute({
   method: "get" as const,
-  path: "/internship/application-status",
+  path: "/candidate/internship/application-status",
   tags: ["InternshipActions"],
+  middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Get application status with unit details",
   description:
     "Retrieve application status with internship and unit information (candidates only)",

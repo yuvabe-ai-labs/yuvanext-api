@@ -19,7 +19,7 @@ import {
  */
 export const getApplications = createRoute({
   method: "get" as const,
-  path: "/applications",
+  path: "/unit/applications",
   tags: ["Unit Actions"],
   middleware: requireRole({ allowedRoles: ["unit"] }),
   summary: "Get all applications for unit's internships",
@@ -37,7 +37,7 @@ export const getApplications = createRoute({
  */
 export const updateApplicationStatus = createRoute({
   method: "put" as const,
-  path: "/applications/status",
+  path: "/unit/applications/status",
   tags: ["Unit Actions"],
   summary: "Update application status",
   middleware: requireRole({ allowedRoles: ["unit"] }),

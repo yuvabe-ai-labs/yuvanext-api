@@ -14,12 +14,15 @@ export const saveInternshipSchema = z.object({
   internshipId: z.uuid(),
 });
 
+export const applyToInternshipIdSchema = z.object({
+  internshipId: z.uuid(),
+});
+
 export const removeSavedInternshipSchema = z.object({
   internshipId: z.uuid(),
 });
 
 export const applyToInternshipSchema = z.object({
-  internshipId: z.uuid(),
   includedSections: z.array(z.string()).optional(),
 });
 

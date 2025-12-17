@@ -6,6 +6,7 @@ import type { AppRouteHandler } from "@/types/app.types";
 import env from "@/config/env";
 import db from "@/db";
 import { applications } from "@/db/schema/application.schema";
+import { user as userTable } from "@/db/schema/auth.schema";
 import { internships } from "@/db/schema/internship.schema";
 import { notifications } from "@/db/schema/notification.schema";
 import { savedInternship } from "@/db/schema/saved-internship.schema";
@@ -17,6 +18,10 @@ import {
   NOT_FOUND,
   OK,
 } from "@/lib/openapi/http-status-codes";
+import {
+  sendApplicationEmail,
+  sendUnitInterviewEmail,
+} from "@/lib/services/email.service";
 
 import type {
   ApplyToInternship,
@@ -33,7 +38,7 @@ import type {
 export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
   const user = c.get("user");
 
-  const { internshipId } = c.req.valid("json");
+  const { internshipId } = c.req.valid("param");
   try {
     // check internship exists
     const found = await db
@@ -86,7 +91,7 @@ export const removeSavedInternship: AppRouteHandler<
 > = async (c) => {
   const user = c.get("user");
 
-  const { internshipId } = c.req.valid("json");
+  const { internshipId } = c.req.valid("param");
 
   try {
     const result = await db
@@ -125,60 +130,138 @@ export const applyToInternship: AppRouteHandler<ApplyToInternship> = async (
 ) => {
   const user = c.get("user");
 
-  const { internshipId, includedSections } = c.req.valid("json");
+  const { internshipId } = c.req.valid("param");
+  const { includedSections } = c.req.valid("json");
+
   try {
-    // check internship exists
-    const found = await db
-      .select()
-      .from(internships)
-      .where(eq(internships.id, internshipId));
-    if (!found || found.length === 0) {
+    // Check internship exists and prevent duplicate application in a single query
+    const [internship, existingApplication] = await Promise.all([
+      db
+        .select()
+        .from(internships)
+        .where(eq(internships.id, internshipId))
+        .limit(1),
+      db
+        .select()
+        .from(applications)
+        .where(
+          and(
+            eq(applications.userId, user.id),
+            eq(applications.internshipId, internshipId),
+          ),
+        )
+        .limit(1),
+    ]);
+
+    if (!internship || internship.length === 0) {
       return c.json(
         { status_code: NOT_FOUND, message: "Internship not found" },
         NOT_FOUND,
       );
     }
-    const internship = found[0];
 
-    // prevent duplicate application
-    const existing = await db
-      .select()
-      .from(applications)
-      .where(
-        and(
-          eq(applications.userId, user.id),
-          eq(applications.internshipId, internshipId),
-        ),
-      );
-    if (existing.length > 0) {
+    if (existingApplication.length > 0) {
       return c.json(
         { status_code: CONFLICT, message: "Already applied" },
         CONFLICT,
       );
     }
 
+    const internshipData = internship[0];
+
+    // Insert application
     const insert = await db
       .insert(applications)
       .values({ userId: user.id, internshipId, includedSections })
       .returning();
 
-    // create notification for internship creator (unit user)
-    if (internship.createdBy) {
+    // Fetch unit details only if createdBy exists
+    let unitName = "Our Organization";
+    let unitEmail: string | null = null;
+
+    if (internshipData.createdBy) {
       try {
-        await db.insert(notifications).values({
-          userId: internship.createdBy,
-          title: internship.title,
-          message: `${user.email ?? "A candidate"} applied to ${internship.title ?? "an internship"}`,
-          type: "info",
-        });
-      } catch (nerr) {
-        console.error(
-          "Failed to create notification for internship creator:",
-          nerr,
-        );
-        // Don't fail the entire operation if notification fails
+        const unitDetails = await db
+          .select({
+            name: units.name,
+            email: userTable.email,
+          })
+          .from(units)
+          .innerJoin(userTable, eq(units.userId, userTable.id))
+          .where(eq(units.userId, internshipData.createdBy))
+          .limit(1);
+
+        if (unitDetails.length > 0) {
+          unitName = unitDetails[0].name || unitName;
+          unitEmail = unitDetails[0].email;
+        }
+      } catch (err) {
+        console.error("Error fetching unit details:", err);
       }
     }
+
+    // Send emails and create notification in parallel (non-blocking)
+    const emailAndNotificationTasks = [];
+
+    // Send email to candidate confirming application
+    if (user.email) {
+      emailAndNotificationTasks.push(
+        sendApplicationEmail("applied", {
+          to: user.email,
+          candidateName: user.email,
+          internshipTitle: internshipData.title || "Internship Position",
+          unitName,
+        }).catch((emailErr) => {
+          console.error(
+            "Failed to send application confirmation email to candidate:",
+            emailErr,
+          );
+        }),
+      );
+    }
+
+    // Send email to unit notifying them of new application
+    if (unitEmail) {
+      emailAndNotificationTasks.push(
+        sendUnitInterviewEmail({
+          to: unitEmail,
+          unitName,
+          candidateName: user.email,
+          candidateEmail: user.email || "",
+          internshipTitle: internshipData.title || "Internship Position",
+        }).catch((emailErr) => {
+          console.error(
+            "Failed to send application notification email to unit:",
+            emailErr,
+          );
+        }),
+      );
+    }
+
+    // Create notification for internship creator (unit user)
+    if (internshipData.createdBy) {
+      emailAndNotificationTasks.push(
+        db
+          .insert(notifications)
+          .values({
+            userId: internshipData.createdBy,
+            title: internshipData.title,
+            message: `${user.email ?? "A candidate"} applied to ${internshipData.title ?? "an internship"}`,
+            type: "info",
+          })
+          .catch((nerr) => {
+            console.error(
+              "Failed to create notification for internship creator:",
+              nerr,
+            );
+          }),
+      );
+    }
+
+    // Execute all side effects in parallel without blocking response
+    Promise.all(emailAndNotificationTasks).catch(() => {
+      // Errors already logged individually
+    });
 
     return c.json(
       {

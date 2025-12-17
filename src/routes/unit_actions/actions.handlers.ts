@@ -66,20 +66,6 @@ export const getUnitApplications: AppRouteHandler<GetApplications> = async (
 ) => {
   const user = c.get("user");
   try {
-    // Verify unit exists
-    const unitData = await db
-      .select()
-      .from(units)
-      .where(eq(units.userId, user.id))
-      .limit(1);
-
-    if (!unitData || unitData.length === 0) {
-      return c.json(
-        { status_code: NOT_FOUND, message: "Unit profile not found" },
-        NOT_FOUND,
-      );
-    }
-
     // Get all internships created by this unit
     const unitInternships = await db
       .select({ id: internships.id })
@@ -276,7 +262,7 @@ export const updateApplicationStatus: AppRouteHandler<
 
     switch (status) {
       case "shortlisted":
-        notificationTitle = "Application Shortlisted! 🎉";
+        notificationTitle = "Application Shortlisted!";
         notificationMessage = `Your application for "${internship.title}" has been shortlisted. The employer will contact you soon.`;
         notificationType = "success";
         break;
@@ -331,14 +317,14 @@ export const updateApplicationStatus: AppRouteHandler<
           interviewRecord = newInterview;
         }
 
-        notificationTitle = "Interview Scheduled! 📅";
+        notificationTitle = "Interview Scheduled!";
         notificationMessage = `Your interview for "${internship.title}" has been scheduled. ${scheduledAt ? `Time: ${new Date(scheduledAt).toLocaleString()}` : ""} ${zoomLink ? `Meeting Link: ${zoomLink}` : ""}`;
         notificationType = "success";
         break;
       }
 
       case "hired":
-        notificationTitle = "Congratulations! You're Hired! 🎊";
+        notificationTitle = "Congratulations! You're Hired!";
         notificationMessage = `Congratulations! You have been selected for "${internship.title}". We will send you the offer letter shortly.`;
         notificationType = "success";
         break;
