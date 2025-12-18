@@ -79,7 +79,7 @@ async function getZoomAccessToken(): Promise<string | null> {
       if (!tokenResponse.ok) {
         const errorData = await tokenResponse.text();
         console.error(
-          "Failed to get Zoom access token (refresh token):",
+          "Failed to get Zoom access token and (refresh token):",
           errorData,
         );
         return null;
