@@ -79,38 +79,38 @@ export const getInternshipById: AppRouteHandler<GetInternshipById> = async (
   c,
 ) => {
   const user = c.get("user");
-
   const { id } = c.req.valid("param");
 
   try {
-    const internshipData = await db
-      .select()
-      .from(internships)
-      .where(eq(internships.id, id))
-      .limit(1);
+    // OPTIMIZED: Single query with role-based filtering
+    let whereCondition;
 
-    if (!internshipData || internshipData.length === 0) {
-      return c.json(
-        { status_code: NOT_FOUND, message: "Internship not found" },
-        NOT_FOUND,
+    if (user.role === "unit") {
+      // Units can only see their own internships
+      whereCondition = and(
+        eq(internships.id, id),
+        eq(internships.createdBy, user.id),
       );
-    }
-
-    const internship = internshipData[0];
-
-    // Units can only see their own internships (all statuses)
-    // Candidates can only see active internships
-    if (user.role === "unit" && internship.createdBy !== user.id) {
+    } else if (user.role === "candidate") {
+      // Candidates can only see active internships
+      whereCondition = and(
+        eq(internships.id, id),
+        eq(internships.status, "active"),
+      );
+    } else {
       return c.json(
-        {
-          status_code: FORBIDDEN,
-          message: "You don't have permission to view this internship",
-        },
+        { status_code: FORBIDDEN, message: "Invalid role" },
         FORBIDDEN,
       );
     }
 
-    if (user.role === "candidate" && internship.status !== "active") {
+    const [internship] = await db
+      .select()
+      .from(internships)
+      .where(whereCondition)
+      .limit(1);
+
+    if (!internship) {
       return c.json(
         { status_code: NOT_FOUND, message: "Internship not found" },
         NOT_FOUND,
@@ -142,16 +142,6 @@ export const createInternship: AppRouteHandler<CreateInternship> = async (
   c,
 ) => {
   const user = c.get("user");
-
-  if (user.role !== "unit") {
-    return c.json(
-      {
-        status_code: FORBIDDEN,
-        message: "Only units can create internships",
-      },
-      FORBIDDEN,
-    );
-  }
 
   try {
     const data = c.req.valid("json");
@@ -207,29 +197,6 @@ export const updateInternship: AppRouteHandler<UpdateInternship> = async (
   const { id } = c.req.valid("param");
 
   try {
-    // Check if internship exists and belongs to user
-    const existingInternship = await db
-      .select()
-      .from(internships)
-      .where(eq(internships.id, id))
-      .limit(1);
-
-    if (!existingInternship || existingInternship.length === 0) {
-      return c.json(
-        { status_code: NOT_FOUND, message: "Internship not found" },
-        NOT_FOUND,
-      );
-    }
-
-    if (existingInternship[0].createdBy !== user.id) {
-      return c.json(
-        {
-          status_code: FORBIDDEN,
-          message: "You don't have permission to update this internship",
-        },
-        FORBIDDEN,
-      );
-    }
     const data = c.req.valid("json");
 
     // Convert closingDate string to Date if provided
@@ -238,11 +205,19 @@ export const updateInternship: AppRouteHandler<UpdateInternship> = async (
       closingDate: data.closingDate ? data.closingDate : undefined,
     } as typeof internships.$inferInsert;
 
+    // OPTIMIZED: Single update query with ownership check
     const [updatedInternship] = await db
       .update(internships)
       .set({ ...updateData, updatedAt: new Date() })
-      .where(eq(internships.id, id))
+      .where(and(eq(internships.id, id), eq(internships.createdBy, user.id)))
       .returning();
+
+    if (!updatedInternship) {
+      return c.json(
+        { status_code: NOT_FOUND, message: "Internship not found" },
+        NOT_FOUND,
+      );
+    }
 
     return c.json(
       {
@@ -419,34 +394,21 @@ export const deleteInternship: AppRouteHandler<DeleteInternship> = async (
   c,
 ) => {
   const user = c.get("user");
-
   const { id } = c.req.valid("param");
 
   try {
-    const existingInternship = await db
-      .select()
-      .from(internships)
-      .where(eq(internships.id, id))
-      .limit(1);
+    // OPTIMIZED: Single delete query with ownership check
+    const [deletedInternship] = await db
+      .delete(internships)
+      .where(and(eq(internships.id, id), eq(internships.createdBy, user.id)))
+      .returning();
 
-    if (!existingInternship || existingInternship.length === 0) {
+    if (!deletedInternship) {
       return c.json(
         { status_code: NOT_FOUND, message: "Internship not found" },
         NOT_FOUND,
       );
     }
-
-    if (existingInternship[0].createdBy !== user.id) {
-      return c.json(
-        {
-          status_code: FORBIDDEN,
-          message: "You don't have permission to delete this internship",
-        },
-        FORBIDDEN,
-      );
-    }
-
-    await db.delete(internships).where(eq(internships.id, id));
 
     return c.json(
       {

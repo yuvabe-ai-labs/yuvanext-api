@@ -5,7 +5,6 @@ import type { AppRouteHandler } from "@/types/app.types";
 import db from "@/db";
 import { notifications } from "@/db/schema/notification.schema";
 import {
-  FORBIDDEN,
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
   OK,
@@ -68,6 +67,8 @@ export const markNotificationAsRead: AppRouteHandler<
   const { id: notificationId } = c.req.valid("param");
 
   try {
+    // OPTIMIZED: Single query with where clause ensures ownership
+    // Returns empty array if notification doesn't exist or doesn't belong to user
     const [updatedNotification] = await db
       .update(notifications)
       .set({
@@ -159,14 +160,19 @@ export const deleteNotification: AppRouteHandler<DeleteNotification> = async (
   const { id: notificationId } = c.req.valid("param");
 
   try {
-    // Check if notification exists and belongs to user
-    const notification = await db
-      .select()
-      .from(notifications)
-      .where(eq(notifications.id, notificationId))
-      .limit(1);
+    // OPTIMIZED: Single delete query with userId check
+    // This replaces the previous two queries (select + delete)
+    const [deletedNotification] = await db
+      .delete(notifications)
+      .where(
+        and(
+          eq(notifications.id, notificationId),
+          eq(notifications.userId, user.id),
+        ),
+      )
+      .returning();
 
-    if (!notification || notification.length === 0) {
+    if (!deletedNotification) {
       return c.json(
         {
           status_code: NOT_FOUND,
@@ -175,20 +181,6 @@ export const deleteNotification: AppRouteHandler<DeleteNotification> = async (
         NOT_FOUND,
       );
     }
-
-    // Verify the notification belongs to this user
-    if (notification[0].userId !== user.id) {
-      return c.json(
-        {
-          status_code: FORBIDDEN,
-          message: "You can only delete your own notifications",
-        },
-        FORBIDDEN,
-      );
-    }
-
-    // Delete the notification
-    await db.delete(notifications).where(eq(notifications.id, notificationId));
 
     return c.json(
       {

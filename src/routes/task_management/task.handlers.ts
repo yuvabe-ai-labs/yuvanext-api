@@ -105,18 +105,20 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
   try {
     const { applicationId } = c.req.valid("query");
 
-    let relevantApplications: (typeof applications.$inferSelect)[];
+    let relevantApplicationIds: string[];
 
     if (user.role === "candidate") {
-      // Get all applications for this candidate
-      relevantApplications = await db
-        .select()
+      // Get all application IDs for this candidate
+      const apps = await db
+        .select({ id: applications.id })
         .from(applications)
         .where(eq(applications.userId, user.id));
+
+      relevantApplicationIds = apps.map((app) => app.id);
     } else if (user.role === "unit") {
-      // Get all applications for internships owned by this unit
+      // Get all internship IDs owned by this unit
       const unitInternships = await db
-        .select()
+        .select({ id: internships.id })
         .from(internships)
         .where(eq(internships.createdBy, user.id));
 
@@ -133,15 +135,13 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
         );
       }
 
-      // Get all applications for these internships
-      relevantApplications = [];
-      for (const intId of internshipIds) {
-        const apps = await db
-          .select()
-          .from(applications)
-          .where(eq(applications.internshipId, intId));
-        relevantApplications.push(...apps);
-      }
+      // Get all application IDs for these internships in ONE query
+      const apps = await db
+        .select({ id: applications.id })
+        .from(applications)
+        .where(inArray(applications.internshipId, internshipIds));
+
+      relevantApplicationIds = apps.map((app) => app.id);
     } else {
       return c.json(
         {
@@ -152,7 +152,7 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
       );
     }
 
-    if (relevantApplications.length === 0) {
+    if (relevantApplicationIds.length === 0) {
       return c.json(
         {
           status_code: OK,
@@ -163,12 +163,9 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
       );
     }
 
-    const applicationIds = relevantApplications.map((app) => app.id);
-
     // Filter by applicationId if provided
-    let targetApplicationIds = applicationIds;
     if (applicationId) {
-      if (!applicationIds.includes(applicationId)) {
+      if (!relevantApplicationIds.includes(applicationId)) {
         return c.json(
           {
             status_code: FORBIDDEN,
@@ -177,110 +174,122 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
           FORBIDDEN,
         );
       }
-      targetApplicationIds = [applicationId];
+      relevantApplicationIds = [applicationId];
     }
 
-    // Get all tasks for the target applications
-    const allTasks: (typeof tasks.$inferSelect)[] = [];
-    for (const appId of targetApplicationIds) {
-      const appTasks = await db
-        .select()
-        .from(tasks)
-        .where(eq(tasks.applicationId, appId));
-      allTasks.push(...appTasks);
+    // Fetch ALL tasks for target applications in ONE query
+    const allTasks = await db
+      .select()
+      .from(tasks)
+      .where(inArray(tasks.applicationId, relevantApplicationIds));
+
+    if (allTasks.length === 0) {
+      return c.json(
+        {
+          status_code: OK,
+          message: "Tasks retrieved successfully",
+          data: [],
+        },
+        OK,
+      );
     }
 
-    // Enrich tasks with application, internship, and unit details
-    const enrichedTasks = await Promise.all(
-      allTasks.map(async (task) => {
-        // Get application details
-        const application = await db
-          .select()
-          .from(applications)
-          .where(eq(applications.id, task.applicationId))
-          .limit(1);
+    // Get all unique application IDs from tasks
+    const taskApplicationIds = [
+      ...new Set(allTasks.map((t) => t.applicationId)),
+    ];
 
-        if (!application.length) {
-          return {
-            ...task,
-            applicantName: null,
-            applicantPhone: null,
-            applicantEmail: null,
-            internshipTitle: null,
-            unitName: null,
-            unitId: null,
-            progress: 0,
-          };
+    // Fetch ALL related data in bulk queries
+    // 1. Get all applications with internships and units in ONE query
+    const applicationsData = await db
+      .select({
+        applicationId: applications.id,
+        userId: applications.userId,
+        internshipId: applications.internshipId,
+        internshipTitle: internships.title,
+        internshipCreatedBy: internships.createdBy,
+        unitName: units.name,
+      })
+      .from(applications)
+      .innerJoin(internships, eq(applications.internshipId, internships.id))
+      .leftJoin(units, eq(internships.createdBy, units.userId))
+      .where(inArray(applications.id, taskApplicationIds));
+
+    // 2. Get all unique user IDs
+    const userIds = [...new Set(applicationsData.map((a) => a.userId))];
+
+    // 3. Get all candidates for these users in ONE query
+    const candidatesData = await db
+      .select()
+      .from(candidates)
+      .where(inArray(candidates.userId, userIds));
+
+    // 4. Get all user details in ONE query
+    const usersData = await db
+      .select()
+      .from(userTable)
+      .where(inArray(userTable.id, userIds));
+
+    // 5. Calculate progress for each application (group tasks by applicationId)
+    const tasksByApplication = allTasks.reduce(
+      (acc, task) => {
+        if (!acc[task.applicationId]) {
+          acc[task.applicationId] = [];
         }
+        acc[task.applicationId].push(task);
+        return acc;
+      },
+      {} as Record<string, typeof allTasks>,
+    );
 
-        // Get applicant (user) details using candidate table
-        let applicantName: string | null = null;
-        let applicantPhone: string | null = null;
-        let applicantEmail: string | null = null;
-        const candidate = await db
-          .select()
-          .from(candidates)
-          .where(eq(candidates.userId, application[0].userId))
-          .limit(1);
+    const progressByApplication: Record<string, number> = {};
+    for (const [appId, appTasks] of Object.entries(tasksByApplication)) {
+      const totalTasks = appTasks.length;
+      const completedTasks = appTasks.filter(
+        (t) => t.status === "accepted",
+      ).length;
+      progressByApplication[appId] =
+        totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+    }
 
-        if (candidate.length) {
-          const candidateUser = await db
-            .select()
-            .from(userTable)
-            .where(eq(userTable.id, candidate[0].userId))
-            .limit(1);
-          if (candidateUser.length) {
-            applicantName = candidateUser[0].name;
-            applicantEmail = candidateUser[0].email;
-          }
-          applicantPhone = candidate[0].phone;
-        }
+    // Create lookup maps for O(1) access
+    const applicationMap = new Map(
+      applicationsData.map((a) => [a.applicationId, a]),
+    );
+    const candidateMap = new Map(candidatesData.map((c) => [c.userId, c]));
+    const userMap = new Map(usersData.map((u) => [u.id, u]));
 
-        // Get internship details
-        const internship = await db
-          .select()
-          .from(internships)
-          .where(eq(internships.id, application[0].internshipId!))
-          .limit(1);
+    // Enrich tasks with all related data (no more DB queries!)
+    const enrichedTasks = allTasks.map((task) => {
+      const application = applicationMap.get(task.applicationId);
 
-        // Get unit details
-        let unitName: string | null = null;
-        let unitId: string | null = null;
-        if (internship.length && internship[0].createdBy) {
-          const unitRecord = await db
-            .select()
-            .from(units)
-            .where(eq(units.userId, internship[0].createdBy))
-            .limit(1);
-          unitName = unitRecord.length ? unitRecord[0].name : null;
-          unitId = internship[0].createdBy;
-        }
-
-        // Calculate progress for this application
-        const applicationTasks = await db
-          .select()
-          .from(tasks)
-          .where(eq(tasks.applicationId, task.applicationId));
-
-        const totalTasks = applicationTasks.length;
-        const completedTasks = applicationTasks.filter(
-          (t) => t.status === "accepted",
-        ).length;
-        const progress =
-          totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-
+      if (!application) {
         return {
           ...task,
-          applicantName,
-          applicantPhone,
-          applicantEmail,
-          internshipTitle: internship.length ? internship[0].title : null,
-          unitName,
-          unitId,
-          progress,
+          applicantName: null,
+          applicantPhone: null,
+          applicantEmail: null,
+          internshipTitle: null,
+          unitName: null,
+          unitId: null,
+          progress: 0,
         };
-      }),
-    );
+      }
+
+      const candidate = candidateMap.get(application.userId);
+      const userInfo = userMap.get(application.userId);
+
+      return {
+        ...task,
+        applicantName: userInfo?.name || null,
+        applicantPhone: candidate?.phone || null,
+        applicantEmail: userInfo?.email || null,
+        internshipTitle: application.internshipTitle,
+        unitName: application.unitName,
+        unitId: application.internshipCreatedBy,
+        progress: progressByApplication[task.applicationId] || 0,
+      };
+    });
 
     return c.json(
       {
@@ -309,33 +318,51 @@ export const updateTask: AppRouteHandler<UpdateTask> = async (c) => {
   const body = c.req.valid("json");
 
   try {
-    // Update only if task exists AND belongs to the candidate's application
-    const [updatedTask] = await db
-      .update(tasks)
-      .set({ ...body, updatedAt: new Date() })
-      .where(
-        and(
-          eq(tasks.id, taskId),
-          eq(
-            tasks.applicationId,
-            db
-              .select({ id: applications.id })
-              .from(applications)
-              .where(eq(applications.userId, user.id)),
-          ),
-        ),
-      )
-      .returning();
+    // First verify task exists and get its applicationId
+    const task = await db
+      .select({ applicationId: tasks.applicationId })
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1);
 
-    if (!updatedTask) {
+    if (!task.length) {
       return c.json(
         {
           status_code: NOT_FOUND,
-          message: "Task not found or you do not own it",
+          message: "Task not found",
         },
         NOT_FOUND,
       );
     }
+
+    // Verify the application belongs to the user
+    const application = await db
+      .select()
+      .from(applications)
+      .where(
+        and(
+          eq(applications.id, task[0].applicationId),
+          eq(applications.userId, user.id),
+        ),
+      )
+      .limit(1);
+
+    if (!application.length) {
+      return c.json(
+        {
+          status_code: FORBIDDEN,
+          message: "You can only update tasks for your own applications",
+        },
+        FORBIDDEN,
+      );
+    }
+
+    // Update the task
+    const [updatedTask] = await db
+      .update(tasks)
+      .set({ ...body, updatedAt: new Date() })
+      .where(eq(tasks.id, taskId))
+      .returning();
 
     return c.json(
       {
@@ -360,14 +387,18 @@ export const deleteTask: AppRouteHandler<DeleteTask> = async (c) => {
   const { id: taskId } = c.req.valid("param");
 
   try {
-    // Check if task exists and belongs to candidate
-    const task = await db
-      .select()
+    // Get task with application in ONE query
+    const taskData = await db
+      .select({
+        taskId: tasks.id,
+        applicationUserId: applications.userId,
+      })
       .from(tasks)
+      .innerJoin(applications, eq(tasks.applicationId, applications.id))
       .where(eq(tasks.id, taskId))
       .limit(1);
 
-    if (!task.length) {
+    if (!taskData.length) {
       return c.json(
         {
           status_code: NOT_FOUND,
@@ -377,13 +408,7 @@ export const deleteTask: AppRouteHandler<DeleteTask> = async (c) => {
       );
     }
 
-    const application = await db
-      .select()
-      .from(applications)
-      .where(eq(applications.id, task[0].applicationId))
-      .limit(1);
-
-    if (!application.length || application[0].userId !== user.id) {
+    if (taskData[0].applicationUserId !== user.id) {
       return c.json(
         {
           status_code: FORBIDDEN,

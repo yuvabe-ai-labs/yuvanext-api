@@ -8,6 +8,7 @@ export interface AuthVariables {
     id: string;
     email: string;
     role: string;
+    name?: string;
   };
 }
 
@@ -25,7 +26,7 @@ export function requireRole({ allowedRoles }: { allowedRoles: string[] }) {
       );
     }
 
-    const { id, email, role } = session.user;
+    const { id, email, role, name } = session.user;
 
     // Then, check role
     if (!role || !allowedRoles.includes(role)) {
@@ -38,7 +39,7 @@ export function requireRole({ allowedRoles }: { allowedRoles: string[] }) {
       );
     }
 
-    c.set("user", { id, email, role });
+    c.set("user", { id, email, role, name });
 
     await next();
   });

@@ -18,6 +18,7 @@ export interface AppBindings {
       id: string;
       email: string;
       role: string;
+      name?: string;
     };
   };
 }

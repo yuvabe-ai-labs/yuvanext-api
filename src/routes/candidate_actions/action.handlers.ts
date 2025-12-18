@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import type { AppRouteHandler } from "@/types/app.types";
@@ -20,7 +20,7 @@ import {
 } from "@/lib/openapi/http-status-codes";
 import {
   sendApplicationEmail,
-  sendUnitInterviewEmail,
+  sendUnitApplicationNotification,
 } from "@/lib/services/email.service";
 
 import type {
@@ -37,33 +37,36 @@ import type {
 // POST /internship/save - save an internship for the candidate
 export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
   const user = c.get("user");
-
   const { internshipId } = c.req.valid("param");
+
   try {
-    // check internship exists
-    const found = await db
-      .select()
-      .from(internships)
-      .where(eq(internships.id, internshipId));
-    if (!found || found.length === 0) {
+    // OPTIMIZED: Combined query using Promise.all to check both conditions in parallel
+    const [internshipExists, existingSaved] = await Promise.all([
+      db
+        .select({ id: internships.id })
+        .from(internships)
+        .where(eq(internships.id, internshipId))
+        .limit(1),
+      db
+        .select()
+        .from(savedInternship)
+        .where(
+          and(
+            eq(savedInternship.candidateId, user.id),
+            eq(savedInternship.internshipId, internshipId),
+          ),
+        )
+        .limit(1),
+    ]);
+
+    if (!internshipExists || internshipExists.length === 0) {
       return c.json(
         { status_code: NOT_FOUND, message: "Internship not found" },
         NOT_FOUND,
       );
     }
 
-    // prevent duplicate
-    const existing = await db
-      .select()
-      .from(savedInternship)
-      .where(
-        and(
-          eq(savedInternship.candidateId, user.id),
-          eq(savedInternship.internshipId, internshipId),
-        ),
-      );
-
-    if (existing.length > 0) {
+    if (existingSaved.length > 0) {
       return c.json({ status_code: OK, message: "Already saved" }, OK);
     }
 
@@ -90,7 +93,6 @@ export const removeSavedInternship: AppRouteHandler<
   RemoveSavedInternship
 > = async (c) => {
   const user = c.get("user");
-
   const { internshipId } = c.req.valid("param");
 
   try {
@@ -129,7 +131,6 @@ export const applyToInternship: AppRouteHandler<ApplyToInternship> = async (
   c,
 ) => {
   const user = c.get("user");
-
   const { internshipId } = c.req.valid("param");
   const { includedSections } = c.req.valid("json");
 
@@ -220,13 +221,13 @@ export const applyToInternship: AppRouteHandler<ApplyToInternship> = async (
       );
     }
 
-    // Send email to unit notifying them of new application
+    // FIXED: Send application notification email to unit (not interview email)
     if (unitEmail) {
       emailAndNotificationTasks.push(
-        sendUnitInterviewEmail({
+        sendUnitApplicationNotification({
           to: unitEmail,
           unitName,
-          candidateName: user.email,
+          candidateName: user.name || "",
           candidateEmail: user.email || "",
           internshipTitle: internshipData.title || "Internship Position",
         }).catch((emailErr) => {
@@ -359,20 +360,26 @@ export const getCounts: AppRouteHandler<GetCounts> = async (c) => {
   const user = c.get("user");
 
   try {
-    const saved = await db
-      .select()
-      .from(savedInternship)
-      .where(eq(savedInternship.candidateId, user.id));
-    const applied = await db
-      .select()
-      .from(applications)
-      .where(eq(applications.userId, user.id));
+    // OPTIMIZED: Use count() instead of selecting all rows
+    const [savedResult, appliedResult] = await Promise.all([
+      db
+        .select({ count: count() })
+        .from(savedInternship)
+        .where(eq(savedInternship.candidateId, user.id)),
+      db
+        .select({ count: count() })
+        .from(applications)
+        .where(eq(applications.userId, user.id)),
+    ]);
 
     return c.json(
       {
         status_code: OK,
         message: "Counts fetched",
-        data: { savedCount: saved.length, appliedCount: applied.length },
+        data: {
+          savedCount: savedResult[0]?.count || 0,
+          appliedCount: appliedResult[0]?.count || 0,
+        },
       },
       OK,
     );
@@ -388,17 +395,25 @@ export const getCounts: AppRouteHandler<GetCounts> = async (c) => {
 // GET /internship/share/:id - generate share links for an internship
 export const shareInternship: AppRouteHandler<ShareInternship> = async (c) => {
   const { id: internshipId } = c.req.valid("param");
+
   try {
+    // OPTIMIZED: Select only needed fields
     const found = await db
-      .select()
+      .select({
+        id: internships.id,
+        title: internships.title,
+      })
       .from(internships)
-      .where(eq(internships.id, internshipId));
+      .where(eq(internships.id, internshipId))
+      .limit(1);
+
     if (!found || found.length === 0) {
       return c.json(
         { status_code: NOT_FOUND, message: "Internship not found" },
         NOT_FOUND,
       );
     }
+
     const internship = found[0];
 
     const frontendBase = env.FRONTEND_URL || "https://app.yuvanext.com";

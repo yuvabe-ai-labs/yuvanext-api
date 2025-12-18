@@ -1,4 +1,4 @@
-// chatbot.handlers.ts - Fixed type compatibility
+// chatbot.handlers.ts - Refactored with optimized DB calls
 
 import { eq } from "drizzle-orm";
 
@@ -34,38 +34,71 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
     SYSTEM_PROMPT = UNIT_SYSTEM_PROMPT;
   }
 
-  // Helper function to ensure candidate record exists and check onboarding status
-  const ensureCandidateExists = async (
+  // OPTIMIZED: Combined helper function for both candidate and unit
+  const ensureProfileExists = async (
     userId: string,
+    role: "candidate" | "unit",
   ): Promise<{
     exists: boolean;
     onboardingCompleted: boolean;
   }> => {
     try {
-      const existing = await db
-        .select()
-        .from(candidates)
-        .where(eq(candidates.userId, userId))
-        .limit(1);
+      if (role === "candidate") {
+        const existing = await db
+          .select({
+            onboardingCompleted: candidates.onboardingCompleted,
+          })
+          .from(candidates)
+          .where(eq(candidates.userId, userId))
+          .limit(1);
 
-      if (existing.length > 0) {
+        if (existing.length > 0) {
+          return {
+            exists: true,
+            onboardingCompleted: existing[0].onboardingCompleted || false,
+          };
+        }
+
+        await db.insert(candidates).values({
+          userId,
+          onboardingCompleted: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
         return {
           exists: true,
-          onboardingCompleted: existing[0].onboardingCompleted || false,
+          onboardingCompleted: false,
+        };
+      } else {
+        // role === "unit"
+        const existing = await db
+          .select({
+            onboardingCompleted: units.onboardingCompleted,
+          })
+          .from(units)
+          .where(eq(units.userId, userId))
+          .limit(1);
+
+        if (existing.length > 0) {
+          return {
+            exists: true,
+            onboardingCompleted: existing[0].onboardingCompleted || false,
+          };
+        }
+
+        await db.insert(units).values({
+          userId,
+          onboardingCompleted: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        return {
+          exists: true,
+          onboardingCompleted: false,
         };
       }
-
-      await db.insert(candidates).values({
-        userId,
-        onboardingCompleted: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
-      return {
-        exists: true,
-        onboardingCompleted: false,
-      };
     } catch {
       return {
         exists: false,
@@ -74,86 +107,41 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
     }
   };
 
-  // NEW: Helper function to ensure unit record exists and check onboarding status
-  const ensureUnitExists = async (
+  // OPTIMIZED: Combined onboarding completion function
+  const markOnboardingComplete = async (
     userId: string,
-  ): Promise<{
-    exists: boolean;
-    onboardingCompleted: boolean;
-  }> => {
+    role: "candidate" | "unit",
+  ): Promise<boolean> => {
     try {
-      const existing = await db
-        .select()
-        .from(units)
-        .where(eq(units.userId, userId))
-        .limit(1);
-
-      if (existing.length > 0) {
-        return {
-          exists: true,
-          onboardingCompleted: existing[0].onboardingCompleted || false,
-        };
+      if (role === "candidate") {
+        await db
+          .update(candidates)
+          .set({
+            onboardingCompleted: true,
+            updatedAt: new Date(),
+          })
+          .where(eq(candidates.userId, userId));
+      } else {
+        await db
+          .update(units)
+          .set({
+            onboardingCompleted: true,
+            updatedAt: new Date(),
+          })
+          .where(eq(units.userId, userId));
       }
-
-      await db.insert(units).values({
-        userId,
-        onboardingCompleted: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      return {
-        exists: true,
-        onboardingCompleted: false,
-      };
-    } catch {
-      return {
-        exists: false,
-        onboardingCompleted: false,
-      };
-    }
-  };
-
-  // Helper function to mark candidate onboarding as completed
-  const markCandidateOnboardingComplete = async (
-    userId: string,
-  ): Promise<boolean> => {
-    try {
-      await db
-        .update(candidates)
-        .set({
-          onboardingCompleted: true,
-          updatedAt: new Date(),
-        })
-        .where(eq(candidates.userId, userId));
       return true;
     } catch {
       return false;
     }
   };
 
-  // NEW: Helper function to mark unit onboarding as completed
-  const markUnitOnboardingComplete = async (
-    userId: string,
-  ): Promise<boolean> => {
-    try {
-      await db
-        .update(units)
-        .set({
-          onboardingCompleted: true,
-          updatedAt: new Date(),
-        })
-        .where(eq(units.userId, userId));
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  // Field saving logic for CANDIDATES
-  const saveCandidateField = async (
+  // OPTIMIZED: Generic field saving function that handles both candidates and units
+  const saveField = async (
     field: string,
     value: any,
     lastQuestion: string,
+    role: "candidate" | "unit",
   ): Promise<{
     success: boolean;
     error?: string;
@@ -180,279 +168,157 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
 
       const extractedValue = validationResult.extractedValue;
 
-      // Save to candidates table
-      switch (field.toLowerCase()) {
-        case "phone": {
-          const _result = await db
-            .update(candidates)
-            .set({ phone: String(extractedValue || "") })
-            .where(eq(candidates.userId, userId))
-            .returning();
-          break;
+      // Helper to process array values
+      const toArray = (val: any): string[] => {
+        if (Array.isArray(val)) {
+          return val
+            .map(String)
+            .map((s) => s.trim())
+            .filter(Boolean);
         }
-        case "gender": {
-          const genderValue = String(extractedValue || "").toLowerCase();
-          const _result = await db
-            .update(candidates)
-            .set({ gender: genderValue as any })
-            .where(eq(candidates.userId, userId))
-            .returning();
-          break;
+        if (typeof val === "string") {
+          return val
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
         }
-        case "experience_level": {
-          const _result = await db
-            .update(candidates)
-            .set({ experienceLevel: String(extractedValue || "") })
-            .where(eq(candidates.userId, userId))
-            .returning();
-          break;
-        }
-        case "skills": {
-          let arr: string[] = [];
-          if (Array.isArray(extractedValue)) {
-            arr = extractedValue
-              .map(String)
-              .map((s) => s.trim())
-              .filter(Boolean);
-          } else if (typeof extractedValue === "string") {
-            arr = extractedValue
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean);
-          }
-
-          const _result = await db
-            .update(candidates)
-            .set({ skills: arr })
-            .where(eq(candidates.userId, userId))
-            .returning();
-          break;
-        }
-        case "interests": {
-          let arr: string[] = [];
-          if (Array.isArray(extractedValue)) {
-            arr = extractedValue
-              .map(String)
-              .map((s) => s.trim())
-              .filter(Boolean);
-          } else if (typeof extractedValue === "string") {
-            arr = extractedValue
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean);
-          }
-
-          const _result = await db
-            .update(candidates)
-            .set({ interests: arr })
-            .where(eq(candidates.userId, userId))
-            .returning();
-          break;
-        }
-        case "type": {
-          const typeValue = String(extractedValue || "").toLowerCase();
-          const _result = await db
-            .update(candidates)
-            .set({ type: typeValue as any })
-            .where(eq(candidates.userId, userId))
-            .returning();
-          break;
-        }
-        case "looking_for": {
-          let arr: string[] = [];
-          if (Array.isArray(extractedValue)) {
-            arr = extractedValue
-              .map(String)
-              .map((s) => s.trim().toLowerCase())
-              .filter(Boolean);
-          } else if (typeof extractedValue === "string") {
-            arr = extractedValue
-              .split(",")
-              .map((s) => s.trim().toLowerCase())
-              .filter(Boolean);
-          }
-
-          console.warn("DEBUG - lookingFor about to save:", {
-            userId,
-            extractedValue,
-            processedArray: arr,
-          });
-
-          const result = await db
-            .update(candidates)
-            .set({ lookingFor: arr })
-            .where(eq(candidates.userId, userId))
-            .returning();
-
-          console.warn("DEBUG - lookingFor save result:", result);
-
-          if (result.length === 0) {
-            throw new Error("No candidate record found to update");
-          }
-
-          break;
-        }
-
-        default:
-          return { success: false, error: "Field not supported" };
-      }
-
-      return { success: true, extractedValue };
-    } catch (err) {
-      return {
-        success: false,
-        error: String(err instanceof Error ? err.message : "Database error"),
-        needsRetry: true,
-        retryPrompt:
-          "Something went wrong. Could you please try answering that question again?",
+        return [];
       };
-    }
-  };
 
-  // NEW: Field saving logic for UNITS
-  const saveUnitField = async (
-    field: string,
-    value: any,
-    lastQuestion: string,
-  ): Promise<{
-    success: boolean;
-    error?: string;
-    needsRetry?: boolean;
-    retryPrompt?: string;
-    extractedValue?: any;
-  }> => {
-    try {
-      const validationResult = await validateAndExtractData(
-        String(value || ""),
-        lastQuestion,
-        field,
-        role,
-      );
+      // Save to appropriate table based on role
+      if (role === "candidate") {
+        switch (field.toLowerCase()) {
+          case "phone":
+            await db
+              .update(candidates)
+              .set({ phone: String(extractedValue || "") })
+              .where(eq(candidates.userId, userId));
+            break;
 
-      if (!validationResult.isValid) {
-        return {
-          success: false,
-          error: validationResult.validationMessage,
-          needsRetry: true,
-          retryPrompt: `${validationResult.validationMessage} Could you please provide that information again?`,
-        };
-      }
-
-      const extractedValue = validationResult.extractedValue;
-
-      // Save to units table
-      switch (field.toLowerCase()) {
-        case "name": {
-          const _result = await db
-            .update(units)
-            .set({ name: String(extractedValue || "") })
-            .where(eq(units.userId, userId))
-            .returning();
-          break;
-        }
-        case "type": {
-          const _result = await db
-            .update(units)
-            .set({ type: String(extractedValue || "") })
-            .where(eq(units.userId, userId))
-            .returning();
-          break;
-        }
-        case "phone": {
-          const _result = await db
-            .update(units)
-            .set({ phone: String(extractedValue || "") })
-            .where(eq(units.userId, userId))
-            .returning();
-          break;
-        }
-        case "location": {
-          const _result = await db
-            .update(units)
-            .set({ location: String(extractedValue || "") })
-            .where(eq(units.userId, userId))
-            .returning();
-          break;
-        }
-        case "focus_areas": {
-          let arr: string[] = [];
-          if (Array.isArray(extractedValue)) {
-            arr = extractedValue
-              .map(String)
-              .map((s) => s.trim())
-              .filter(Boolean);
-          } else if (typeof extractedValue === "string") {
-            arr = extractedValue
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean);
+          case "gender": {
+            const genderValue = String(extractedValue || "").toLowerCase();
+            await db
+              .update(candidates)
+              .set({ gender: genderValue as any })
+              .where(eq(candidates.userId, userId));
+            break;
           }
 
-          const _result = await db
-            .update(units)
-            .set({ focusAreas: arr })
-            .where(eq(units.userId, userId))
-            .returning();
-          break;
-        }
-        case "skills_offered": {
-          let arr: string[] = [];
-          if (Array.isArray(extractedValue)) {
-            arr = extractedValue
-              .map(String)
-              .map((s) => s.trim())
-              .filter(Boolean);
-          } else if (typeof extractedValue === "string") {
-            arr = extractedValue
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean);
+          case "experience_level":
+            await db
+              .update(candidates)
+              .set({ experienceLevel: String(extractedValue || "") })
+              .where(eq(candidates.userId, userId));
+            break;
+
+          case "skills":
+            await db
+              .update(candidates)
+              .set({ skills: toArray(extractedValue) })
+              .where(eq(candidates.userId, userId));
+            break;
+
+          case "interests":
+            await db
+              .update(candidates)
+              .set({ interests: toArray(extractedValue) })
+              .where(eq(candidates.userId, userId));
+            break;
+
+          case "type": {
+            const typeValue = String(extractedValue || "").toLowerCase();
+            await db
+              .update(candidates)
+              .set({ type: typeValue as any })
+              .where(eq(candidates.userId, userId));
+            break;
           }
 
-          const _result = await db
-            .update(units)
-            .set({ skillsOffered: arr })
-            .where(eq(units.userId, userId))
-            .returning();
-          break;
-        }
-        case "is_aurovillian": {
-          const boolValue =
-            String(extractedValue || "").toLowerCase() === "true" ||
-            String(extractedValue || "").toLowerCase() === "yes" ||
-            String(extractedValue || "").toLowerCase() === "aurovillian";
+          case "looking_for": {
+            const arr = toArray(extractedValue).map((s) => s.toLowerCase());
+            const result = await db
+              .update(candidates)
+              .set({ lookingFor: arr })
+              .where(eq(candidates.userId, userId))
+              .returning();
 
-          const _result = await db
-            .update(units)
-            .set({ isAurovillian: boolValue })
-            .where(eq(units.userId, userId))
-            .returning();
-          break;
-        }
-        case "opportunities_offered": {
-          let arr: string[] = [];
-          if (Array.isArray(extractedValue)) {
-            arr = extractedValue
-              .map(String)
-              .map((s) => s.trim())
-              .filter(Boolean);
-          } else if (typeof extractedValue === "string") {
-            arr = extractedValue
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean);
+            if (result.length === 0) {
+              throw new Error("No candidate record found to update");
+            }
+            break;
           }
 
-          const _result = await db
-            .update(units)
-            .set({ opportunitiesOffered: arr })
-            .where(eq(units.userId, userId))
-            .returning();
-          break;
+          default:
+            return { success: false, error: "Field not supported" };
         }
+      } else {
+        // role === "unit"
+        switch (field.toLowerCase()) {
+          case "name":
+            await db
+              .update(units)
+              .set({ name: String(extractedValue || "") })
+              .where(eq(units.userId, userId));
+            break;
 
-        default:
-          return { success: false, error: "Field not supported" };
+          case "type":
+            await db
+              .update(units)
+              .set({ type: String(extractedValue || "") })
+              .where(eq(units.userId, userId));
+            break;
+
+          case "phone":
+            await db
+              .update(units)
+              .set({ phone: String(extractedValue || "") })
+              .where(eq(units.userId, userId));
+            break;
+
+          case "location":
+            await db
+              .update(units)
+              .set({ location: String(extractedValue || "") })
+              .where(eq(units.userId, userId));
+            break;
+
+          case "focus_areas":
+            await db
+              .update(units)
+              .set({ focusAreas: toArray(extractedValue) })
+              .where(eq(units.userId, userId));
+            break;
+
+          case "skills_offered":
+            await db
+              .update(units)
+              .set({ skillsOffered: toArray(extractedValue) })
+              .where(eq(units.userId, userId));
+            break;
+
+          case "is_aurovillian": {
+            const boolValue =
+              String(extractedValue || "").toLowerCase() === "true" ||
+              String(extractedValue || "").toLowerCase() === "yes" ||
+              String(extractedValue || "").toLowerCase() === "aurovillian";
+
+            await db
+              .update(units)
+              .set({ isAurovillian: boolValue })
+              .where(eq(units.userId, userId));
+            break;
+          }
+
+          case "opportunities_offered":
+            await db
+              .update(units)
+              .set({ opportunitiesOffered: toArray(extractedValue) })
+              .where(eq(units.userId, userId));
+            break;
+
+          default:
+            return { success: false, error: "Field not supported" };
+        }
       }
 
       return { success: true, extractedValue };
@@ -468,14 +334,8 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
   };
 
   try {
-    // Check if candidate/unit exists and onboarding status
-    let onboardingStatus: { exists: boolean; onboardingCompleted: boolean };
-
-    if (role === "candidate") {
-      onboardingStatus = await ensureCandidateExists(userId);
-    } else if (role === "unit") {
-      onboardingStatus = await ensureUnitExists(userId);
-    } else {
+    // Validate role
+    if (role !== "candidate" && role !== "unit") {
       return c.json(
         {
           success: false as const,
@@ -484,6 +344,9 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
         422,
       );
     }
+
+    // Check if profile exists and onboarding status
+    const onboardingStatus = await ensureProfileExists(userId, role);
 
     if (!onboardingStatus.exists) {
       return c.json(
@@ -526,7 +389,7 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
           message,
           lastBotQuestion,
           storedHistory,
-          role, // Pass role to detection
+          role,
         );
 
         // Filter high-confidence detections
@@ -543,19 +406,12 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
     const failedFields: Array<{ field: string; error: string }> = [];
 
     for (const fieldData of fieldsToSave) {
-      // Use appropriate save function based on role
-      const saveResult =
-        role === "candidate"
-          ? await saveCandidateField(
-              fieldData.field,
-              fieldData.value,
-              lastBotQuestion,
-            )
-          : await saveUnitField(
-              fieldData.field,
-              fieldData.value,
-              lastBotQuestion,
-            );
+      const saveResult = await saveField(
+        fieldData.field,
+        fieldData.value,
+        lastBotQuestion,
+        role,
+      );
 
       if (saveResult.success) {
         savedFields.push(fieldData.field);
@@ -617,11 +473,7 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
     );
 
     if (isCompletionMessage) {
-      if (role === "candidate") {
-        await markCandidateOnboardingComplete(userId);
-      } else if (role === "unit") {
-        await markUnitOnboardingComplete(userId);
-      }
+      await markOnboardingComplete(userId, role);
     }
 
     // Persist conversation

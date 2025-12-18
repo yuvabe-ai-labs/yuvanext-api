@@ -195,18 +195,20 @@ export const updateApplicationStatus: AppRouteHandler<
   try {
     const { applicationId, status, interviewDetails } = c.req.valid("json");
 
-    // Get application with related data
+    // Get application with related data INCLUDING unit name in one query
     const applicationData = await db
       .select({
         application: applications,
         internship: internships,
         candidate: candidates,
         candidateUser: userTable,
+        unitName: units.name, // Fetch unit name here to avoid extra DB call
       })
       .from(applications)
       .innerJoin(internships, eq(applications.internshipId, internships.id))
       .innerJoin(candidates, eq(applications.userId, candidates.userId))
       .innerJoin(userTable, eq(applications.userId, userTable.id))
+      .innerJoin(units, eq(internships.createdBy, units.userId)) // Join units table
       .where(eq(applications.id, applicationId))
       .limit(1);
 
@@ -225,6 +227,7 @@ export const updateApplicationStatus: AppRouteHandler<
       internship,
       candidate: _candidate,
       candidateUser,
+      unitName, // Extract unit name from the query result
     } = applicationData[0];
 
     // Verify the internship belongs to this unit
@@ -344,21 +347,15 @@ export const updateApplicationStatus: AppRouteHandler<
       notificationType,
     );
 
-    // Fetch unit details for emails
-    const unitRecord = await db
-      .select({ name: units.name })
-      .from(units)
-      .where(eq(units.userId, user.id))
-      .limit(1);
-
-    const unitName = unitRecord?.[0]?.name ?? "the organization";
+    // Use unit name from initial query (no extra DB call needed!)
+    const finalUnitName = unitName ?? "the organization";
 
     // Send email to candidate
     const candidateEmailSent = await sendApplicationEmail(status, {
       to: candidateUser.email,
       candidateName: candidateUser.name,
       internshipTitle: internship.title,
-      unitName,
+      unitName: finalUnitName,
       additionalData: {
         meetingLink: status === "interviewed" ? zoomLink : undefined,
         scheduledAt: status === "interviewed" ? scheduledAt : undefined,
@@ -371,7 +368,7 @@ export const updateApplicationStatus: AppRouteHandler<
     if (status === "interviewed") {
       unitEmailSent = await sendUnitInterviewEmail({
         to: user.email, // Unit's email
-        unitName,
+        unitName: finalUnitName,
         candidateName: candidateUser.name,
         candidateEmail: candidateUser.email,
         internshipTitle: internship.title,

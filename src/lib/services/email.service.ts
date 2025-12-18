@@ -31,6 +31,14 @@ interface UnitInterviewEmailParams {
   };
 }
 
+interface UnitApplicationNotificationParams {
+  to: string;
+  unitName: string;
+  candidateName: string;
+  candidateEmail: string;
+  internshipTitle: string;
+}
+
 // Create transporter using the same config as auth service
 const transporter = nodemailer.createTransport({
   host: env.SMTP_HOST,
@@ -54,6 +62,7 @@ const templateFiles: Record<string, string> = {
   interviewed: path.join(templatesDir, "interviewed.html"),
   hired: path.join(templatesDir, "hired.html"),
   unitInterview: path.join(templatesDir, "unit-interview.html"),
+  appliedNotification: path.join(templatesDir, "applied-unit.html"),
 };
 
 const compiledTemplates: Record<string, Handlebars.TemplateDelegate> = {};
@@ -172,13 +181,47 @@ export async function sendApplicationEmail(
   }
 }
 
-// Send interview email to unit
+// NEW: Send application notification email to unit (when candidate applies)
+export async function sendUnitApplicationNotification(
+  params: UnitApplicationNotificationParams,
+): Promise<boolean> {
+  try {
+    await loadTemplates();
+    const template = compiledTemplates.appliedNotification;
+
+    if (!template) {
+      throw new Error("Applied notification template not found");
+    }
+
+    const html = template(params);
+
+    const subject = `New Application - ${params.candidateName} applied for ${params.internshipTitle}`;
+
+    await transporter.sendMail({
+      from: env.SMTP_USER,
+      to: params.to,
+      subject,
+      html,
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error sending unit application notification:", error);
+    return false;
+  }
+}
+
+// Send interview email to unit (when interview is scheduled)
 export async function sendUnitInterviewEmail(
   params: UnitInterviewEmailParams,
 ): Promise<boolean> {
   try {
     await loadTemplates();
     const template = compiledTemplates.unitInterview;
+
+    if (!template) {
+      throw new Error("Unit interview template not found");
+    }
 
     const scheduledAtFormatted = formatScheduledAt(
       params.additionalData?.scheduledAt,
@@ -201,7 +244,8 @@ export async function sendUnitInterviewEmail(
     });
 
     return true;
-  } catch {
+  } catch (error) {
+    console.error("Error sending unit interview email:", error);
     return false;
   }
 }

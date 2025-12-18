@@ -158,79 +158,219 @@ export const getProfile: AppRouteHandler<GetProfile> = async (c) => {
   const user = c.get("user");
 
   try {
-    const userData = await db
-      .select()
-      .from(userTable)
-      .where(eq(userTable.id, user.id))
-      .limit(1);
+    // Fetch user data with role-specific data in ONE query using JOIN
+    if (user.role === "candidate") {
+      const profileData = await db
+        .select({
+          // User fields
+          id: userTable.id,
+          name: userTable.name,
+          email: userTable.email,
+          image: userTable.image,
+          role: userTable.role,
+          createdAt: userTable.createdAt,
+          updatedAt: userTable.updatedAt,
+          // Candidate fields
+          candidateType: candidates.type,
+          experienceLevel: candidates.experienceLevel,
+          profileSummary: candidates.profileSummary,
+          location: candidates.location,
+          maritalStatus: candidates.maritalStatus,
+          isDifferentlyAbled: candidates.isDifferentlyAbled,
+          hasCareerBreak: candidates.hasCareerBreak,
+          skills: candidates.skills,
+          interests: candidates.interests,
+          lookingFor: candidates.lookingFor,
+          avatarUrl: candidates.avatarUrl,
+          phone: candidates.phone,
+          gender: candidates.gender,
+          dateOfBirth: candidates.dateOfBirth,
+          onboardingCompleted: candidates.onboardingCompleted,
+          education: candidates.education,
+          language: candidates.language,
+          course: candidates.course,
+          internship: candidates.internship,
+          projects: candidates.projects,
+          socialLinks: candidates.socialLinks,
+        })
+        .from(userTable)
+        .leftJoin(candidates, eq(candidates.userId, userTable.id))
+        .where(eq(userTable.id, user.id))
+        .limit(1);
 
-    if (!userData || userData.length === 0) {
+      if (!profileData || profileData.length === 0) {
+        return c.json(
+          { status_code: NOT_FOUND, message: "User not found" },
+          NOT_FOUND,
+        );
+      }
+
+      const data = profileData[0];
+
+      // Construct candidate profile with proper field names
+      const candidateProfile = {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        image: data.image,
+        role: data.role,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+        type: data.candidateType,
+        experienceLevel: data.experienceLevel,
+        profileSummary: data.profileSummary,
+        location: data.location,
+        maritalStatus: data.maritalStatus,
+        isDifferentlyAbled: data.isDifferentlyAbled,
+        hasCareerBreak: data.hasCareerBreak,
+        skills: data.skills,
+        interests: data.interests,
+        lookingFor: data.lookingFor,
+        avatarUrl: data.avatarUrl,
+        phone: data.phone,
+        gender: data.gender,
+        dateOfBirth: data.dateOfBirth,
+        onboardingCompleted: data.onboardingCompleted,
+        education: data.education,
+        language: data.language,
+        course: data.course,
+        internship: data.internship,
+        projects: data.projects,
+        socialLinks: data.socialLinks,
+      };
+
+      const profileScore = calculateCandidateScore(candidateProfile);
+
       return c.json(
-        { status_code: NOT_FOUND, message: "User not found" },
-        NOT_FOUND,
+        {
+          status_code: OK,
+          message: "Profile retrieved successfully",
+          data: {
+            ...candidateProfile,
+            profileScore,
+          },
+        },
+        OK,
+      );
+    } else if (user.role === "unit") {
+      const profileData = await db
+        .select({
+          // User fields
+          id: userTable.id,
+          userName: userTable.name,
+          email: userTable.email,
+          image: userTable.image,
+          role: userTable.role,
+          createdAt: userTable.createdAt,
+          updatedAt: userTable.updatedAt,
+          // Unit fields
+          unitName: units.name,
+          type: units.type,
+          phone: units.phone,
+          address: units.address,
+          location: units.location,
+          onboardingCompleted: units.onboardingCompleted,
+          websiteUrl: units.websiteUrl,
+          mission: units.mission,
+          values: units.values,
+          description: units.description,
+          industry: units.industry,
+          isAurovillian: units.isAurovillian,
+          bannerUrl: units.bannerUrl,
+          avatarUrl: units.avatarUrl,
+          galleryImages: units.galleryImages,
+          galleryVideos: units.galleryVideos,
+          focusAreas: units.focusAreas,
+          skillsOffered: units.skillsOffered,
+          opportunitiesOffered: units.opportunitiesOffered,
+          projects: units.projects,
+          socialLinks: units.socialLinks,
+        })
+        .from(userTable)
+        .leftJoin(units, eq(units.userId, userTable.id))
+        .where(eq(userTable.id, user.id))
+        .limit(1);
+
+      if (!profileData || profileData.length === 0) {
+        return c.json(
+          { status_code: NOT_FOUND, message: "User not found" },
+          NOT_FOUND,
+        );
+      }
+
+      const data = profileData[0];
+
+      // Construct unit profile
+      const unitProfile = {
+        id: data.id,
+        name: data.unitName || data.userName, // Prefer unit name, fallback to user name
+        email: data.email,
+        image: data.image,
+        role: data.role,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+        type: data.type,
+        phone: data.phone,
+        address: data.address,
+        location: data.location,
+        onboardingCompleted: data.onboardingCompleted,
+        websiteUrl: data.websiteUrl,
+        mission: data.mission,
+        values: data.values,
+        description: data.description,
+        industry: data.industry,
+        isAurovillian: data.isAurovillian,
+        bannerUrl: data.bannerUrl,
+        avatarUrl: data.avatarUrl,
+        galleryImages: data.galleryImages,
+        galleryVideos: data.galleryVideos,
+        focusAreas: data.focusAreas,
+        skillsOffered: data.skillsOffered,
+        opportunitiesOffered: data.opportunitiesOffered,
+        projects: data.projects,
+        socialLinks: data.socialLinks,
+      };
+
+      const profileScore = calculateUnitScore(unitProfile);
+
+      return c.json(
+        {
+          status_code: OK,
+          message: "Profile retrieved successfully",
+          data: {
+            ...unitProfile,
+            profileScore,
+          },
+        },
+        OK,
+      );
+    } else {
+      // For other roles (admin, etc.), just return basic user data
+      const userData = await db
+        .select()
+        .from(userTable)
+        .where(eq(userTable.id, user.id))
+        .limit(1);
+
+      if (!userData || userData.length === 0) {
+        return c.json(
+          { status_code: NOT_FOUND, message: "User not found" },
+          NOT_FOUND,
+        );
+      }
+
+      return c.json(
+        {
+          status_code: OK,
+          message: "Profile retrieved successfully",
+          data: {
+            ...userData[0],
+            profileScore: 0,
+          },
+        },
+        OK,
       );
     }
-
-    const foundUser = userData[0];
-
-    // Fetch role-specific profile data
-    let profileData = {
-      id: foundUser.id,
-      name: foundUser.name,
-      email: foundUser.email,
-      image: foundUser.image,
-      role: foundUser.role,
-      createdAt: foundUser.createdAt,
-      updatedAt: foundUser.updatedAt,
-    };
-
-    let profileScore = 0;
-
-    if (foundUser.role === "candidate") {
-      const candidateData = await db
-        .select()
-        .from(candidates)
-        .where(eq(candidates.userId, user.id))
-        .limit(1);
-
-      if (candidateData.length > 0) {
-        profileData = {
-          ...profileData,
-          ...candidateData[0],
-        } as typeof profileData & (typeof candidateData)[0];
-
-        // Calculate candidate profile score
-        profileScore = calculateCandidateScore(profileData);
-      }
-    } else if (foundUser.role === "unit") {
-      const unitData = await db
-        .select()
-        .from(units)
-        .where(eq(units.userId, user.id))
-        .limit(1);
-
-      if (unitData.length > 0) {
-        profileData = {
-          ...profileData,
-          ...unitData[0],
-        } as typeof profileData & (typeof unitData)[0];
-
-        // Calculate unit profile score
-        profileScore = calculateUnitScore(profileData);
-      }
-    }
-
-    return c.json(
-      {
-        status_code: OK,
-        message: "Profile retrieved successfully",
-        data: {
-          ...profileData,
-          profileScore,
-        },
-      },
-      OK,
-    );
   } catch (_err) {
     console.error("Error fetching profile:", _err);
     return c.json(
@@ -334,36 +474,58 @@ export const updateProfile: AppRouteHandler<UpdateProfile> = async (c) => {
 
     // Execute updates based on role
     if (user.role === "candidate") {
+      // Use Promise.all to execute both updates concurrently
+      const updates = [];
+
       if (Object.keys(candidateUpdates).length > 0) {
-        await db
-          .update(candidates)
-          .set({ ...candidateUpdates, updatedAt: now })
-          .where(eq(candidates.userId, user.id));
+        updates.push(
+          db
+            .update(candidates)
+            .set({ ...candidateUpdates, updatedAt: now })
+            .where(eq(candidates.userId, user.id)),
+        );
       }
 
       if (Object.keys(userUpdates).length > 0) {
-        await db
-          .update(userTable)
-          .set({ ...userUpdates, updatedAt: now })
-          .where(eq(userTable.id, user.id));
+        updates.push(
+          db
+            .update(userTable)
+            .set({ ...userUpdates, updatedAt: now })
+            .where(eq(userTable.id, user.id)),
+        );
+      }
+
+      if (updates.length > 0) {
+        await Promise.all(updates);
       }
     } else if (user.role === "unit") {
       // For unit role, apply collected unitUpdates
       if (data.profileSummary !== undefined)
         unitUpdates.description = data.profileSummary;
 
+      // Use Promise.all to execute both updates concurrently
+      const updates = [];
+
       if (Object.keys(unitUpdates).length > 0) {
-        await db
-          .update(units)
-          .set({ ...unitUpdates, updatedAt: now })
-          .where(eq(units.userId, user.id));
+        updates.push(
+          db
+            .update(units)
+            .set({ ...unitUpdates, updatedAt: now })
+            .where(eq(units.userId, user.id)),
+        );
       }
 
       if (Object.keys(userUpdates).length > 0) {
-        await db
-          .update(userTable)
-          .set({ ...userUpdates, updatedAt: now })
-          .where(eq(userTable.id, user.id));
+        updates.push(
+          db
+            .update(userTable)
+            .set({ ...userUpdates, updatedAt: now })
+            .where(eq(userTable.id, user.id)),
+        );
+      }
+
+      if (updates.length > 0) {
+        await Promise.all(updates);
       }
     }
 
