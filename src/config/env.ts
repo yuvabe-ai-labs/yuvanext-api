@@ -23,6 +23,16 @@ const EnvSchema = z.object({
   SMTP_PORT: z.coerce.number().default(587),
   SMTP_USER: z.string(),
   SMTP_PASSWORD: z.string(),
+
+  AWS_REGION: z.string(),
+  AWS_ACCESS_KEY_ID: z.string(),
+  AWS_SECRET_ACCESS_KEY: z.string(),
+  BEDROCK_MODEL_ID: z.string(),
+
+  ZOOM_CLIENT_ID: z.string().optional(),
+  ZOOM_CLIENT_SECRET: z.string().optional(),
+  ZOOM_ACCOUNT_ID: z.string().optional(),
+  FRONTEND_URL: z.string().optional(),
 });
 
 export type env = z.infer<typeof EnvSchema>;

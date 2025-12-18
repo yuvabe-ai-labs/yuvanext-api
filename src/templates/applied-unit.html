@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Application Received</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #2196F3;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #2196F3;
+            margin: 0;
+            font-size: 24px;
+        }
+        .content {
+            margin-bottom: 30px;
+        }
+        .content h2 {
+            color: #2c3e50;
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+        .details {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .details p {
+            margin: 8px 0;
+        }
+        .details strong {
+            color: #2c3e50;
+        }
+        .action-button {
+            display: inline-block;
+            padding: 12px 30px;
+            background-color: #2196F3;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            text-align: center;
+            color: #777;
+            font-size: 14px;
+        }
+        .highlight {
+            color: #2196F3;
+            font-weight: bold;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            background-color: #4CAF50;
+            color: white;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1> New Application Received</h1>
+        </div>
+        
+        <div class="content">
+            <p>Dear <strong>{{unitName}}</strong> Team,</p>
+            
+            <p>Great news! A new candidate has applied for your internship position.</p>
+            
+            <div class="details">
+                <p><strong>Internship Position:</strong> {{internshipTitle}}</p>
+                <p><strong>Candidate Name:</strong> {{candidateName}}</p>
+                <p><strong>Candidate Email:</strong> {{candidateEmail}}</p>
+                <p><strong>Status:</strong> <span class="badge">New Application</span></p>
+            </div>
+            
+            
+        <div class="footer">
+            <p>This is an automated notification. Please do not reply directly to this message.</p>
+            <p>If you have any questions, please contact our support team.</p>
+        </div>
+    </div>
+</body>
+</html>
