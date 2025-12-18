@@ -64,7 +64,7 @@ jobs:
           cp package.json lambda-package/
           cp pnpm-lock.yaml lambda-package/
           cd lambda-package
-          pnpm install --prod --frozen-lockfile
+          pnpm install --prod --frozen-lockfile --ignore-scripts
           zip -r ../lambda-deployment.zip .
           cd ..
 
