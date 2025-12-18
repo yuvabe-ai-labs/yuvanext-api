@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin as adminPlugin, openAPI } from "better-auth/plugins";
+import crypto from "crypto";
 
 import {
   sendResetPasswordEmail,

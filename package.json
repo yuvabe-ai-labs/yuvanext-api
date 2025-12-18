@@ -1,8 +1,8 @@
 {
   "name": "yuvanext-api",
   "type": "module",
-  "main": "dist/lambda.js",
   "version": "1.0.0",
+  "main": "dist/lambda.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc && tsc-alias",
@@ -50,6 +50,7 @@
     "@types/pg": "^8.15.6",
     "drizzle-kit": "^0.31.7",
     "eslint": "^9.38.0",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-format": "^1.0.2",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
