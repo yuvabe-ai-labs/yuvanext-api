@@ -1,0 +1,104 @@
+name: Deploy to AWS Lambda
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - development
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Set environment variables
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "ENV=production" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=${{ secrets.LAMBDA_FUNCTION_NAME_PROD }}" >> $GITHUB_ENV
+          elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
+            echo "ENV=staging" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=${{ secrets.LAMBDA_FUNCTION_NAME_STAGING }}" >> $GITHUB_ENV
+          else
+            echo "ENV=development" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=${{ secrets.LAMBDA_FUNCTION_NAME_DEV }}" >> $GITHUB_ENV
+          fi
+
+      - name: Package Lambda function
+        run: |
+          mkdir -p lambda-package
+          cp -r dist/* lambda-package/
+          cp package.json lambda-package/
+          cp pnpm-lock.yaml lambda-package/
+          cd lambda-package
+          pnpm install --prod --frozen-lockfile
+          zip -r ../lambda-deployment.zip .
+          cd ..
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy to Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.FUNCTION_NAME }} \
+            --zip-file fileb://lambda-deployment.zip
+
+      - name: Wait for function update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ env.FUNCTION_NAME }}
+
+      - name: Update environment variables
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            aws lambda update-function-configuration \
+              --function-name ${{ env.FUNCTION_NAME }} \
+              --environment "Variables={NODE_ENV=production,DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}}"
+          elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
+            aws lambda update-function-configuration \
+              --function-name ${{ env.FUNCTION_NAME }} \
+              --environment "Variables={NODE_ENV=staging,DATABASE_URL=${{ secrets.DATABASE_URL_STAGING }}}"
+          else
+            aws lambda update-function-configuration \
+              --function-name ${{ env.FUNCTION_NAME }} \
+              --environment "Variables={NODE_ENV=development,DATABASE_URL=${{ secrets.DATABASE_URL_DEV }}}"
+          fi
