@@ -64,10 +64,18 @@ jobs:
           cp package.json lambda-package/
           cp pnpm-lock.yaml lambda-package/
           cd lambda-package
+<<<<<<< HEAD
           
           # Install production dependencies without scripts
           pnpm install --prod --frozen-lockfile --ignore-scripts
           
+=======
+
+          # Install production dependencies without scripts
+          pnpm install --prod --frozen-lockfile --ignore-scripts
+
+
+>>>>>>> 6c6ce10 (fix: bug from cicd)
           # Remove unnecessary files to reduce size
           find . -name "*.md" -type f -delete
           find . -name "*.ts" -type f -delete
@@ -83,15 +91,26 @@ jobs:
           find . -name "docs" -type d -exec rm -rf {} + 2>/dev/null || true
           find . -name "examples" -type d -exec rm -rf {} + 2>/dev/null || true
           find . -name ".github" -type d -exec rm -rf {} + 2>/dev/null || true
+<<<<<<< HEAD
           
           # Remove AWS SDK if it's included (Lambda provides it)
           rm -rf node_modules/aws-sdk 2>/dev/null || true
           rm -rf node_modules/@aws-sdk 2>/dev/null || true
           
+=======
+
+          # Remove AWS SDK if it's included (Lambda provides it)
+          rm -rf node_modules/aws-sdk 2>/dev/null || true
+          rm -rf node_modules/@aws-sdk 2>/dev/null || true
+
+>>>>>>> 6c6ce10 (fix: bug from cicd)
           # Create optimized zip
           zip -r -9 ../lambda-deployment.zip . -x "*.git*"
           cd ..
           
+          # Display package size
+          ls -lh lambda-deployment.zip
+
           # Display package size
           ls -lh lambda-deployment.zip
 
