@@ -26,14 +26,10 @@ jobs:
 
     environment: ${{ matrix.env }}
 
-    steps:
-      # --------------------
-      # Skip jobs if branch does not match matrix
-      # --------------------
-      - name: Check branch
-        if: github.ref != format('refs/heads/{0}', matrix.branch)
-        run: echo "Skipping this job for branch ${{ github.ref }}" && exit 0
+    # Only run this job if the pushed branch matches the matrix branch
+    if: github.ref == format('refs/heads/{0}', matrix.branch)
 
+    steps:
       # --------------------
       # Checkout repo
       # --------------------
