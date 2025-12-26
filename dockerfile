@@ -15,5 +15,5 @@ RUN pnpm install --prod --ignore-scripts --shamefully-hoist
 # Copy built files
 COPY dist ./dist
 
-# Set Lambda handler
-CMD ["dist/handler.handler"]
+# Set Lambda handler (lambda.js with named export 'handler')
+CMD ["dist/lambda.handler"]
