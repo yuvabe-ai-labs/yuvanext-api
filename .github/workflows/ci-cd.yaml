@@ -31,7 +31,7 @@ jobs:
       # Skip jobs if branch does not match matrix
       # --------------------
       - name: Check branch
-        if: github.ref != 'refs/heads/' + matrix.branch
+        if: github.ref != format('refs/heads/{0}', matrix.branch)
         run: echo "Skipping this job for branch ${{ github.ref }}" && exit 0
 
       # --------------------
@@ -109,3 +109,4 @@ jobs:
             aws lambda update-function-configuration \
               --function-name $FUNCTION_NAME \
               --environment Variables="{NODE_ENV=${{ matrix.env }},DATABASE_URL=$DATABASE_URL}"
+          fi
