@@ -18,20 +18,23 @@ jobs:
       - name: Set environment variables
         run: |
           if [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            echo "ENV=prod" >> $GITHUB_ENV
+            echo "NODE_ENV=production" >> $GITHUB_ENV
             echo "FUNCTION_NAME=yuvanext-api-prod" >> $GITHUB_ENV
             echo "DB_SECRET_NAME=DATABASE_URL_PROD" >> $GITHUB_ENV
             echo "IMAGE_TAG=prod" >> $GITHUB_ENV
+            echo "BETTER_AUTH_URL=https://api.yuvanext.com" >> $GITHUB_ENV
           elif [ "${{ github.ref }}" == "refs/heads/stagging" ]; then
-            echo "ENV=stag" >> $GITHUB_ENV
+            echo "NODE_ENV=production" >> $GITHUB_ENV
             echo "FUNCTION_NAME=yuvanext-api-stag" >> $GITHUB_ENV
             echo "DB_SECRET_NAME=DATABASE_URL_STAGING" >> $GITHUB_ENV
             echo "IMAGE_TAG=stag" >> $GITHUB_ENV
+            echo "BETTER_AUTH_URL=https://api-staging.yuvanext.com" >> $GITHUB_ENV
           else
-            echo "ENV=dev" >> $GITHUB_ENV
+            echo "NODE_ENV=development" >> $GITHUB_ENV
             echo "FUNCTION_NAME=yuvanext-api-dev" >> $GITHUB_ENV
             echo "DB_SECRET_NAME=DATABASE_URL_DEV" >> $GITHUB_ENV
             echo "IMAGE_TAG=dev" >> $GITHUB_ENV
+            echo "BETTER_AUTH_URL=https://api-dev.yuvanext.com" >> $GITHUB_ENV
           fi
 
       # --------------------
@@ -69,7 +72,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - uses: aws-actions/amazon-ecr-login@v2
 
@@ -93,6 +96,16 @@ jobs:
         env:
           ROLE_ARN: ${{ secrets.LAMBDA_ROLE_ARN }}
           DATABASE_URL: ${{ secrets[env.DB_SECRET_NAME] }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          Better_AUTH_URL: ${{ env.BETTER_AUTH_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          BEDROCK_MODEL_ID: ${{ secrets.BEDROCK_MODEL_ID }}
+          ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
+          ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
+          ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
         run: |
           set +e
           aws lambda get-function --function-name ${{ env.FUNCTION_NAME }} > /dev/null 2>&1
@@ -108,7 +121,7 @@ jobs:
               --role $ROLE_ARN \
               --timeout 15 \
               --memory-size 1024 \
-              --environment Variables="{NODE_ENV=${{ env.ENV }},DATABASE_URL=$DATABASE_URL}"
+              --environment Variables="{NODE_ENV=${{ env.NODE_ENV }},DATABASE_URL=$DATABASE_URL,BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET,BETTER_AUTH_URL=${{ env.BETTER_AUTH_URL }},SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USER=$SMTP_USER,SMTP_PASSWORD=$SMTP_PASSWORD,BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID,ZOOM_ACCOUNT_ID=$ZOOM_ACCOUNT_ID,ZOOM_CLIENT_ID=$ZOOM_CLIENT_ID,ZOOM_CLIENT_SECRET=$ZOOM_CLIENT_SECRET}"
           else
             echo "♻️ Updating Lambda function: ${{ env.FUNCTION_NAME }}"
             aws lambda update-function-code \
@@ -119,7 +132,8 @@ jobs:
             aws lambda wait function-updated \
               --function-name ${{ env.FUNCTION_NAME }}
 
+            echo "🔧 Updating Lambda configuration..."
             aws lambda update-function-configuration \
               --function-name ${{ env.FUNCTION_NAME }} \
-              --environment Variables="{NODE_ENV=${{ env.ENV }},DATABASE_URL=$DATABASE_URL}"
+              --environment Variables="{NODE_ENV=${{ env.NODE_ENV }},DATABASE_URL=$DATABASE_URL,BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET,BETTER_AUTH_URL=${{ env.BETTER_AUTH_URL }},SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USER=$SMTP_USER,SMTP_PASSWORD=$SMTP_PASSWORD,BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID,ZOOM_ACCOUNT_ID=$ZOOM_ACCOUNT_ID,ZOOM_CLIENT_ID=$ZOOM_CLIENT_ID,ZOOM_CLIENT_SECRET=$ZOOM_CLIENT_SECRET}"
           fi
