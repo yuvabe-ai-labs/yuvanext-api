@@ -6,11 +6,9 @@ WORKDIR /var/task
 # Enable corepack & pnpm
 RUN corepack enable
 
-# Copy package files and install dependencies
+# Copy package files and install ALL dependencies
 COPY package.json pnpm-lock.yaml ./
-
-# Install production dependencies only, ignoring scripts
-RUN pnpm install --prod --ignore-scripts
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # Copy built files
 COPY dist ./dist
