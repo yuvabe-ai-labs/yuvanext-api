@@ -115,6 +115,10 @@ jobs:
               --function-name ${{ env.FUNCTION_NAME }} \
               --image-uri $IMAGE_URI
 
+            echo "⏳ Waiting for Lambda code update to complete..."
+            aws lambda wait function-updated \
+              --function-name ${{ env.FUNCTION_NAME }}
+
             aws lambda update-function-configuration \
               --function-name ${{ env.FUNCTION_NAME }} \
               --environment Variables="{NODE_ENV=${{ env.ENV }},DATABASE_URL=$DATABASE_URL}"
