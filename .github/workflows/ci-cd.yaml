@@ -1,136 +1,108 @@
-name: Deploy to AWS Lambda (Optimized)
+name: Deploy Hono API (Lambda + Docker)
 
 on:
   push:
     branches:
-      - main
-      - staging
       - development
+      - stagging
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include:
+          - branch: development
+            env: dev
+            db_secret: DATABASE_URL_DEV
+          - branch: stagging
+            env: stag
+            db_secret: DATABASE_URL_STAGING
+          - branch: main
+            env: prod
+            db_secret: DATABASE_URL_PROD
+
+    if: github.ref == format('refs/heads/{0}', matrix.branch)
+
+    environment: ${{ matrix.env }}
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      # --------------------
+      # Checkout repo
+      # --------------------
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      # --------------------
+      # Setup Node + pnpm
+      # --------------------
+      - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: 20
+          cache: pnpm
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 10.25.0
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
 
-      - name: Get pnpm store directory
-        id: pnpm-cache
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build
-        run: pnpm build
-
-      - name: Set environment variables
-        run: |
-          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            echo "ENV=production" >> $GITHUB_ENV
-            echo "FUNCTION_NAME=${{ secrets.LAMBDA_FUNCTION_NAME_PROD }}" >> $GITHUB_ENV
-          elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
-            echo "ENV=staging" >> $GITHUB_ENV
-            echo "FUNCTION_NAME=${{ secrets.LAMBDA_FUNCTION_NAME_STAGING }}" >> $GITHUB_ENV
-          else
-            echo "ENV=development" >> $GITHUB_ENV
-            echo "FUNCTION_NAME=${{ secrets.LAMBDA_FUNCTION_NAME_DEV }}" >> $GITHUB_ENV
-          fi
-
-      - name: Package Lambda function (optimized)
-        run: |
-          mkdir -p lambda-package
-          cp -r dist/* lambda-package/
-          cp package.json lambda-package/
-          cp pnpm-lock.yaml lambda-package/
-          cd lambda-package
-
-          # Install production dependencies without scripts
-          pnpm install --prod --frozen-lockfile --ignore-scripts
-
-
-          # Remove unnecessary files to reduce size
-          find . -name "*.md" -type f -delete
-          find . -name "*.ts" -type f -delete
-          find . -name "*.map" -type f -delete
-          find . -name "LICENSE*" -type f -delete
-          find . -name "CHANGELOG*" -type f -delete
-          find . -name "*.d.ts" -type f -delete
-          find . -name "*.spec.js" -type f -delete
-          find . -name "*.test.js" -type f -delete
-          find . -name "__tests__" -type d -exec rm -rf {} + 2>/dev/null || true
-          find . -name "test" -type d -exec rm -rf {} + 2>/dev/null || true
-          find . -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true
-          find . -name "docs" -type d -exec rm -rf {} + 2>/dev/null || true
-          find . -name "examples" -type d -exec rm -rf {} + 2>/dev/null || true
-          find . -name ".github" -type d -exec rm -rf {} + 2>/dev/null || true
-
-
-          # Remove AWS SDK if it's included (Lambda provides it)
-          rm -rf node_modules/aws-sdk 2>/dev/null || true
-          rm -rf node_modules/@aws-sdk 2>/dev/null || true
-
-
-          # Create optimized zip
-          zip -r -9 ../lambda-deployment.zip . -x "*.git*"
-          cd ..
-
-          # Display package size
-          ls -lh lambda-deployment.zip
-
-          # Display package size
-          ls -lh lambda-deployment.zip
-
-      - name: Configure AWS credentials
+      # --------------------
+      # Configure AWS
+      # --------------------
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: us-east-1
 
-      - name: Deploy to Lambda
-        run: |
-          aws lambda update-function-code \
-            --function-name ${{ env.FUNCTION_NAME }} \
-            --zip-file fileb://lambda-deployment.zip
+      - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Wait for function update
+      # --------------------
+      # Build & Push Docker Image
+      # --------------------
+      - name: Build & Push Docker Image
+        env:
+          IMAGE_REPO: ${{ secrets.ECR_REPO_URL }}
         run: |
-          aws lambda wait function-updated \
-            --function-name ${{ env.FUNCTION_NAME }}
+          IMAGE_URI=$IMAGE_REPO:${{ matrix.env }}
 
-      - name: Update environment variables
+          docker build -t backend-api:${{ matrix.env }} .
+          docker tag backend-api:${{ matrix.env }} $IMAGE_URI
+          docker push $IMAGE_URI
+
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+
+      # --------------------
+      # Create or Update Lambda
+      # --------------------
+      - name: Create or Update Lambda
+        env:
+          FUNCTION_NAME: yuvanext-api-${{ matrix.env }}
+          ROLE_ARN: ${{ secrets.LAMBDA_ROLE_ARN }}
+          DATABASE_URL: ${{ secrets[matrix.db_secret] }}
         run: |
-          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            aws lambda update-function-configuration \
-              --function-name ${{ env.FUNCTION_NAME }} \
-              --environment "Variables={NODE_ENV=production,DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}}"
-          elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
-            aws lambda update-function-configuration \
-              --function-name ${{ env.FUNCTION_NAME }} \
-              --environment "Variables={NODE_ENV=staging,DATABASE_URL=${{ secrets.DATABASE_URL_STAGING }}}"
+          set +e
+          aws lambda get-function --function-name $FUNCTION_NAME > /dev/null 2>&1
+          EXISTS=$?
+          set -e
+
+          if [ $EXISTS -ne 0 ]; then
+            echo "🚀 Creating Lambda function: $FUNCTION_NAME"
+            aws lambda create-function \
+              --function-name $FUNCTION_NAME \
+              --package-type Image \
+              --code ImageUri=$IMAGE_URI \
+              --role $ROLE_ARN \
+              --timeout 15 \
+              --memory-size 1024 \
+              --environment Variables="{NODE_ENV=${{ matrix.env }},DATABASE_URL=$DATABASE_URL}"
           else
+            echo "♻️ Updating Lambda function: $FUNCTION_NAME"
+            aws lambda update-function-code \
+              --function-name $FUNCTION_NAME \
+              --image-uri $IMAGE_URI
+
             aws lambda update-function-configuration \
-              --function-name ${{ env.FUNCTION_NAME }} \
-              --environment "Variables={NODE_ENV=development,DATABASE_URL=${{ secrets.DATABASE_URL_DEV }}}"
-          fi
+              --function-name $FUNCTION_NAME \
+              --environment Variables="{NODE_ENV=${{ matrix.env }},DATABASE_URL=$DATABASE_URL}"
