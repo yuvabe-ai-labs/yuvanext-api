@@ -24,11 +24,16 @@ jobs:
             env: prod
             db_secret: DATABASE_URL_PROD
 
-    if: github.ref == format('refs/heads/{0}', matrix.branch)
-
     environment: ${{ matrix.env }}
 
     steps:
+      # --------------------
+      # Skip jobs if branch does not match matrix
+      # --------------------
+      - name: Check branch
+        if: github.ref != 'refs/heads/' + matrix.branch
+        run: echo "Skipping this job for branch ${{ github.ref }}" && exit 0
+
       # --------------------
       # Checkout repo
       # --------------------
@@ -66,11 +71,9 @@ jobs:
           IMAGE_REPO: ${{ secrets.ECR_REPO_URL }}
         run: |
           IMAGE_URI=$IMAGE_REPO:${{ matrix.env }}
-
           docker build -t backend-api:${{ matrix.env }} .
           docker tag backend-api:${{ matrix.env }} $IMAGE_URI
           docker push $IMAGE_URI
-
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
       # --------------------
@@ -78,7 +81,7 @@ jobs:
       # --------------------
       - name: Create or Update Lambda
         env:
-          FUNCTION_NAME: yuvanext-api-${{ matrix.env }}
+          FUNCTION_NAME: hono-api-${{ matrix.env }}
           ROLE_ARN: ${{ secrets.LAMBDA_ROLE_ARN }}
           DATABASE_URL: ${{ secrets[matrix.db_secret] }}
         run: |
