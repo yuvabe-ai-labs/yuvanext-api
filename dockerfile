@@ -8,7 +8,9 @@ RUN corepack enable
 
 # Copy package files and install dependencies
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --prod
+
+# Install production dependencies only, ignoring scripts
+RUN pnpm install --prod --ignore-scripts
 
 # Copy built files
 COPY dist ./dist

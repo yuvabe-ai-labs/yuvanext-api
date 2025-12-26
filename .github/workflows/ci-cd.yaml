@@ -11,25 +11,29 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        include:
-          - branch: development
-            env: dev
-            db_secret: DATABASE_URL_DEV
-          - branch: stagging
-            env: stag
-            db_secret: DATABASE_URL_STAGING
-          - branch: main
-            env: prod
-            db_secret: DATABASE_URL_PROD
-
-    environment: ${{ matrix.env }}
-
-    # Only run this job if the pushed branch matches the matrix branch
-    if: github.ref == format('refs/heads/{0}', matrix.branch)
-
     steps:
+      # --------------------
+      # Set environment variables based on branch
+      # --------------------
+      - name: Set environment variables
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "ENV=prod" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=yuvanext-api-prod" >> $GITHUB_ENV
+            echo "DB_SECRET_NAME=DATABASE_URL_PROD" >> $GITHUB_ENV
+            echo "IMAGE_TAG=prod" >> $GITHUB_ENV
+          elif [ "${{ github.ref }}" == "refs/heads/stagging" ]; then
+            echo "ENV=stag" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=yuvanext-api-stag" >> $GITHUB_ENV
+            echo "DB_SECRET_NAME=DATABASE_URL_STAGING" >> $GITHUB_ENV
+            echo "IMAGE_TAG=stag" >> $GITHUB_ENV
+          else
+            echo "ENV=dev" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=yuvanext-api-dev" >> $GITHUB_ENV
+            echo "DB_SECRET_NAME=DATABASE_URL_DEV" >> $GITHUB_ENV
+            echo "IMAGE_TAG=dev" >> $GITHUB_ENV
+          fi
+
       # --------------------
       # Checkout repo
       # --------------------
@@ -76,9 +80,9 @@ jobs:
         env:
           IMAGE_REPO: ${{ secrets.ECR_REPO_URL }}
         run: |
-          IMAGE_URI=$IMAGE_REPO:${{ matrix.env }}
-          docker build -t backend-api:${{ matrix.env }} .
-          docker tag backend-api:${{ matrix.env }} $IMAGE_URI
+          IMAGE_URI=$IMAGE_REPO:${{ env.IMAGE_TAG }}
+          docker build -t backend-api:${{ env.IMAGE_TAG }} .
+          docker tag backend-api:${{ env.IMAGE_TAG }} $IMAGE_URI
           docker push $IMAGE_URI
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
@@ -87,32 +91,31 @@ jobs:
       # --------------------
       - name: Create or Update Lambda
         env:
-          FUNCTION_NAME: hono-api-${{ matrix.env }}
           ROLE_ARN: ${{ secrets.LAMBDA_ROLE_ARN }}
-          DATABASE_URL: ${{ secrets[matrix.db_secret] }}
+          DATABASE_URL: ${{ secrets[env.DB_SECRET_NAME] }}
         run: |
           set +e
-          aws lambda get-function --function-name $FUNCTION_NAME > /dev/null 2>&1
+          aws lambda get-function --function-name ${{ env.FUNCTION_NAME }} > /dev/null 2>&1
           EXISTS=$?
           set -e
 
           if [ $EXISTS -ne 0 ]; then
-            echo "🚀 Creating Lambda function: $FUNCTION_NAME"
+            echo "🚀 Creating Lambda function: ${{ env.FUNCTION_NAME }}"
             aws lambda create-function \
-              --function-name $FUNCTION_NAME \
+              --function-name ${{ env.FUNCTION_NAME }} \
               --package-type Image \
               --code ImageUri=$IMAGE_URI \
               --role $ROLE_ARN \
               --timeout 15 \
               --memory-size 1024 \
-              --environment Variables="{NODE_ENV=${{ matrix.env }},DATABASE_URL=$DATABASE_URL}"
+              --environment Variables="{NODE_ENV=${{ env.ENV }},DATABASE_URL=$DATABASE_URL}"
           else
-            echo "♻️ Updating Lambda function: $FUNCTION_NAME"
+            echo "♻️ Updating Lambda function: ${{ env.FUNCTION_NAME }}"
             aws lambda update-function-code \
-              --function-name $FUNCTION_NAME \
+              --function-name ${{ env.FUNCTION_NAME }} \
               --image-uri $IMAGE_URI
 
             aws lambda update-function-configuration \
-              --function-name $FUNCTION_NAME \
-              --environment Variables="{NODE_ENV=${{ matrix.env }},DATABASE_URL=$DATABASE_URL}"
+              --function-name ${{ env.FUNCTION_NAME }} \
+              --environment Variables="{NODE_ENV=${{ env.ENV }},DATABASE_URL=$DATABASE_URL}"
           fi
