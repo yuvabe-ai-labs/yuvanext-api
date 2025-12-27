@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - development
-      - stagging
+      - staging
       - main
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
             echo "DB_SECRET_NAME=DATABASE_URL_PROD" >> $GITHUB_ENV
             echo "IMAGE_TAG=prod" >> $GITHUB_ENV
             echo "BETTER_AUTH_URL=https://api.yuvanext.com" >> $GITHUB_ENV
-          elif [ "${{ github.ref }}" == "refs/heads/stagging" ]; then
+          elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
             echo "NODE_ENV=production" >> $GITHUB_ENV
             echo "FUNCTION_NAME=yuvanext-api-stag" >> $GITHUB_ENV
             echo "DB_SECRET_NAME=DATABASE_URL_STAGING" >> $GITHUB_ENV
@@ -61,6 +61,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # --------------------
+      # Run Database Migrations
+      # --------------------
+      - name: Generate migrations
+        run: pnpm run db:generate
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: ${{ secrets[env.DB_SECRET_NAME] }}
+        run: pnpm run db:migrate
+
       - name: Build project
         run: pnpm run build
 
@@ -97,7 +108,6 @@ jobs:
           ROLE_ARN: ${{ secrets.LAMBDA_ROLE_ARN }}
           DATABASE_URL: ${{ secrets[env.DB_SECRET_NAME] }}
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
-          Better_AUTH_URL: ${{ env.BETTER_AUTH_URL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
