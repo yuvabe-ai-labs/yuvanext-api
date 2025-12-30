@@ -1,207 +1,22 @@
-import bcrypt from "bcrypt";
 import { eq } from "drizzle-orm";
-import crypto from "crypto";
-
 import type { AppRouteHandler } from "@/types/app.types";
-
 import db from "@/db";
-import { user, account, session, verification } from "@/db/schema/auth.schema";
+import { user, session } from "@/db/schema/auth.schema";
 import { candidates } from "@/db/schema/candidate.schema";
 import { units } from "@/db/schema/unit.schema";
 import { userSettings } from "@/db/schema/settings.schema";
 import {
   OK,
-  BAD_REQUEST,
-  UNAUTHORIZED,
   FORBIDDEN,
   INTERNAL_SERVER_ERROR,
 } from "@/lib/openapi/http-status-codes";
 
 import type {
-  ChangeEmail,
-  ChangePassword,
   ChangePhone,
   UpdateNotifications,
   SetDisability,
   DeactivateAccount,
-  DeleteAccount,
 } from "./settings.routes";
-import { sendChangeEmailVerification } from "@/lib/services/email.service";
-
-export const changeEmail: AppRouteHandler<ChangeEmail> = async (c) => {
-  const currentUser = c.get("user");
-  const body = c.req.valid("json");
-
-  try {
-    // Check if new email already exists
-    const existingUser = await db
-      .select()
-      .from(user)
-      .where(eq(user.email, body.email))
-      .limit(1);
-
-    if (existingUser.length > 0 && existingUser[0].id !== currentUser.id) {
-      return c.json(
-        {
-          status_code: BAD_REQUEST,
-          message: "This email is already in use",
-        },
-        BAD_REQUEST,
-      );
-    }
-
-    // Verify current password
-    const accounts = await db
-      .select()
-      .from(account)
-      .where(eq(account.userId, currentUser.id))
-      .limit(1);
-
-    const cred = accounts[0];
-
-    const isPasswordValid = await bcrypt.compare(
-      body.currentPassword,
-      cred.password as string,
-    );
-
-    if (!isPasswordValid) {
-      return c.json(
-        {
-          status_code: UNAUTHORIZED,
-          message: "Invalid password",
-        },
-        UNAUTHORIZED,
-      );
-    }
-
-    // Update email and set emailVerified to false
-    const updatedUser = await db
-      .update(user)
-      .set({
-        email: body.email,
-        emailVerified: false,
-        updatedAt: new Date(),
-      })
-      .where(eq(user.id, currentUser.id))
-      .returning();
-
-    if (updatedUser.length === 0) {
-      return c.json(
-        {
-          status_code: INTERNAL_SERVER_ERROR,
-          message: "Failed to update email",
-        },
-        INTERNAL_SERVER_ERROR,
-      );
-    }
-
-    // Create verification token
-    const verificationToken = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    await db.insert(verification).values({
-      id: crypto.randomUUID(),
-      identifier: body.email,
-      value: verificationToken,
-      expiresAt,
-    });
-
-    // Generate verification URL - automatically from request
-    const baseUrl = new URL(c.req.url).origin;
-    const verificationUrl = `${baseUrl}/verify-email?token=${verificationToken}&email=${encodeURIComponent(body.email)}`;
-
-    // Send verification email using the new service
-    try {
-      await sendChangeEmailVerification({
-        to: body.email,
-        name: currentUser.name || "User",
-        newEmail: body.email,
-        verificationUrl,
-      });
-    } catch (emailErr) {
-      console.error("Error sending verification email:", emailErr);
-      // Don't fail the request if email sending fails
-    }
-
-    // Delete all sessions for this user to sign them out
-    await db.delete(session).where(eq(session.userId, currentUser.id));
-
-    return c.json(
-      {
-        status_code: OK,
-        message:
-          "Email updated successfully. Verification email sent to your new email address.",
-      },
-      OK,
-    );
-  } catch (err) {
-    console.error("Error changing email:", err);
-    return c.json(
-      {
-        status_code: INTERNAL_SERVER_ERROR,
-        message: "Internal server error",
-      },
-      INTERNAL_SERVER_ERROR,
-    );
-  }
-};
-
-export const changePassword: AppRouteHandler<ChangePassword> = async (c) => {
-  const currentUser = c.get("user");
-  const body = c.req.valid("json");
-
-  try {
-    const accounts = await db
-      .select()
-      .from(account)
-      .where(eq(account.userId, currentUser.id))
-      .limit(1);
-
-    const cred = accounts[0];
-
-    const isPasswordValid = await bcrypt.compare(
-      body.currentPassword,
-      cred.password as string,
-    );
-
-    if (!isPasswordValid) {
-      return c.json(
-        {
-          status_code: UNAUTHORIZED,
-          message: "Invalid current password",
-        },
-        UNAUTHORIZED,
-      );
-    }
-
-    const hashedPassword = await bcrypt.hash(body.newPassword, 10);
-
-    await db
-      .update(account)
-      .set({
-        password: hashedPassword,
-        updatedAt: new Date(),
-      })
-      .where(eq(account.userId, currentUser.id));
-
-    return c.json(
-      {
-        status_code: OK,
-        message: "Password updated successfully",
-      },
-      OK,
-    );
-  } catch (err) {
-    console.error("Error changing password:", err);
-    return c.json(
-      {
-        status_code: INTERNAL_SERVER_ERROR,
-        message: "Internal server error",
-      },
-      INTERNAL_SERVER_ERROR,
-    );
-  }
-};
 
 export const changePhone: AppRouteHandler<ChangePhone> = async (c) => {
   const currentUser = c.get("user");
@@ -225,6 +40,7 @@ export const changePhone: AppRouteHandler<ChangePhone> = async (c) => {
         })
         .where(eq(units.userId, currentUser.id));
     } else {
+      console.error("Unsupported role for phone update:", currentUser.role);
       return c.json(
         {
           status_code: FORBIDDEN,
@@ -367,31 +183,6 @@ export const deactivateAccount: AppRouteHandler<DeactivateAccount> = async (
     );
   } catch (err) {
     console.error("Error deactivating account:", err);
-    return c.json(
-      {
-        status_code: INTERNAL_SERVER_ERROR,
-        message: "Internal server error",
-      },
-      INTERNAL_SERVER_ERROR,
-    );
-  }
-};
-
-export const deleteAccount: AppRouteHandler<DeleteAccount> = async (c) => {
-  const currentUser = c.get("user");
-
-  try {
-    await db.delete(user).where(eq(user.id, currentUser.id));
-
-    return c.json(
-      {
-        status_code: OK,
-        message: "Account deleted successfully",
-      },
-      OK,
-    );
-  } catch (err) {
-    console.error("Error deleting account:", err);
     return c.json(
       {
         status_code: INTERNAL_SERVER_ERROR,

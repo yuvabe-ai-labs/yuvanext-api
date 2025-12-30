@@ -9,6 +9,7 @@ import {
   sendVerificationMail,
   updateUserRoleOnEmailVerification,
   enableUserByEmailBeforeSignin,
+  sendChangeEmailConfirmation,
 } from "@/routes/auth/auth.services";
 
 import db from "../db/index";
@@ -36,13 +37,13 @@ export const auth = betterAuth({
   hooks: {
     before: async (ctx: any) => {
       if (ctx.path === "/sign-in/email" && ctx.method === "POST") {
-        try {
-          const email = ctx.body?.email;
-          if (email) {
-            await enableUserByEmailBeforeSignin(email);
-          } else {
-          }
-        } catch (error) {}
+        const email = ctx.body?.email || ctx.request?.body?.email;
+        if (email) {
+          // Fire-and-forget - executes after sign-in completes
+          enableUserByEmailBeforeSignin(email).catch((error) => {
+            console.error("Error enabling user:", error);
+          });
+        }
       }
     },
   },
@@ -54,6 +55,28 @@ export const auth = betterAuth({
         required: true,
         input: true,
       },
+    },
+    changeEmail: {
+      enabled: true,
+      sendChangeEmailConfirmation: async ({ user, newEmail, url, token }) => {
+        try {
+          await sendChangeEmailConfirmation(
+            user.email,
+            newEmail,
+            url,
+            user.name,
+            token,
+          );
+        } catch (error) {
+          console.error(
+            `Error sending change email confirmation to ${user.email}: ${error}`,
+          );
+          throw error;
+        }
+      },
+    },
+    deleteUser: {
+      enabled: true,
     },
   },
   emailVerification: {

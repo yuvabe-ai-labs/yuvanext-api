@@ -1,11 +1,6 @@
 import { createRoute } from "@hono/zod-openapi";
 
-import {
-  OK,
-  BAD_REQUEST,
-  UNAUTHORIZED,
-  FORBIDDEN,
-} from "@/lib/openapi/http-status-codes";
+import { OK, FORBIDDEN } from "@/lib/openapi/http-status-codes";
 import {
   createResponse,
   restrictedErrorResponses,
@@ -13,8 +8,6 @@ import {
 import { requireRole } from "@/middleware/auth";
 
 import {
-  changeEmailRequestSchema,
-  changePasswordRequestSchema,
   changePhoneRequestSchema,
   notificationsRequestSchema,
   disabilityRequestSchema,
@@ -25,66 +18,11 @@ import {
 // ============================================================================
 
 /**
- * PATCH /settings/email - Change account email
- */
-export const changeEmail = createRoute({
-  method: "patch" as const,
-  path: "/settings/email",
-  tags: ["Settings"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit", "admin"] }),
-  summary: "Change account email",
-  description: "Change account email (requires current password verification)",
-  request: {
-    body: {
-      content: {
-        "application/json": {
-          schema: changeEmailRequestSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    [OK]: createResponse(OK),
-    ...restrictedErrorResponses,
-    [BAD_REQUEST]: createResponse(BAD_REQUEST),
-    [UNAUTHORIZED]: createResponse(UNAUTHORIZED),
-  },
-});
-
-/**
- * PATCH /settings/password - Change account password
- */
-export const changePassword = createRoute({
-  method: "patch" as const,
-  path: "/settings/password",
-  tags: ["Settings"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit", "admin"] }),
-  summary: "Change account password",
-  description:
-    "Change account password (requires current password verification)",
-  request: {
-    body: {
-      content: {
-        "application/json": {
-          schema: changePasswordRequestSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    [OK]: createResponse(OK),
-    ...restrictedErrorResponses,
-    [BAD_REQUEST]: createResponse(BAD_REQUEST),
-    [UNAUTHORIZED]: createResponse(UNAUTHORIZED),
-  },
-});
-
-/**
  * PATCH /settings/phone - Change phone number
  */
 export const changePhone = createRoute({
   method: "patch" as const,
-  path: "/settings/phone",
+  path: "/settings/change-phone",
   tags: ["Settings"],
   middleware: requireRole({ allowedRoles: ["candidate", "unit", "admin"] }),
   summary: "Change phone number",
@@ -160,7 +98,7 @@ export const setDisability = createRoute({
  */
 export const deactivateAccount = createRoute({
   method: "post" as const,
-  path: "/settings/deactivate",
+  path: "/settings/account-deactivate",
   tags: ["Settings"],
   middleware: requireRole({ allowedRoles: ["candidate", "unit", "admin"] }),
   summary: "Deactivate account",
@@ -171,26 +109,7 @@ export const deactivateAccount = createRoute({
   },
 });
 
-/**
- * DELETE /settings - Delete account
- */
-export const deleteAccount = createRoute({
-  method: "delete" as const,
-  path: "/settings",
-  tags: ["Settings"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit", "admin"] }),
-  summary: "Delete account",
-  description: "Permanently delete account and all associated data",
-  responses: {
-    [OK]: createResponse(OK),
-    ...restrictedErrorResponses,
-  },
-});
-
-export type ChangeEmail = typeof changeEmail;
-export type ChangePassword = typeof changePassword;
 export type ChangePhone = typeof changePhone;
 export type UpdateNotifications = typeof updateNotifications;
 export type SetDisability = typeof setDisability;
 export type DeactivateAccount = typeof deactivateAccount;
-export type DeleteAccount = typeof deleteAccount;
