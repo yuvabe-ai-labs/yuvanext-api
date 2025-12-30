@@ -65,6 +65,40 @@ export async function sendResetPasswordEmail(recipient: string, url: string) {
   });
 }
 
+export async function enableUserByEmailBeforeSignin(email: string) {
+  const existingUser = await db.query.user.findFirst({
+    where: (users, { eq }) => eq(users.email, email),
+  });
+
+  if (!existingUser) {
+    console.log("User not found:", email);
+    return;
+  }
+
+  console.log(
+    "User found:",
+    existingUser.id,
+    "Disabled status:",
+    existingUser.accountDisabled,
+  );
+
+  if (existingUser.accountDisabled === true) {
+    console.log("Enabling user before signin:", existingUser.id);
+
+    await db
+      .update(user)
+      .set({
+        accountDisabled: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(user.id, existingUser.id));
+
+    console.log("User enabled successfully");
+  } else {
+    console.log("User was not disabled, no action needed");
+  }
+}
+
 export async function updateUserRoleOnEmailVerification(
   userId: string,
   role: string,

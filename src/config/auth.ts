@@ -8,6 +8,7 @@ import {
   sendResetPasswordEmail,
   sendVerificationMail,
   updateUserRoleOnEmailVerification,
+  enableUserByEmailBeforeSignin,
 } from "@/routes/auth/auth.services";
 
 import db from "../db/index";
@@ -31,6 +32,20 @@ export const auth = betterAuth({
       },
     }),
   ],
+  // Add this hook at the top level
+  hooks: {
+    before: async (ctx: any) => {
+      if (ctx.path === "/sign-in/email" && ctx.method === "POST") {
+        try {
+          const email = ctx.body?.email;
+          if (email) {
+            await enableUserByEmailBeforeSignin(email);
+          } else {
+          }
+        } catch (error) {}
+      }
+    },
+  },
   trustedOrigins: ["*"],
   user: {
     additionalFields: {

@@ -39,6 +39,13 @@ interface UnitApplicationNotificationParams {
   internshipTitle: string;
 }
 
+interface ChangeEmailVerificationParams {
+  to: string;
+  name: string;
+  newEmail: string;
+  verificationUrl: string;
+}
+
 // Create transporter using the same config as auth service
 const transporter = nodemailer.createTransport({
   host: env.SMTP_HOST,
@@ -63,6 +70,10 @@ const templateFiles: Record<string, string> = {
   hired: path.join(templatesDir, "hired.html"),
   unitInterview: path.join(templatesDir, "unit-interview.html"),
   appliedNotification: path.join(templatesDir, "applied-unit.html"),
+  changeEmailVerification: path.join(
+    templatesDir,
+    "change-email-verification.html",
+  ),
 };
 
 const compiledTemplates: Record<string, Handlebars.TemplateDelegate> = {};
@@ -246,6 +257,36 @@ export async function sendUnitInterviewEmail(
     return true;
   } catch (error) {
     console.error("Error sending unit interview email:", error);
+    return false;
+  }
+}
+
+// NEW: Send email change verification
+export async function sendChangeEmailVerification(
+  params: ChangeEmailVerificationParams,
+): Promise<boolean> {
+  try {
+    await loadTemplates();
+    const template = compiledTemplates.changeEmailVerification;
+
+    if (!template) {
+      throw new Error("Change email verification template not found");
+    }
+
+    const html = template(params);
+
+    const subject = "Verify Your New Email Address - YuvaNext";
+
+    await transporter.sendMail({
+      from: env.SMTP_USER,
+      to: params.to,
+      subject,
+      html,
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error sending change email verification:", error);
     return false;
   }
 }

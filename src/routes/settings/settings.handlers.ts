@@ -16,8 +16,6 @@ import {
   FORBIDDEN,
   INTERNAL_SERVER_ERROR,
 } from "@/lib/openapi/http-status-codes";
-import { sendVerificationMail } from "@/routes/auth/auth.services";
-import env from "@/config/env";
 
 import type {
   ChangeEmail,
@@ -28,12 +26,30 @@ import type {
   DeactivateAccount,
   DeleteAccount,
 } from "./settings.routes";
+import { sendChangeEmailVerification } from "@/lib/services/email.service";
 
 export const changeEmail: AppRouteHandler<ChangeEmail> = async (c) => {
   const currentUser = c.get("user");
   const body = c.req.valid("json");
 
   try {
+    // Check if new email already exists
+    const existingUser = await db
+      .select()
+      .from(user)
+      .where(eq(user.email, body.email))
+      .limit(1);
+
+    if (existingUser.length > 0 && existingUser[0].id !== currentUser.id) {
+      return c.json(
+        {
+          status_code: BAD_REQUEST,
+          message: "This email is already in use",
+        },
+        BAD_REQUEST,
+      );
+    }
+
     // Verify current password
     const accounts = await db
       .select()
@@ -41,18 +57,7 @@ export const changeEmail: AppRouteHandler<ChangeEmail> = async (c) => {
       .where(eq(account.userId, currentUser.id))
       .limit(1);
 
-    const cred =
-      accounts.find((a) => a.providerId === "credentials") || accounts[0];
-
-    if (!cred || !cred.password) {
-      return c.json(
-        {
-          status_code: BAD_REQUEST,
-          message: "No password credentials for this account",
-        },
-        BAD_REQUEST,
-      );
-    }
+    const cred = accounts[0];
 
     const isPasswordValid = await bcrypt.compare(
       body.currentPassword,
@@ -92,7 +97,7 @@ export const changeEmail: AppRouteHandler<ChangeEmail> = async (c) => {
 
     // Create verification token
     const verificationToken = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     await db.insert(verification).values({
       id: crypto.randomUUID(),
@@ -105,17 +110,21 @@ export const changeEmail: AppRouteHandler<ChangeEmail> = async (c) => {
     const baseUrl = new URL(c.req.url).origin;
     const verificationUrl = `${baseUrl}/verify-email?token=${verificationToken}&email=${encodeURIComponent(body.email)}`;
 
-    // Send verification email
+    // Send verification email using the new service
     try {
-      await sendVerificationMail(
-        body.email,
-        currentUser.name || "User",
+      await sendChangeEmailVerification({
+        to: body.email,
+        name: currentUser.name || "User",
+        newEmail: body.email,
         verificationUrl,
-      );
+      });
     } catch (emailErr) {
       console.error("Error sending verification email:", emailErr);
       // Don't fail the request if email sending fails
     }
+
+    // Delete all sessions for this user to sign them out
+    await db.delete(session).where(eq(session.userId, currentUser.id));
 
     return c.json(
       {
@@ -148,18 +157,7 @@ export const changePassword: AppRouteHandler<ChangePassword> = async (c) => {
       .where(eq(account.userId, currentUser.id))
       .limit(1);
 
-    const cred =
-      accounts.find((a) => a.providerId === "credentials") || accounts[0];
-
-    if (!cred || !cred.password) {
-      return c.json(
-        {
-          status_code: BAD_REQUEST,
-          message: "No password credentials for this account",
-        },
-        BAD_REQUEST,
-      );
-    }
+    const cred = accounts[0];
 
     const isPasswordValid = await bcrypt.compare(
       body.currentPassword,
@@ -352,8 +350,7 @@ export const deactivateAccount: AppRouteHandler<DeactivateAccount> = async (
     await db
       .update(user)
       .set({
-        banned: true,
-        banReason: "user_deactivated",
+        accountDisabled: true,
         updatedAt: new Date(),
       })
       .where(eq(user.id, currentUser.id));
