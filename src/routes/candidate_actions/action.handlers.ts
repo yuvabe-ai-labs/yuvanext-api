@@ -10,6 +10,7 @@ import { user as userTable } from "@/db/schema/auth.schema";
 import { internships } from "@/db/schema/internship.schema";
 import { notifications } from "@/db/schema/notification.schema";
 import { savedInternship } from "@/db/schema/saved-internship.schema";
+import { userSettings } from "@/db/schema/settings.schema";
 import { units } from "@/db/schema/unit.schema";
 import {
   CONFLICT,
@@ -33,6 +34,42 @@ import type {
   SaveInternship,
   ShareInternship,
 } from "./action.routes";
+
+// Helper function to check if email notifications are enabled for a user
+async function isEmailNotificationsEnabled(userId: string): Promise<boolean> {
+  try {
+    const [settings] = await db
+      .select()
+      .from(userSettings)
+      .where(eq(userSettings.userId, userId))
+      .limit(1);
+
+    // Default to true if no settings found (backward compatibility)
+    return settings?.emailNotificationsEnabled ?? true;
+  } catch (err) {
+    console.error("Error checking email notification settings:", err);
+    // Default to true on error to maintain existing behavior
+    return true;
+  }
+}
+
+// Helper function to check if in-app notifications are enabled for a user
+async function isInAppNotificationsEnabled(userId: string): Promise<boolean> {
+  try {
+    const [settings] = await db
+      .select()
+      .from(userSettings)
+      .where(eq(userSettings.userId, userId))
+      .limit(1);
+
+    // Default to true if no settings found (backward compatibility)
+    return settings?.inAppNotificationsEnabled ?? true;
+  } catch (err) {
+    console.error("Error checking in-app notification settings:", err);
+    // Default to true on error to maintain existing behavior
+    return true;
+  }
+}
 
 // POST /internship/save - save an internship for the candidate
 export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
@@ -179,6 +216,7 @@ export const applyToInternship: AppRouteHandler<ApplyToInternship> = async (
     // Fetch unit details only if createdBy exists
     let unitName = "Our Organization";
     let unitEmail: string | null = null;
+    let unitUserId: string | null = null;
 
     if (internshipData.createdBy) {
       try {
@@ -186,6 +224,7 @@ export const applyToInternship: AppRouteHandler<ApplyToInternship> = async (
           .select({
             name: units.name,
             email: userTable.email,
+            userId: userTable.id,
           })
           .from(units)
           .innerJoin(userTable, eq(units.userId, userTable.id))
@@ -195,17 +234,30 @@ export const applyToInternship: AppRouteHandler<ApplyToInternship> = async (
         if (unitDetails.length > 0) {
           unitName = unitDetails[0].name || unitName;
           unitEmail = unitDetails[0].email;
+          unitUserId = unitDetails[0].userId;
         }
       } catch (err) {
         console.error("Error fetching unit details:", err);
       }
     }
 
+    // Check notification settings for both candidate and unit
+    const [candidateEmailEnabled, unitEmailEnabled, unitInAppEnabled] =
+      await Promise.all([
+        isEmailNotificationsEnabled(user.id),
+        unitUserId
+          ? isEmailNotificationsEnabled(unitUserId)
+          : Promise.resolve(false),
+        unitUserId
+          ? isInAppNotificationsEnabled(unitUserId)
+          : Promise.resolve(false),
+      ]);
+
     // Send emails and create notification in parallel (non-blocking)
     const emailAndNotificationTasks = [];
 
-    // Send email to candidate confirming application
-    if (user.email) {
+    // Send email to candidate confirming application (only if enabled)
+    if (user.email && candidateEmailEnabled) {
       emailAndNotificationTasks.push(
         sendApplicationEmail("applied", {
           to: user.email,
@@ -221,8 +273,8 @@ export const applyToInternship: AppRouteHandler<ApplyToInternship> = async (
       );
     }
 
-    // FIXED: Send application notification email to unit (not interview email)
-    if (unitEmail) {
+    // Send application notification email to unit (only if enabled)
+    if (unitEmail && unitEmailEnabled) {
       emailAndNotificationTasks.push(
         sendUnitApplicationNotification({
           to: unitEmail,
@@ -239,8 +291,8 @@ export const applyToInternship: AppRouteHandler<ApplyToInternship> = async (
       );
     }
 
-    // Create notification for internship creator (unit user)
-    if (internshipData.createdBy) {
+    // Create in-app notification for internship creator (only if enabled)
+    if (internshipData.createdBy && unitInAppEnabled) {
       emailAndNotificationTasks.push(
         db
           .insert(notifications)
