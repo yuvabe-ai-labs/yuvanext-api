@@ -6,6 +6,26 @@ on:
       - development
       - staging
       - main
+      - cicd # Add your test branch here
+
+# --------------------
+# Top-level environment variables
+# --------------------
+env:
+  NODE_VERSION: 20
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPO_URL: ${{ secrets.ECR_REPO_URL }}
+  LAMBDA_ROLE_ARN: ${{ secrets.LAMBDA_ROLE_ARN }}
+  # Common secrets
+  BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+  SMTP_HOST: ${{ secrets.SMTP_HOST }}
+  SMTP_PORT: ${{ secrets.SMTP_PORT }}
+  SMTP_USER: ${{ secrets.SMTP_USER }}
+  SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+  BEDROCK_MODEL_ID: ${{ secrets.BEDROCK_MODEL_ID }}
+  ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
+  ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
+  ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
 
 jobs:
   deploy:
@@ -13,33 +33,38 @@ jobs:
 
     steps:
       # --------------------
-      # Set environment variables based on branch
+      # Set environment-specific variables
       # --------------------
       - name: Set environment variables
         run: |
           if [ "${{ github.ref }}" == "refs/heads/main" ]; then
             echo "NODE_ENV=production" >> $GITHUB_ENV
-            echo "FUNCTION_NAME=yuvanext-api-prod" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_PROD }}" >> $GITHUB_ENV
             echo "DB_SECRET_NAME=DATABASE_URL_PROD" >> $GITHUB_ENV
             echo "IMAGE_TAG=prod" >> $GITHUB_ENV
-            echo "BETTER_AUTH_URL=https://api.yuvanext.com" >> $GITHUB_ENV
+            echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_PROD }}" >> $GITHUB_ENV
           elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
             echo "NODE_ENV=production" >> $GITHUB_ENV
-            echo "FUNCTION_NAME=yuvanext-api-stag" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_STAGING }}" >> $GITHUB_ENV
             echo "DB_SECRET_NAME=DATABASE_URL_STAGING" >> $GITHUB_ENV
             echo "IMAGE_TAG=stag" >> $GITHUB_ENV
-            echo "BETTER_AUTH_URL=https://api-staging.yuvanext.com" >> $GITHUB_ENV
+            echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_STAGING }}" >> $GITHUB_ENV
+          elif [ "${{ github.ref }}" == "refs/heads/cicd" ]; then
+            # Test branch - uses dev environment
+            echo "NODE_ENV=development" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_DEV }}" >> $GITHUB_ENV
+            echo "DB_SECRET_NAME=DATABASE_URL_DEV" >> $GITHUB_ENV
+            echo "IMAGE_TAG=cicd-test" >> $GITHUB_ENV
+            echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_DEV }}" >> $GITHUB_ENV
+            echo "SKIP_DEPLOY=true" >> $GITHUB_ENV  # Skip deployment for testing
           else
             echo "NODE_ENV=development" >> $GITHUB_ENV
-            echo "FUNCTION_NAME=yuvanext-api-dev" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_DEV }}" >> $GITHUB_ENV
             echo "DB_SECRET_NAME=DATABASE_URL_DEV" >> $GITHUB_ENV
             echo "IMAGE_TAG=dev" >> $GITHUB_ENV
-            echo "BETTER_AUTH_URL=https://api-dev.yuvanext.com" >> $GITHUB_ENV
+            echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_DEV }}" >> $GITHUB_ENV
           fi
 
-      # --------------------
-      # Checkout repo
-      # --------------------
       - uses: actions/checkout@v4
 
       # --------------------
@@ -47,7 +72,7 @@ jobs:
       # --------------------
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Enable Corepack
         run: corepack enable
@@ -55,93 +80,103 @@ jobs:
       - name: Setup pnpm cache
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       # --------------------
-      # Run Database Migrations
+      # Run Database Migrations (THIS IS WHAT YOU'RE TESTING)
       # --------------------
-
       - name: Run database migrations
         env:
           DATABASE_URL: ${{ secrets[env.DB_SECRET_NAME] }}
-        run: pnpm run db:migrate
+        run: |
+          echo "🔍 Testing database migration..."
+          echo "Using database: ${{ env.DB_SECRET_NAME }}"
+          pnpm run db:migrate
+          echo "✅ Migration completed successfully!"
 
       - name: Build project
         run: pnpm run build
 
       # --------------------
-      # Configure AWS
+      # Skip the rest for cicd test branch
+      # --------------------
+      - name: Check if deployment should be skipped
+        id: check_skip
+        run: |
+          if [ "${{ env.SKIP_DEPLOY }}" == "true" ]; then
+            echo "⏭️  Skipping Docker build and Lambda deployment for test branch"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      # --------------------
+      # Configure AWS (only if not skipping)
       # --------------------
       - name: Configure AWS
+        if: steps.check_skip.outputs.skip != 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - uses: aws-actions/amazon-ecr-login@v2
+        if: steps.check_skip.outputs.skip != 'true'
 
       # --------------------
-      # Build & Push Docker Image
+      # Build & Push Docker Image (only if not skipping)
       # --------------------
       - name: Build & Push Docker Image
-        env:
-          IMAGE_REPO: ${{ secrets.ECR_REPO_URL }}
+        if: steps.check_skip.outputs.skip != 'true'
         run: |
-          IMAGE_URI=$IMAGE_REPO:${{ env.IMAGE_TAG }}
+          IMAGE_URI=${{ env.ECR_REPO_URL }}:${{ env.IMAGE_TAG }}
           docker build -t backend-api:${{ env.IMAGE_TAG }} .
           docker tag backend-api:${{ env.IMAGE_TAG }} $IMAGE_URI
           docker push $IMAGE_URI
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
       # --------------------
-      # Create or Update Lambda
+      # Create or Update Lambda (only if not skipping)
       # --------------------
       - name: Create or Update Lambda
+        if: steps.check_skip.outputs.skip != 'true'
         env:
-          ROLE_ARN: ${{ secrets.LAMBDA_ROLE_ARN }}
           DATABASE_URL: ${{ secrets[env.DB_SECRET_NAME] }}
-          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          BEDROCK_MODEL_ID: ${{ secrets.BEDROCK_MODEL_ID }}
-          ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
-          ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
-          ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
         run: |
           set +e
           aws lambda get-function --function-name ${{ env.FUNCTION_NAME }} > /dev/null 2>&1
           EXISTS=$?
           set -e
 
+          ENV_VARS="NODE_ENV=${{ env.NODE_ENV }},DATABASE_URL=$DATABASE_URL,BETTER_AUTH_SECRET=${{ env.BETTER_AUTH_SECRET }},BETTER_AUTH_URL=${{ env.BETTER_AUTH_URL }},SMTP_HOST=${{ env.SMTP_HOST }},SMTP_PORT=${{ env.SMTP_PORT }},SMTP_USER=${{ env.SMTP_USER }},SMTP_PASSWORD=${{ env.SMTP_PASSWORD }},BEDROCK_MODEL_ID=${{ env.BEDROCK_MODEL_ID }},ZOOM_ACCOUNT_ID=${{ env.ZOOM_ACCOUNT_ID }},ZOOM_CLIENT_ID=${{ env.ZOOM_CLIENT_ID }},ZOOM_CLIENT_SECRET=${{ env.ZOOM_CLIENT_SECRET }}"
+
           if [ $EXISTS -ne 0 ]; then
             echo "🚀 Creating Lambda function: ${{ env.FUNCTION_NAME }}"
             aws lambda create-function \
               --function-name ${{ env.FUNCTION_NAME }} \
               --package-type Image \
-              --code ImageUri=$IMAGE_URI \
-              --role $ROLE_ARN \
+              --code ImageUri=${{ env.IMAGE_URI }} \
+              --role ${{ env.LAMBDA_ROLE_ARN }} \
               --timeout 15 \
               --memory-size 1024 \
-              --environment Variables="{NODE_ENV=${{ env.NODE_ENV }},DATABASE_URL=$DATABASE_URL,BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET,BETTER_AUTH_URL=${{ env.BETTER_AUTH_URL }},SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USER=$SMTP_USER,SMTP_PASSWORD=$SMTP_PASSWORD,BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID,ZOOM_ACCOUNT_ID=$ZOOM_ACCOUNT_ID,ZOOM_CLIENT_ID=$ZOOM_CLIENT_ID,ZOOM_CLIENT_SECRET=$ZOOM_CLIENT_SECRET}"
+              --environment Variables="{$ENV_VARS}"
           else
             echo "♻️ Updating Lambda function: ${{ env.FUNCTION_NAME }}"
             aws lambda update-function-code \
               --function-name ${{ env.FUNCTION_NAME }} \
-              --image-uri $IMAGE_URI
-
+              --image-uri ${{ env.IMAGE_URI }}
+            
             echo "⏳ Waiting for Lambda code update to complete..."
             aws lambda wait function-updated \
               --function-name ${{ env.FUNCTION_NAME }}
-
+            
             echo "🔧 Updating Lambda configuration..."
             aws lambda update-function-configuration \
               --function-name ${{ env.FUNCTION_NAME }} \
-              --environment Variables="{NODE_ENV=${{ env.NODE_ENV }},DATABASE_URL=$DATABASE_URL,BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET,BETTER_AUTH_URL=${{ env.BETTER_AUTH_URL }},SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USER=$SMTP_USER,SMTP_PASSWORD=$SMTP_PASSWORD,BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID,ZOOM_ACCOUNT_ID=$ZOOM_ACCOUNT_ID,ZOOM_CLIENT_ID=$ZOOM_CLIENT_ID,ZOOM_CLIENT_SECRET=$ZOOM_CLIENT_SECRET}"
+              --environment Variables="{$ENV_VARS}"
           fi
