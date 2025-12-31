@@ -7,6 +7,9 @@ on:
       - staging
       - main
 
+# --------------------
+# Top-level environment variables
+# --------------------
 env:
   NODE_VERSION: 20
   AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -54,9 +57,7 @@ jobs:
             echo "IMAGE_TAG=dev" >> $GITHUB_ENV
             echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_DEV }}" >> $GITHUB_ENV
           fi
-
       - uses: actions/checkout@v4
-
       # --------------------
       # Setup Node + pnpm
       # --------------------
@@ -77,13 +78,16 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # --------------------
-      # Run Database Migrations
+      # Run Database Migrations (THIS IS WHAT YOU'RE TESTING)
       # --------------------
       - name: Run database migrations
         env:
-          DATABASE_URL: ${{ secrets[env.DATABASE_URL] }}
-        run: pnpm run db:migrate
-
+          DATABASE_URL: $DATABASE_URL
+        run: |
+          echo "🔍 Testing database migration..."
+          echo "Using database: $DATABASE_URL"
+          pnpm run db:migrate
+          echo "✅ Migration completed successfully!"
       - name: Build project
         run: pnpm run build
 
@@ -117,11 +121,11 @@ jobs:
       # --------------------
       - name: Create or Update Lambda
         env:
-          DATABASE_URL: ${{ secrets[env.DATABASE_URL] }}
-          BETTER_AUTH_URL: ${{ env.BETTER_AUTH_URL }}
-          FUNCTION_NAME: ${{ env.FUNCTION_NAME }}
+          DATABASE_URL: $DATABASE_URL
+          BETTER_AUTH_URL: $BETTER_AUTH_URL
+          FUNCTION_NAME: $FUNCTION_NAME
           NODE_ENV: ${{ env.NODE_ENV }}
-          IMAGE_URI: ${{ env.IMAGE_URI }}
+          IMAGE_URI: $IMAGE_URI
         run: |
           set +e
           aws lambda get-function --function-name $FUNCTION_NAME > /dev/null 2>&1
