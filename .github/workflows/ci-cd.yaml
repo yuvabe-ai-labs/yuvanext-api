@@ -113,8 +113,6 @@ jobs:
           docker tag backend-api:$IMAGE_TAG $IMAGE_URI
           docker push $IMAGE_URI
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
-        env:
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
 
       # --------------------
       # Create or Update Lambda
@@ -132,40 +130,63 @@ jobs:
           EXISTS=$?
           set -e
 
-          ENV_VARS="NODE_ENV=${{ env.NODE_ENV }},DATABASE_URL=$DATABASE_URL,BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET,BETTER_AUTH_URL=$BETTER_AUTH_URL,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USER=$SMTP_USER,SMTP_PASSWORD=$SMTP_PASSWORD,BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID,ZOOM_ACCOUNT_ID=$ZOOM_ACCOUNT_ID,ZOOM_CLIENT_ID=$ZOOM_CLIENT_ID,ZOOM_CLIENT_SECRET=$ZOOM_CLIENT_SECRET"
+          # Build JSON for environment variables (safe for special characters)
+          ENV_JSON=$(jq -n \
+            --arg NODE_ENV "$NODE_ENV" \
+            --arg DATABASE_URL "$DATABASE_URL" \
+            --arg BETTER_AUTH_SECRET "$BETTER_AUTH_SECRET" \
+            --arg BETTER_AUTH_URL "$BETTER_AUTH_URL" \
+            --arg SMTP_HOST "$SMTP_HOST" \
+            --arg SMTP_PORT "$SMTP_PORT" \
+            --arg SMTP_USER "$SMTP_USER" \
+            --arg SMTP_PASSWORD "$SMTP_PASSWORD" \
+            --arg BEDROCK_MODEL_ID "$BEDROCK_MODEL_ID" \
+            --arg ZOOM_ACCOUNT_ID "$ZOOM_ACCOUNT_ID" \
+            --arg ZOOM_CLIENT_ID "$ZOOM_CLIENT_ID" \
+            --arg ZOOM_CLIENT_SECRET "$ZOOM_CLIENT_SECRET" \
+            '{Variables: {
+              NODE_ENV: $NODE_ENV,
+              DATABASE_URL: $DATABASE_URL,
+              BETTER_AUTH_SECRET: $BETTER_AUTH_SECRET,
+              BETTER_AUTH_URL: $BETTER_AUTH_URL,
+              SMTP_HOST: $SMTP_HOST,
+              SMTP_PORT: $SMTP_PORT,
+              SMTP_USER: $SMTP_USER,
+              SMTP_PASSWORD: $SMTP_PASSWORD,
+              BEDROCK_MODEL_ID: $BEDROCK_MODEL_ID,
+              ZOOM_ACCOUNT_ID: $ZOOM_ACCOUNT_ID,
+              ZOOM_CLIENT_ID: $ZOOM_CLIENT_ID,
+              ZOOM_CLIENT_SECRET: $ZOOM_CLIENT_SECRET
+            }}')
 
           if [ $EXISTS -ne 0 ]; then
             echo "🚀 Creating Lambda function: $FUNCTION_NAME"
             aws lambda create-function \
               --function-name $FUNCTION_NAME \
               --package-type Image \
-              --code ImageUri=${{ env.IMAGE_URI }} \
+              --code ImageUri=${IMAGE_URI} \
               --role ${{ env.LAMBDA_ROLE_ARN }} \
               --timeout 15 \
               --memory-size 1024 \
-              --environment Variables={$ENV_VARS}
-            
+              --cli-input-json "$ENV_JSON"
+
             echo "⏳ Waiting for Lambda creation to complete..."
-            aws lambda wait function-active \
-              --function-name $FUNCTION_NAME
+            aws lambda wait function-active --function-name $FUNCTION_NAME
           else
             echo "♻️ Updating Lambda function: $FUNCTION_NAME"
             aws lambda update-function-code \
               --function-name $FUNCTION_NAME \
-              --image-uri ${{ env.IMAGE_URI }}
-            
+              --image-uri ${IMAGE_URI}
+
             echo "⏳ Waiting for Lambda code update to complete..."
-            aws lambda wait function-updated \
-              --function-name $FUNCTION_NAME
-            
+            aws lambda wait function-updated --function-name $FUNCTION_NAME
+
             echo "🔧 Updating Lambda configuration..."
             aws lambda update-function-configuration \
-              --function-name $FUNCTION_NAME \
-              --environment Variables={$ENV_VARS}
-            
+              --cli-input-json "$ENV_JSON"
+
             echo "⏳ Waiting for Lambda configuration update to complete..."
-            aws lambda wait function-updated \
-              --function-name $FUNCTION_NAME
+            aws lambda wait function-updated --function-name $FUNCTION_NAME
           fi
 
           echo "✅ Lambda deployment completed successfully!"
