@@ -32,7 +32,7 @@ export default function createApp() {
     .use(
       "/*",
       cors({
-        origin: "*",
+        origin: ALLOWED_ORIGINS,
         credentials: false,
         allowHeaders: ["*"],
         allowMethods: ["*"],
