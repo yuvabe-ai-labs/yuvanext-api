@@ -14,19 +14,31 @@ export function createRouter() {
     defaultHook,
   });
 }
+
+const ALLOWED_ORIGIN_REGEX =
+  /^(https?:\/\/localhost(:\d+)?|https?:\/\/([a-z0-9-]+\.)*yuvanext\.com)$/i;
+
 export default function createApp() {
   const app = createRouter();
 
-  app.use(requestId())
+  app
+    .use(requestId())
     .use(pinoLogger())
-    .use("*", cors({
-      origin: "*", // replace with your origin
-      allowHeaders: ["Content-Type", "Authorization"],
-      allowMethods: ["POST", "GET", "OPTIONS", "PUT", "DELETE"],
-      exposeHeaders: ["Content-Length"],
-      maxAge: 600,
-      credentials: true,
-    }));
+    .use(
+      "/*",
+      cors({
+        origin: (origin) => {
+          if (!origin) return origin; // allow same-origin / server-to-server
+
+          return ALLOWED_ORIGIN_REGEX.test(origin) ? origin : "";
+        },
+        credentials: true,
+        allowHeaders: ["Content-Type", "Authorization"],
+        allowMethods: ["POST", "GET", "OPTIONS", "PUT", "DELETE"],
+        exposeHeaders: ["Content-Length"],
+        maxAge: 600,
+      }),
+    );
 
   app.notFound(notFound);
 
