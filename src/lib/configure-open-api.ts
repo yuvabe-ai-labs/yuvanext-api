@@ -1,14 +1,11 @@
 import { Scalar } from "@scalar/hono-api-reference";
 
 import type { AppOpenAPI } from "@/types/app.types";
-
-import packageJSON from "../../package.json" with { type: "json" };
-
 export default function configureOpenAPI(app: AppOpenAPI) {
   app.doc("/openapi", {
     openapi: "3.0.0",
     info: {
-      version: packageJSON.version,
+      version: "1.0.0",
       title: "Yuvanext API",
     },
   });

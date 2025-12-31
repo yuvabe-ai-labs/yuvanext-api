@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Application Received</title>
+    <style>
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f4f4f4;
+      }
+      .container {
+        background-color: #ffffff;
+        border-radius: 8px;
+        padding: 30px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .header {
+        text-align: center;
+        padding-bottom: 20px;
+        border-bottom: 3px solid #4caf50;
+        margin-bottom: 30px;
+      }
+      .header h1 {
+        color: #4caf50;
+        margin: 0;
+        font-size: 24px;
+      }
+      .content {
+        margin-bottom: 30px;
+      }
+      .content h2 {
+        color: #2c3e50;
+        font-size: 20px;
+        margin-bottom: 15px;
+      }
+      .details {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 20px 0;
+      }
+      .details p {
+        margin: 8px 0;
+      }
+      .details strong {
+        color: #2c3e50;
+      }
+      .footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #ddd;
+        text-align: center;
+        color: #777;
+        font-size: 14px;
+      }
+      .highlight {
+        color: #4caf50;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="content">
+        <p>Dear <strong>{{candidateName}}</strong>,</p>
+
+        <p>
+          Thank you for applying for the internship position at <span class="highlight">{{unitName}}</span>. We have
+          successfully received your application.
+        </p>
+
+        <div class="details">
+          <p><strong>Position:</strong> {{internshipTitle}}</p>
+          <p><strong>Organization:</strong> {{unitName}}</p>
+          <p><strong>Status:</strong> <span style="color: #4caf50">Application Received</span></p>
+        </div>
+
+        <p>
+          Our team will carefully review your application and get back to you soon. This process typically takes a few
+          days.
+        </p>
+
+        <p>If you have any questions in the meantime, please don't hesitate to reach out to us.</p>
+
+        <p>
+          Best regards,<br />
+          <strong>{{unitName}} Recruitment Team</strong>
+        </p>
+      </div>
+
+      <div class="footer">
+        <p>This is an automated email. Please do not reply directly to this message.</p>
+      </div>
+    </div>
+  </body>
+</html>
