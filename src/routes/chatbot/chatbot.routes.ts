@@ -85,7 +85,7 @@ export const chat = createRoute({
   path: "/chatbot",
   tags: ["Chatbot"],
   middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
-  summary: "Chat with onboarding bot",
+  summary: "Chat with onboarding bot used for both unit and candidate",
   description: `
 Interactive AI-powered chatbot for onboarding new users.
 

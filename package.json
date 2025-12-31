@@ -2,10 +2,14 @@
   "name": "yuvanext-api",
   "type": "module",
   "version": "1.0.0",
+  "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && tsc-alias",
     "start": "node dist/index.js",
+    "deploy:zip": "pnpm build && zip -r lambda.zip dist node_modules package.json pnpm-lock.yaml",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "npm run lint --fix",
     "prepare": "husky",
@@ -28,6 +32,7 @@
     "dotenv-expand": "^12.0.3",
     "drizzle-orm": "^0.44.7",
     "fuse.js": "^7.1.0",
+    "handlebars": "^4.7.7",
     "hono": "^4.10.7",
     "hono-pino": "^0.10.3",
     "nodemailer": "^7.0.11",
@@ -35,8 +40,7 @@
     "pino": "^10.1.0",
     "pino-http": "^11.0.0",
     "pino-pretty": "^13.1.2",
-    "zod": "^4.1.13",
-    "handlebars": "^4.7.7"
+    "zod": "^4.1.13"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^6.2.0",
@@ -48,10 +52,12 @@
     "@types/pg": "^8.15.6",
     "drizzle-kit": "^0.31.7",
     "eslint": "^9.38.0",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-format": "^1.0.2",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
     "prettier": "^3.7.3",
+    "tsc-alias": "^1.8.16",
     "tsx": "^4.7.1",
     "typescript": "^5.8.3"
   },

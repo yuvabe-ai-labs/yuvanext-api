@@ -10,6 +10,7 @@ import { candidates } from "@/db/schema/candidate.schema";
 import { internships } from "@/db/schema/internship.schema";
 import { interviews } from "@/db/schema/interview.schema";
 import { notifications } from "@/db/schema/notification.schema";
+import { userSettings } from "@/db/schema/settings.schema";
 import { units } from "@/db/schema/unit.schema";
 import {
   BAD_REQUEST,
@@ -29,13 +30,59 @@ import type {
   UpdateApplicationStatus,
 } from "./actions.routes";
 
-// Helper function to create notification
+// Helper function to check if email notifications are enabled for a user
+async function isEmailNotificationsEnabled(userId: string): Promise<boolean> {
+  try {
+    const [settings] = await db
+      .select()
+      .from(userSettings)
+      .where(eq(userSettings.userId, userId))
+      .limit(1);
+
+    // Default to true if no settings found (backward compatibility)
+    return settings?.emailNotificationsEnabled ?? true;
+  } catch (err) {
+    console.error("Error checking email notification settings:", err);
+    // Default to true on error to maintain existing behavior
+    return true;
+  }
+}
+
+// Helper function to check if in-app notifications are enabled for a user
+async function isInAppNotificationsEnabled(userId: string): Promise<boolean> {
+  try {
+    const [settings] = await db
+      .select()
+      .from(userSettings)
+      .where(eq(userSettings.userId, userId))
+      .limit(1);
+
+    // Default to true if no settings found (backward compatibility)
+    return settings?.inAppNotificationsEnabled ?? true;
+  } catch (err) {
+    console.error("Error checking in-app notification settings:", err);
+    // Default to true on error to maintain existing behavior
+    return true;
+  }
+}
+
+// Helper function to create notification (with settings check)
 async function createNotification(
   userId: string,
   title: string,
   message: string,
   type: "success" | "info" | "warning" | "error" = "info",
 ) {
+  // Check if in-app notifications are enabled
+  const inAppEnabled = await isInAppNotificationsEnabled(userId);
+
+  if (!inAppEnabled) {
+    console.log(
+      `In-app notifications disabled for user ${userId}, skipping notification creation`,
+    );
+    return;
+  }
+
   await db.insert(notifications).values({
     userId,
     title,
@@ -241,6 +288,12 @@ export const updateApplicationStatus: AppRouteHandler<
       );
     }
 
+    // Check notification settings for both candidate and unit
+    const [candidateEmailEnabled, unitEmailEnabled] = await Promise.all([
+      isEmailNotificationsEnabled(candidateUser.id),
+      isEmailNotificationsEnabled(user.id),
+    ]);
+
     // Update application status
     const [updatedApplication] = await db
       .update(applications)
@@ -339,7 +392,7 @@ export const updateApplicationStatus: AppRouteHandler<
         break;
     }
 
-    // Create notification for candidate
+    // Create notification for candidate (with settings check)
     await createNotification(
       candidateUser.id,
       notificationTitle,
@@ -350,22 +403,25 @@ export const updateApplicationStatus: AppRouteHandler<
     // Use unit name from initial query (no extra DB call needed!)
     const finalUnitName = unitName ?? "the organization";
 
-    // Send email to candidate
-    const candidateEmailSent = await sendApplicationEmail(status, {
-      to: candidateUser.email,
-      candidateName: candidateUser.name,
-      internshipTitle: internship.title,
-      unitName: finalUnitName,
-      additionalData: {
-        meetingLink: status === "interviewed" ? zoomLink : undefined,
-        scheduledAt: status === "interviewed" ? scheduledAt : undefined,
-        notes: interviewDetails?.notes,
-      },
-    });
+    // Send email to candidate (only if enabled)
+    let candidateEmailSent = false;
+    if (candidateEmailEnabled) {
+      candidateEmailSent = await sendApplicationEmail(status, {
+        to: candidateUser.email,
+        candidateName: candidateUser.name,
+        internshipTitle: internship.title,
+        unitName: finalUnitName,
+        additionalData: {
+          meetingLink: status === "interviewed" ? zoomLink : undefined,
+          scheduledAt: status === "interviewed" ? scheduledAt : undefined,
+          notes: interviewDetails?.notes,
+        },
+      });
+    }
 
-    // Send email to unit if status is interviewed
+    // Send email to unit if status is interviewed (only if enabled)
     let unitEmailSent = false;
-    if (status === "interviewed") {
+    if (status === "interviewed" && unitEmailEnabled) {
       unitEmailSent = await sendUnitInterviewEmail({
         to: user.email, // Unit's email
         unitName: finalUnitName,

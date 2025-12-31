@@ -8,3 +8,4 @@ export * from "./notification.schema";
 export * from "./saved-internship.schema";
 export * from "./task.management.schema";
 export * from "./unit.schema";
+export * from "./settings.schema";

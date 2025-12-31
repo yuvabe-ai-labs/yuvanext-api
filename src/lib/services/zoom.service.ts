@@ -55,7 +55,7 @@ async function getZoomAccessToken(): Promise<string | null> {
         return null;
       }
 
-      const tokenData: ZoomTokenResponse = await tokenResponse.json();
+      const tokenData = (await tokenResponse.json()) as ZoomTokenResponse;
       return tokenData.access_token;
     }
 
@@ -79,13 +79,13 @@ async function getZoomAccessToken(): Promise<string | null> {
       if (!tokenResponse.ok) {
         const errorData = await tokenResponse.text();
         console.error(
-          "Failed to get Zoom access token (refresh token):",
+          "Failed to get Zoom access token and (refresh token):",
           errorData,
         );
         return null;
       }
 
-      const tokenData: ZoomTokenResponse = await tokenResponse.json();
+      const tokenData = (await tokenResponse.json()) as ZoomTokenResponse;
       return tokenData.access_token;
     }
 
@@ -157,7 +157,7 @@ export async function createZoomMeeting(
       return null;
     }
 
-    const meetingData = await response.json();
+    const meetingData = (await response.json()) as Record<string, any>;
 
     // Using console.error for structured logging (allowed by ESLint)
     console.error("Zoom meeting created successfully:", {
@@ -321,7 +321,7 @@ export async function testZoomConnection(): Promise<boolean> {
       return false;
     }
 
-    const userData = await response.json();
+    const userData = (await response.json()) as Record<string, any>;
     // Using console.error for structured logging (allowed by ESLint)
     console.error("Zoom connection successful. User:", userData.email);
     return true;
