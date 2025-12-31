@@ -15,8 +15,13 @@ export function createRouter() {
   });
 }
 
-const ALLOWED_ORIGIN_REGEX =
-  /^(http?:\/\/localhost(:\d+)?|https?:\/\/([a-z0-9-]+\.)*yuvanext\.com)$/i;
+const ALLOWED_ORIGINS = [
+  "http://localhost:8080",
+  "http://localhost:5173",
+  "https://app.yuvanext.com",
+  "https://app-stg.yuvanext.com",
+  "https://app-dev.yuvanext.com",
+];
 
 export default function createApp() {
   const app = createRouter();
@@ -27,11 +32,7 @@ export default function createApp() {
     .use(
       "/*",
       cors({
-        origin: (origin) => {
-          if (!origin) return origin; // allow same-origin / server-to-server
-
-          return ALLOWED_ORIGIN_REGEX.test(origin) ? origin : "";
-        },
+        origin: ALLOWED_ORIGINS,
         credentials: true,
         allowHeaders: ["Content-Type", "Authorization"],
         allowMethods: ["POST", "GET", "OPTIONS", "PUT", "DELETE"],
