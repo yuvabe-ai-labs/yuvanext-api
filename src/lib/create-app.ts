@@ -16,7 +16,7 @@ export function createRouter() {
 }
 
 const ALLOWED_ORIGIN_REGEX =
-  /^(https?:\/\/localhost(:\d+)?|https?:\/\/([a-z0-9-]+\.)*yuvanext\.com)$/i;
+  /^(http?:\/\/localhost(:\d+)?|https?:\/\/([a-z0-9-]+\.)*yuvanext\.com)$/i;
 
 export default function createApp() {
   const app = createRouter();
