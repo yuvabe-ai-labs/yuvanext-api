@@ -34,6 +34,7 @@ export const user = pgTable("user", {
   banReason: text("ban_reason"),
   banExpires: timestamp("ban_expires"),
   metadata: jsonb("metadata").notNull(),
+  accountDisabled: boolean("account_disabled").default(false).notNull(),
 });
 
 // =====================================================

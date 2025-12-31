@@ -4,6 +4,7 @@ import type { AppRouteHandler } from "@/types/app.types";
 
 import db from "@/db";
 import { notifications } from "@/db/schema/notification.schema";
+import { userSettings } from "@/db/schema/settings.schema";
 import {
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
@@ -25,6 +26,29 @@ export const getUserNotifications: AppRouteHandler<
   const user = c.get("user");
 
   try {
+    // Check if user has in-app notifications enabled
+    const [settings] = await db
+      .select()
+      .from(userSettings)
+      .where(eq(userSettings.userId, user.id))
+      .limit(1);
+
+    // If in-app notifications are disabled, return empty array
+    if (settings && !settings.inAppNotificationsEnabled) {
+      return c.json(
+        {
+          status_code: OK,
+          message: "Notifications retrieved successfully",
+          data: {
+            notifications: [],
+            total: 0,
+            unreadCount: 0,
+          },
+        },
+        OK,
+      );
+    }
+
     // Get all notifications for this user, ordered by creation date (newest first)
     const userNotifications = await db
       .select()
