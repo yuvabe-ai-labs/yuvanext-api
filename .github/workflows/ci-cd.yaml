@@ -38,19 +38,19 @@ jobs:
           if [ "${{ github.ref }}" == "refs/heads/main" ]; then
             echo "NODE_ENV=production" >> $GITHUB_ENV
             echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_PROD }}" >> $GITHUB_ENV
-            echo "DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}" >> $GITHUB_ENV
+            echo "DB_SECRET_NAME=${{ secrets.DATABASE_URL_PROD }}" >> $GITHUB_ENV
             echo "IMAGE_TAG=prod" >> $GITHUB_ENV
             echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_PROD }}" >> $GITHUB_ENV
           elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
             echo "NODE_ENV=production" >> $GITHUB_ENV
             echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_STAGING }}" >> $GITHUB_ENV
-            echo "DATABASE_URL=${{ secrets.DATABASE_URL_STAGING }}" >> $GITHUB_ENV
+            echo "DB_SECRET_NAME=${{ secrets.DATABASE_URL_STAGING }}" >> $GITHUB_ENV
             echo "IMAGE_TAG=stag" >> $GITHUB_ENV
             echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_STAGING }}" >> $GITHUB_ENV
           else
             echo "NODE_ENV=development" >> $GITHUB_ENV
             echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_DEV }}" >> $GITHUB_ENV
-            echo "DATABASE_URL=${{ secrets.DATABASE_URL_DEV }}" >> $GITHUB_ENV
+            echo "DB_SECRET_NAME=${{ secrets.DATABASE_URL_DEV }}" >> $GITHUB_ENV
             echo "IMAGE_TAG=dev" >> $GITHUB_ENV
             echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_DEV }}" >> $GITHUB_ENV
           fi
@@ -81,7 +81,7 @@ jobs:
       # --------------------
       - name: Run database migrations
         env:
-          DATABASE_URL: ${{ secrets[env.DATABASE_URL] }}
+          DATABASE_URL: ${{ secrets[env.DB_SECRET_NAME] }}
         run: pnpm run db:migrate
 
       - name: Build project
@@ -104,36 +104,30 @@ jobs:
       # --------------------
       - name: Build & Push Docker Image
         run: |
-          IMAGE_URI=${{ env.ECR_REPO_URL }}:$IMAGE_TAG
-          docker build -t backend-api:$IMAGE_TAG .
-          docker tag backend-api:$IMAGE_TAG $IMAGE_URI
+          IMAGE_URI=${{ env.ECR_REPO_URL }}:${{ env.IMAGE_TAG }}
+          docker build -t backend-api:${{ env.IMAGE_TAG }} .
+          docker tag backend-api:${{ env.IMAGE_TAG }} $IMAGE_URI
           docker push $IMAGE_URI
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
-        env:
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
 
       # --------------------
       # Create or Update Lambda
       # --------------------
       - name: Create or Update Lambda
         env:
-          DATABASE_URL: ${{ secrets[env.DATABASE_URL] }}
-          BETTER_AUTH_URL: ${{ env.BETTER_AUTH_URL }}
-          FUNCTION_NAME: ${{ env.FUNCTION_NAME }}
-          NODE_ENV: ${{ env.NODE_ENV }}
-          IMAGE_URI: ${{ env.IMAGE_URI }}
+          DATABASE_URL: ${{ secrets[env.DB_SECRET_NAME] }}
         run: |
           set +e
-          aws lambda get-function --function-name $FUNCTION_NAME > /dev/null 2>&1
+          aws lambda get-function --function-name ${{ env.FUNCTION_NAME }} > /dev/null 2>&1
           EXISTS=$?
           set -e
 
-          ENV_VARS="NODE_ENV=${{ env.NODE_ENV }},DATABASE_URL=$DATABASE_URL,BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET,BETTER_AUTH_URL=$BETTER_AUTH_URL,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USER=$SMTP_USER,SMTP_PASSWORD=$SMTP_PASSWORD,BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID,ZOOM_ACCOUNT_ID=$ZOOM_ACCOUNT_ID,ZOOM_CLIENT_ID=$ZOOM_CLIENT_ID,ZOOM_CLIENT_SECRET=$ZOOM_CLIENT_SECRET"
+          ENV_VARS="NODE_ENV=${{ env.NODE_ENV }},DATABASE_URL=$DATABASE_URL,BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET,BETTER_AUTH_URL=${{ env.BETTER_AUTH_URL }},SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USER=$SMTP_USER,SMTP_PASSWORD=$SMTP_PASSWORD,BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID,ZOOM_ACCOUNT_ID=$ZOOM_ACCOUNT_ID,ZOOM_CLIENT_ID=$ZOOM_CLIENT_ID,ZOOM_CLIENT_SECRET=$ZOOM_CLIENT_SECRET"
 
           if [ $EXISTS -ne 0 ]; then
-            echo "🚀 Creating Lambda function: $FUNCTION_NAME"
+            echo "🚀 Creating Lambda function: ${{ env.FUNCTION_NAME }}"
             aws lambda create-function \
-              --function-name $FUNCTION_NAME \
+              --function-name ${{ env.FUNCTION_NAME }} \
               --package-type Image \
               --code ImageUri=${{ env.IMAGE_URI }} \
               --role ${{ env.LAMBDA_ROLE_ARN }} \
@@ -145,23 +139,23 @@ jobs:
             aws lambda wait function-active \
               --function-name ${{ env.FUNCTION_NAME }}
           else
-            echo "♻️ Updating Lambda function: $FUNCTION_NAME"
+            echo "♻️ Updating Lambda function: ${{ env.FUNCTION_NAME }}"
             aws lambda update-function-code \
-              --function-name $FUNCTION_NAME \
+              --function-name ${{ env.FUNCTION_NAME }} \
               --image-uri ${{ env.IMAGE_URI }}
             
             echo "⏳ Waiting for Lambda code update to complete..."
             aws lambda wait function-updated \
-              --function-name $FUNCTION_NAME
+              --function-name ${{ env.FUNCTION_NAME }}
             
             echo "🔧 Updating Lambda configuration..."
             aws lambda update-function-configuration \
-              --function-name $FUNCTION_NAME \
+              --function-name ${{ env.FUNCTION_NAME }} \
               --environment Variables={$ENV_VARS}
             
             echo "⏳ Waiting for Lambda configuration update to complete..."
             aws lambda wait function-updated \
-              --function-name $FUNCTION_NAME
+              --function-name ${{ env.FUNCTION_NAME }}
           fi
 
           echo "✅ Lambda deployment completed successfully!"
