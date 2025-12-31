@@ -6,6 +6,7 @@ on:
       - development
       - staging
       - main
+      - chore/cicd
 
 env:
   NODE_VERSION: 20
