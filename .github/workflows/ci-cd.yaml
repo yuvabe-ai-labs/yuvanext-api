@@ -7,39 +7,54 @@ on:
       - staging
       - main
 
+env:
+  NODE_VERSION: 20
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPO_URL: ${{ secrets.ECR_REPO_URL }}
+  LAMBDA_ROLE_ARN: ${{ secrets.LAMBDA_ROLE_ARN }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  # Common secrets
+  BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+  SMTP_HOST: ${{ secrets.SMTP_HOST }}
+  SMTP_PORT: ${{ secrets.SMTP_PORT }}
+  SMTP_USER: ${{ secrets.SMTP_USER }}
+  SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+  BEDROCK_MODEL_ID: ${{ secrets.BEDROCK_MODEL_ID }}
+  ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
+  ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
+  ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
       # --------------------
-      # Set environment variables based on branch
+      # Set environment-specific variables
       # --------------------
       - name: Set environment variables
         run: |
           if [ "${{ github.ref }}" == "refs/heads/main" ]; then
             echo "NODE_ENV=production" >> $GITHUB_ENV
-            echo "FUNCTION_NAME=yuvanext-api-prod" >> $GITHUB_ENV
-            echo "DB_SECRET_NAME=DATABASE_URL_PROD" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_PROD }}" >> $GITHUB_ENV
+            echo "DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}" >> $GITHUB_ENV
             echo "IMAGE_TAG=prod" >> $GITHUB_ENV
-            echo "BETTER_AUTH_URL=https://api.yuvanext.com" >> $GITHUB_ENV
+            echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_PROD }}" >> $GITHUB_ENV
           elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
             echo "NODE_ENV=production" >> $GITHUB_ENV
-            echo "FUNCTION_NAME=yuvanext-api-stag" >> $GITHUB_ENV
-            echo "DB_SECRET_NAME=DATABASE_URL_STAGING" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_STAGING }}" >> $GITHUB_ENV
+            echo "DATABASE_URL=${{ secrets.DATABASE_URL_STAGING }}" >> $GITHUB_ENV
             echo "IMAGE_TAG=stag" >> $GITHUB_ENV
-            echo "BETTER_AUTH_URL=https://api-staging.yuvanext.com" >> $GITHUB_ENV
+            echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_STAGING }}" >> $GITHUB_ENV
           else
             echo "NODE_ENV=development" >> $GITHUB_ENV
-            echo "FUNCTION_NAME=yuvanext-api-dev" >> $GITHUB_ENV
-            echo "DB_SECRET_NAME=DATABASE_URL_DEV" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_DEV }}" >> $GITHUB_ENV
+            echo "DATABASE_URL=${{ secrets.DATABASE_URL_DEV }}" >> $GITHUB_ENV
             echo "IMAGE_TAG=dev" >> $GITHUB_ENV
-            echo "BETTER_AUTH_URL=https://api-dev.yuvanext.com" >> $GITHUB_ENV
+            echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_DEV }}" >> $GITHUB_ENV
           fi
 
-      # --------------------
-      # Checkout repo
-      # --------------------
       - uses: actions/checkout@v4
 
       # --------------------
@@ -47,7 +62,7 @@ jobs:
       # --------------------
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Enable Corepack
         run: corepack enable
@@ -55,7 +70,7 @@ jobs:
       - name: Setup pnpm cache
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
@@ -64,10 +79,9 @@ jobs:
       # --------------------
       # Run Database Migrations
       # --------------------
-
       - name: Run database migrations
         env:
-          DATABASE_URL: ${{ secrets[env.DB_SECRET_NAME] }}
+          DATABASE_URL: ${{ secrets[env.DATABASE_URL] }}
         run: pnpm run db:migrate
 
       - name: Build project
@@ -81,7 +95,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - uses: aws-actions/amazon-ecr-login@v2
 
@@ -89,59 +103,65 @@ jobs:
       # Build & Push Docker Image
       # --------------------
       - name: Build & Push Docker Image
-        env:
-          IMAGE_REPO: ${{ secrets.ECR_REPO_URL }}
         run: |
-          IMAGE_URI=$IMAGE_REPO:${{ env.IMAGE_TAG }}
-          docker build -t backend-api:${{ env.IMAGE_TAG }} .
-          docker tag backend-api:${{ env.IMAGE_TAG }} $IMAGE_URI
+          IMAGE_URI=${{ env.ECR_REPO_URL }}:$IMAGE_TAG
+          docker build -t backend-api:$IMAGE_TAG .
+          docker tag backend-api:$IMAGE_TAG $IMAGE_URI
           docker push $IMAGE_URI
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+        env:
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
 
       # --------------------
       # Create or Update Lambda
       # --------------------
       - name: Create or Update Lambda
         env:
-          ROLE_ARN: ${{ secrets.LAMBDA_ROLE_ARN }}
-          DATABASE_URL: ${{ secrets[env.DB_SECRET_NAME] }}
-          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          BEDROCK_MODEL_ID: ${{ secrets.BEDROCK_MODEL_ID }}
-          ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
-          ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
-          ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
+          DATABASE_URL: ${{ secrets[env.DATABASE_URL] }}
+          BETTER_AUTH_URL: ${{ env.BETTER_AUTH_URL }}
+          FUNCTION_NAME: ${{ env.FUNCTION_NAME }}
+          NODE_ENV: ${{ env.NODE_ENV }}
+          IMAGE_URI: ${{ env.IMAGE_URI }}
         run: |
           set +e
-          aws lambda get-function --function-name ${{ env.FUNCTION_NAME }} > /dev/null 2>&1
+          aws lambda get-function --function-name $FUNCTION_NAME > /dev/null 2>&1
           EXISTS=$?
           set -e
 
+          ENV_VARS="NODE_ENV=${{ env.NODE_ENV }},DATABASE_URL=$DATABASE_URL,BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET,BETTER_AUTH_URL=$BETTER_AUTH_URL,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USER=$SMTP_USER,SMTP_PASSWORD=$SMTP_PASSWORD,BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID,ZOOM_ACCOUNT_ID=$ZOOM_ACCOUNT_ID,ZOOM_CLIENT_ID=$ZOOM_CLIENT_ID,ZOOM_CLIENT_SECRET=$ZOOM_CLIENT_SECRET"
+
           if [ $EXISTS -ne 0 ]; then
-            echo "🚀 Creating Lambda function: ${{ env.FUNCTION_NAME }}"
+            echo "🚀 Creating Lambda function: $FUNCTION_NAME"
             aws lambda create-function \
-              --function-name ${{ env.FUNCTION_NAME }} \
+              --function-name $FUNCTION_NAME \
               --package-type Image \
-              --code ImageUri=$IMAGE_URI \
-              --role $ROLE_ARN \
+              --code ImageUri=${{ env.IMAGE_URI }} \
+              --role ${{ env.LAMBDA_ROLE_ARN }} \
               --timeout 15 \
               --memory-size 1024 \
-              --environment Variables="{NODE_ENV=${{ env.NODE_ENV }},DATABASE_URL=$DATABASE_URL,BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET,BETTER_AUTH_URL=${{ env.BETTER_AUTH_URL }},SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USER=$SMTP_USER,SMTP_PASSWORD=$SMTP_PASSWORD,BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID,ZOOM_ACCOUNT_ID=$ZOOM_ACCOUNT_ID,ZOOM_CLIENT_ID=$ZOOM_CLIENT_ID,ZOOM_CLIENT_SECRET=$ZOOM_CLIENT_SECRET}"
+              --environment Variables={$ENV_VARS}
+            
+            echo "⏳ Waiting for Lambda creation to complete..."
+            aws lambda wait function-active \
+              --function-name ${{ env.FUNCTION_NAME }}
           else
-            echo "♻️ Updating Lambda function: ${{ env.FUNCTION_NAME }}"
+            echo "♻️ Updating Lambda function: $FUNCTION_NAME"
             aws lambda update-function-code \
-              --function-name ${{ env.FUNCTION_NAME }} \
-              --image-uri $IMAGE_URI
-
+              --function-name $FUNCTION_NAME \
+              --image-uri ${{ env.IMAGE_URI }}
+            
             echo "⏳ Waiting for Lambda code update to complete..."
             aws lambda wait function-updated \
-              --function-name ${{ env.FUNCTION_NAME }}
-
+              --function-name $FUNCTION_NAME
+            
             echo "🔧 Updating Lambda configuration..."
             aws lambda update-function-configuration \
-              --function-name ${{ env.FUNCTION_NAME }} \
-              --environment Variables="{NODE_ENV=${{ env.NODE_ENV }},DATABASE_URL=$DATABASE_URL,BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET,BETTER_AUTH_URL=${{ env.BETTER_AUTH_URL }},SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USER=$SMTP_USER,SMTP_PASSWORD=$SMTP_PASSWORD,BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID,ZOOM_ACCOUNT_ID=$ZOOM_ACCOUNT_ID,ZOOM_CLIENT_ID=$ZOOM_CLIENT_ID,ZOOM_CLIENT_SECRET=$ZOOM_CLIENT_SECRET}"
+              --function-name $FUNCTION_NAME \
+              --environment Variables={$ENV_VARS}
+            
+            echo "⏳ Waiting for Lambda configuration update to complete..."
+            aws lambda wait function-updated \
+              --function-name $FUNCTION_NAME
           fi
+
+          echo "✅ Lambda deployment completed successfully!"
