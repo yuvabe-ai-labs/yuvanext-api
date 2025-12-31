@@ -83,7 +83,11 @@ jobs:
       - name: Run database migrations
         env:
           DATABASE_URL: ${{ secrets[env.DB_SECRET_NAME] }}
-        run: pnpm run db:migrate
+        run: |
+          echo "🔍 Testing database migration..."
+          echo "Using database: ${{ env.DB_SECRET_NAME }}"
+          pnpm run db:migrate
+          echo "✅ Migration completed successfully!"
 
       - name: Build project
         run: pnpm run build
