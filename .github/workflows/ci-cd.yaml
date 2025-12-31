@@ -130,7 +130,7 @@ jobs:
           EXISTS=$?
           set -e
 
-          # Build JSON for environment variables (safe for special characters)
+          # Safe JSON for environment variables
           ENV_JSON=$(jq -n \
             --arg NODE_ENV "$NODE_ENV" \
             --arg DATABASE_URL "$DATABASE_URL" \
@@ -164,11 +164,11 @@ jobs:
             aws lambda create-function \
               --function-name $FUNCTION_NAME \
               --package-type Image \
-              --code ImageUri=${IMAGE_URI} \
+              --code ImageUri=$IMAGE_URI \
               --role ${{ env.LAMBDA_ROLE_ARN }} \
               --timeout 15 \
               --memory-size 1024 \
-              --cli-input-json "$ENV_JSON"
+              --environment "$ENV_JSON"
 
             echo "⏳ Waiting for Lambda creation to complete..."
             aws lambda wait function-active --function-name $FUNCTION_NAME
@@ -176,14 +176,15 @@ jobs:
             echo "♻️ Updating Lambda function: $FUNCTION_NAME"
             aws lambda update-function-code \
               --function-name $FUNCTION_NAME \
-              --image-uri ${IMAGE_URI}
+              --image-uri $IMAGE_URI
 
             echo "⏳ Waiting for Lambda code update to complete..."
             aws lambda wait function-updated --function-name $FUNCTION_NAME
 
             echo "🔧 Updating Lambda configuration..."
             aws lambda update-function-configuration \
-              --cli-input-json "$ENV_JSON"
+              --function-name $FUNCTION_NAME \
+              --environment "$ENV_JSON"
 
             echo "⏳ Waiting for Lambda configuration update to complete..."
             aws lambda wait function-updated --function-name $FUNCTION_NAME
