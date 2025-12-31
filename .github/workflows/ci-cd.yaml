@@ -82,7 +82,7 @@ jobs:
       # --------------------
       - name: Run database migrations
         env:
-          DATABASE_URL: $DATABASE_URL
+          DATABASE_URL: ${{ env.DATABASE_URL }}
         run: |
           echo "🔍 Testing database migration..."
           echo "Using database: $DATABASE_URL"
@@ -121,11 +121,11 @@ jobs:
       # --------------------
       - name: Create or Update Lambda
         env:
-          DATABASE_URL: $DATABASE_URL
-          BETTER_AUTH_URL: $BETTER_AUTH_URL
-          FUNCTION_NAME: $FUNCTION_NAME
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          BETTER_AUTH_URL: ${{ env.BETTER_AUTH_URL }}
+          FUNCTION_NAME: ${{ env.FUNCTION_NAME }}
           NODE_ENV: ${{ env.NODE_ENV }}
-          IMAGE_URI: $IMAGE_URI
+          IMAGE_URI: ${{ env.IMAGE_URI }}
         run: |
           set +e
           aws lambda get-function --function-name $FUNCTION_NAME > /dev/null 2>&1
@@ -147,7 +147,7 @@ jobs:
             
             echo "⏳ Waiting for Lambda creation to complete..."
             aws lambda wait function-active \
-              --function-name ${{ env.FUNCTION_NAME }}
+              --function-name $FUNCTION_NAME
           else
             echo "♻️ Updating Lambda function: $FUNCTION_NAME"
             aws lambda update-function-code \
