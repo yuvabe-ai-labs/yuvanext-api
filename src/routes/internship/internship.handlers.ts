@@ -29,7 +29,6 @@ import type {
 
 type InternshipWithMetadata = {
   id: string;
-  createdBy: string;
   title: string;
   description: string | null;
   duration: string | null;
@@ -130,7 +129,6 @@ const transformToInternshipWithMetadata = (
   raw: RawInternshipQuery,
 ): InternshipWithMetadata => ({
   id: raw.id,
-  createdBy: raw.createdBy,
   title: raw.title,
   description: raw.description,
   duration: raw.duration,

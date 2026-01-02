@@ -96,7 +96,6 @@ const mapSavedRow = (row: any) => ({
   createdAt: row.createdAt,
   internshipTitle: row.internshipTitle,
   internshipDescription: row.internshipDescription,
-  createdBy: row.internshipCreatedBy,
   createdBy: {
     userId: row.unitUserId ?? null,
     name: row.unitName ?? null,
@@ -118,7 +117,6 @@ const mapAppliedRow = (row: any) => ({
   createdAt: row.createdAt,
   internshipTitle: row.internshipTitle,
   internshipDescription: row.internshipDescription,
-  createdBy: row.internshipCreatedBy,
   createdBy: {
     userId: row.unitUserId ?? null,
     name: row.unitName ?? null,
