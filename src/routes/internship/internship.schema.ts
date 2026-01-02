@@ -43,7 +43,7 @@ export const internshipIdParamSchema = z.object({
   id: z.uuid(),
 });
 
-export const createdByMetadataSchema = z.object({
+export const createdBySchema = z.object({
   userId: z.uuid().nullable(),
   name: z.string().nullable(),
   address: z.string().nullable(),
@@ -74,7 +74,7 @@ export const internshipResponseSchema = z.object({
   language: z.array(z.string()).nullable(),
   createdAt: z.union([z.string(), z.date()]),
   updatedAt: z.union([z.string(), z.date()]),
-  createdByMetadata: createdByMetadataSchema,
+  createdBy: createdBySchema,
 });
 
 export const recommendedinternshipResponseSchema =

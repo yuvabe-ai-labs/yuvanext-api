@@ -45,7 +45,7 @@ type InternshipWithMetadata = {
   skillsRequired: string[] | null;
   responsibilities: string[] | null;
   language: string[] | null;
-  createdByMetadata: {
+  createdBy: {
     userId: string | null;
     name: string | null;
     address: string | null;
@@ -146,7 +146,7 @@ const transformToInternshipWithMetadata = (
   skillsRequired: raw.skillsRequired,
   responsibilities: raw.responsibilities,
   language: raw.language,
-  createdByMetadata: {
+  createdBy: {
     userId: raw.unitUserId,
     name: raw.unitName,
     address: raw.unitAddress,

@@ -97,7 +97,7 @@ const mapSavedRow = (row: any) => ({
   internshipTitle: row.internshipTitle,
   internshipDescription: row.internshipDescription,
   createdBy: row.internshipCreatedBy,
-  createdByMetadata: {
+  createdBy: {
     userId: row.unitUserId ?? null,
     name: row.unitName ?? null,
     address: row.unitAddress ?? null,
@@ -119,7 +119,7 @@ const mapAppliedRow = (row: any) => ({
   internshipTitle: row.internshipTitle,
   internshipDescription: row.internshipDescription,
   createdBy: row.internshipCreatedBy,
-  createdByMetadata: {
+  createdBy: {
     userId: row.unitUserId ?? null,
     name: row.unitName ?? null,
     address: row.unitAddress ?? null,

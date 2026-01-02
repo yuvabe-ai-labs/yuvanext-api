@@ -66,7 +66,7 @@ export const savedInternshipListItemSchema = z.object({
   internshipTitle: z.string().nullable(),
   internshipDescription: z.string().nullable(),
   internshipCreatedBy: z.uuid().nullable(),
-  createdByMetadata: {
+  createdBy: {
     name: z.string().nullable(),
     avatarUrl: z.string().nullable(),
     address: z.string().nullable(),
@@ -87,7 +87,7 @@ export const appliedInternshipListItemSchema = z.object({
   internshipTitle: z.string().nullable(),
   internshipDescription: z.string().nullable(),
   internshipCreatedBy: z.uuid().nullable(),
-  createdByMetadata: {
+  createdBy: {
     name: z.string().nullable(),
     avatarUrl: z.string().nullable(),
     address: z.string().nullable(),
