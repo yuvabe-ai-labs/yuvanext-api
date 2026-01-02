@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import type { AppRouteHandler } from "@/types/app.types";
@@ -35,45 +35,95 @@ import type {
   SaveInternship,
   ShareInternship,
 } from "./action.routes";
-import { candidate } from "@/config/auth-permission";
 
-// Helper function to check if email notifications are enabled for a user
-async function isEmailNotificationsEnabled(userId: string): Promise<boolean> {
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+
+type NotificationSettings = {
+  emailEnabled: boolean;
+  inAppEnabled: boolean;
+};
+
+type SavedInternshipRow = {
+  id: string;
+  internshipId: string | null;
+  createdAt: Date | null;
+  internshipTitle: string | null;
+  internshipDescription: string | null;
+  internshipCreatedBy: string | null;
+  unitUserId: string | null;
+  unitName: string | null;
+  unitAddress: string | null;
+  unitPhone: string | null;
+  unitWebsiteUrl: string | null;
+  unitDescription: string | null;
+  unitAvatarUrl: string | null;
+  unitBannerUrl: string | null;
+  unitLocation: string | null;
+};
+
+type AppliedInternshipRow = {
+  id: string;
+  internshipId: string | null;
+  status:
+    | "applied"
+    | "shortlisted"
+    | "rejected"
+    | "interviewed"
+    | "hired"
+    | "not_shortlisted"
+    | null;
+  includedSections: string[] | null;
+  createdAt: Date | null;
+  internshipTitle: string | null;
+  internshipDescription: string | null;
+  internshipCreatedBy: string | null;
+  unitUserId: string | null;
+  unitName: string | null;
+  unitAddress: string | null;
+  unitPhone: string | null;
+  unitWebsiteUrl: string | null;
+  unitDescription: string | null;
+  unitAvatarUrl: string | null;
+  unitBannerUrl: string | null;
+  unitLocation: string | null;
+};
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Get notification settings for a user
+ * Returns both email and in-app notification preferences in a single query
+ */
+async function getNotificationSettings(
+  userId: string,
+): Promise<NotificationSettings> {
   try {
     const [settings] = await db
-      .select()
+      .select({
+        emailEnabled: userSettings.emailNotificationsEnabled,
+        inAppEnabled: userSettings.inAppNotificationsEnabled,
+      })
       .from(userSettings)
       .where(eq(userSettings.userId, userId))
       .limit(1);
 
-    // Default to true if no settings found (backward compatibility)
-    return settings?.emailNotificationsEnabled ?? true;
+    return {
+      emailEnabled: settings?.emailEnabled ?? true,
+      inAppEnabled: settings?.inAppEnabled ?? true,
+    };
   } catch (err) {
-    console.error("Error checking email notification settings:", err);
-    // Default to true on error to maintain existing behavior
-    return true;
+    console.error("Error checking notification settings:", err);
+    return { emailEnabled: true, inAppEnabled: true };
   }
 }
 
-// Helper function to check if in-app notifications are enabled for a user
-async function isInAppNotificationsEnabled(userId: string): Promise<boolean> {
-  try {
-    const [settings] = await db
-      .select()
-      .from(userSettings)
-      .where(eq(userSettings.userId, userId))
-      .limit(1);
-
-    // Default to true if no settings found (backward compatibility)
-    return settings?.inAppNotificationsEnabled ?? true;
-  } catch (err) {
-    console.error("Error checking in-app notification settings:", err);
-    // Default to true on error to maintain existing behavior
-    return true;
-  }
-}
-
-// Reusable select fragment for internship + unit metadata
+/**
+ * Reusable select fragment for internship + unit metadata
+ */
 const internshipWithUnitSelect = () => ({
   internshipTitle: internships.title,
   internshipDescription: internships.description,
@@ -89,11 +139,13 @@ const internshipWithUnitSelect = () => ({
   unitLocation: units.location,
 });
 
-// Mapping helpers to return a consistent response shape
-const mapSavedRow = (row: any) => ({
+/**
+ * Map saved internship row to response format
+ */
+const mapSavedRow = (row: SavedInternshipRow) => ({
   id: row.id,
-  internshipId: row.internshipId,
-  createdAt: row.createdAt,
+  internshipId: row.internshipId ?? "",
+  createdAt: row.createdAt ?? new Date(),
   internshipTitle: row.internshipTitle,
   internshipDescription: row.internshipDescription,
   createdBy: {
@@ -109,12 +161,15 @@ const mapSavedRow = (row: any) => ({
   },
 });
 
-const mapAppliedRow = (row: any) => ({
+/**
+ * Map applied internship row to response format
+ */
+const mapAppliedRow = (row: AppliedInternshipRow) => ({
   id: row.id,
-  internshipId: row.internshipId,
-  status: row.status,
+  internshipId: row.internshipId ?? "",
+  status: row.status ?? "applied",
   includedSections: row.includedSections,
-  createdAt: row.createdAt,
+  createdAt: row.createdAt ?? new Date(),
   internshipTitle: row.internshipTitle,
   internshipDescription: row.internshipDescription,
   createdBy: {
@@ -130,13 +185,19 @@ const mapAppliedRow = (row: any) => ({
   },
 });
 
-// POST /internship/save - save an internship for the candidate
+// ============================================================================
+// ROUTE HANDLERS
+// ============================================================================
+
+/**
+ * POST /candidate/internship/:internshipId/save
+ * Save an internship for the candidate
+ */
 export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
   const user = c.get("user");
   const { internshipId } = c.req.valid("param");
 
   try {
-    // OPTIMIZED: Combined query using Promise.all to check both conditions in parallel
     const [internshipExists, existingSaved] = await Promise.all([
       db
         .select({ id: internships.id })
@@ -157,13 +218,25 @@ export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
 
     if (!internshipExists || internshipExists.length === 0) {
       return c.json(
-        { status_code: NOT_FOUND, message: "Internship not found" },
+        {
+          status_code: NOT_FOUND,
+          message: "Internship not found",
+          code: "INTERNSHIP_NOT_FOUND",
+          resource: { internshipId },
+        },
         NOT_FOUND,
       );
     }
 
     if (existingSaved.length > 0) {
-      return c.json({ status_code: OK, message: "Already saved" }, OK);
+      return c.json(
+        {
+          status_code: OK,
+          message: "Internship already saved",
+          data: existingSaved[0],
+        },
+        OK,
+      );
     }
 
     const insert = await db
@@ -172,7 +245,11 @@ export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
       .returning();
 
     return c.json(
-      { status_code: CREATED, message: "Saved successfully", data: insert[0] },
+      {
+        status_code: CREATED,
+        message: "Internship saved successfully",
+        data: insert[0],
+      },
       CREATED,
     );
   } catch (err) {
@@ -184,7 +261,10 @@ export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
   }
 };
 
-// DELETE /internship/save - remove saved internship (by internshipId in body)
+/**
+ * DELETE /candidate/internship/:internshipId/save
+ * Remove saved internship
+ */
 export const removeSavedInternship: AppRouteHandler<
   RemoveSavedInternship
 > = async (c) => {
@@ -204,12 +284,23 @@ export const removeSavedInternship: AppRouteHandler<
 
     if (result.length === 0) {
       return c.json(
-        { status_code: NOT_FOUND, message: "Saved internship not found" },
+        {
+          status_code: NOT_FOUND,
+          message: "Saved internship not found",
+          code: "SAVED_INTERNSHIP_NOT_FOUND",
+          resource: { internshipId },
+        },
         NOT_FOUND,
       );
     }
 
-    return c.json({ status_code: OK, message: "Removed successfully" }, OK);
+    return c.json(
+      {
+        status_code: OK,
+        message: "Saved internship removed successfully",
+      },
+      OK,
+    );
   } catch (err) {
     console.error("Error removing saved internship:", err);
     return c.json(
@@ -222,7 +313,10 @@ export const removeSavedInternship: AppRouteHandler<
   }
 };
 
-// POST /internship/apply - apply to internship with includedSections
+/**
+ * POST /candidate/internship/:internshipId/apply
+ * Apply to internship with includedSections
+ */
 export const applyToInternship: AppRouteHandler<ApplyToInternship> = async (
   c,
 ) => {
@@ -231,172 +325,162 @@ export const applyToInternship: AppRouteHandler<ApplyToInternship> = async (
   const { includedSections } = c.req.valid("json");
 
   try {
-    // Check internship exists and prevent duplicate application in a single query
-    const [internship, existingApplication] = await Promise.all([
-      db
-        .select()
-        .from(internships)
-        .where(eq(internships.id, internshipId))
-        .limit(1),
-      db
-        .select()
-        .from(applications)
-        .where(
-          and(
-            eq(applications.userId, user.id),
-            eq(applications.internshipId, internshipId),
-          ),
-        )
-        .limit(1),
-    ]);
+    const [internship] = await db
+      .select()
+      .from(internships)
+      .where(eq(internships.id, internshipId))
+      .limit(1);
 
-    if (!internship || internship.length === 0) {
+    if (!internship) {
       return c.json(
-        { status_code: NOT_FOUND, message: "Internship not found" },
+        {
+          status_code: NOT_FOUND,
+          message: "Internship not found",
+          code: "INTERNSHIP_NOT_FOUND",
+          resource: { internshipId },
+        },
         NOT_FOUND,
       );
     }
 
-    if (existingApplication.length > 0) {
-      return c.json(
-        { status_code: CONFLICT, message: "Already applied" },
-        CONFLICT,
-      );
-    }
+    const internshipData = internship;
 
-    const internshipData = internship[0];
-
-    // Insert application
-    const insert = await db
-      .insert(applications)
-      .values({ userId: user.id, internshipId, includedSections })
-      .returning();
-
-    // Fetch unit details only if createdBy exists
-    let unitName = "Our Organization";
-    let unitEmail: string | null = null;
-    let unitUserId: string | null = null;
-
-    if (internshipData.createdBy) {
-      try {
-        const unitDetails = await db
-          .select({
-            name: units.name,
-            email: userTable.email,
-            userId: userTable.id,
-          })
-          .from(units)
-          .innerJoin(userTable, eq(units.userId, userTable.id))
-          .where(eq(units.userId, internshipData.createdBy))
-          .limit(1);
-
-        if (unitDetails.length > 0) {
-          unitName = unitDetails[0].name || unitName;
-          unitEmail = unitDetails[0].email;
-          unitUserId = unitDetails[0].userId;
-        }
-      } catch (err) {
-        console.error("Error fetching unit details:", err);
+    let insert;
+    try {
+      [insert] = await db
+        .insert(applications)
+        .values({ userId: user.id, internshipId, includedSections })
+        .returning();
+    } catch (dbError: any) {
+      if (dbError.code === "23505" || dbError.constraint) {
+        return c.json(
+          {
+            status_code: CONFLICT,
+            message: "You have already applied to this internship",
+            code: "DUPLICATE_APPLICATION",
+            resource: { internshipId },
+          },
+          CONFLICT,
+        );
       }
+      throw dbError;
     }
 
-    // Check notification settings for both candidate and unit
-    const [candidateEmailEnabled, unitEmailEnabled, unitInAppEnabled] =
-      await Promise.all([
-        isEmailNotificationsEnabled(user.id),
-        unitUserId
-          ? isEmailNotificationsEnabled(unitUserId)
-          : Promise.resolve(false),
-        unitUserId
-          ? isInAppNotificationsEnabled(unitUserId)
-          : Promise.resolve(false),
-      ]);
+    const [userRecord] = await db
+      .select({ email: userTable.email })
+      .from(userTable)
+      .where(eq(userTable.id, user.id))
+      .limit(1);
 
-    // Send emails and create notification in parallel (non-blocking)
-    const emailAndNotificationTasks = [];
+    const candidateEmail = userRecord?.email;
 
-    // Send email to candidate confirming application (only if enabled)
-    if (user.email && candidateEmailEnabled) {
+    const [unitRecord] = await db
+      .select({
+        userId: units.userId,
+        name: units.name,
+        email: userTable.email,
+      })
+      .from(units)
+      .leftJoin(userTable, eq(units.userId, userTable.id))
+      .where(eq(units.userId, internshipData.createdBy))
+      .limit(1);
+
+    const unitUserId = unitRecord?.userId;
+    const unitName = unitRecord?.name;
+    const unitEmail = unitRecord?.email;
+
+    const unitSettings = unitUserId
+      ? await getNotificationSettings(unitUserId)
+      : { emailEnabled: true, inAppEnabled: true };
+
+    const emailAndNotificationTasks: Promise<any>[] = [];
+
+    if (candidateEmail && internshipData.title) {
       emailAndNotificationTasks.push(
         sendApplicationEmail("applied", {
-          to: user.email,
-          candidateName: user.email,
-          internshipTitle: internshipData.title || "Internship Position",
-          unitName,
-        }).catch((emailErr) => {
-          console.error(
-            "Failed to send application confirmation email to candidate:",
-            emailErr,
-          );
+          to: candidateEmail,
+          candidateName: candidateEmail,
+          internshipTitle: internshipData.title,
+          unitName: unitName || "the unit",
+        }).catch((emailError) => {
+          console.error("CRITICAL: Candidate email failed", {
+            applicationId: insert.id,
+            candidateEmail,
+            error: emailError.message,
+          });
         }),
       );
     }
 
-    // Send application notification email to unit (only if enabled)
-    if (unitEmail && unitEmailEnabled) {
+    if (unitSettings.emailEnabled && unitEmail && internshipData.title) {
       emailAndNotificationTasks.push(
         sendUnitApplicationNotification({
           to: unitEmail,
-          unitName,
-          candidateName: user.name || "",
-          candidateEmail: user.email || "",
-          internshipTitle: internshipData.title || "Internship Position",
-        }).catch((emailErr) => {
-          console.error(
-            "Failed to send application notification email to unit:",
-            emailErr,
-          );
+          unitName: unitName || "Unit",
+          internshipTitle: internshipData.title,
+          candidateName: user.name || "A candidate",
+          candidateEmail: candidateEmail || "unknown@email.com",
+        }).catch((emailError) => {
+          console.error("CRITICAL: Unit notification email failed", {
+            applicationId: insert.id,
+            unitEmail,
+            error: emailError.message,
+          });
         }),
       );
     }
 
-    // Create in-app notification for internship creator (only if enabled)
-    if (internshipData.createdBy && unitInAppEnabled) {
+    if (unitSettings.inAppEnabled && unitUserId && internshipData.title) {
       emailAndNotificationTasks.push(
         db
           .insert(notifications)
           .values({
-            userId: internshipData.createdBy,
-            title: internshipData.title,
-            message: `${user.email ?? "A candidate"} applied to ${internshipData.title ?? "an internship"}`,
+            userId: unitUserId,
             type: "info",
+            title: internshipData.title,
+            message: `${candidateEmail ?? "A candidate"} applied to ${internshipData.title ?? "an internship"}`,
           })
-          .catch((nerr) => {
-            console.error(
-              "Failed to create notification for internship creator:",
-              nerr,
-            );
+          .catch((notifError) => {
+            console.error("Error creating in-app notification", {
+              applicationId: insert.id,
+              unitUserId,
+              error: notifError.message,
+            });
           }),
       );
     }
 
-    // Execute all side effects in parallel without blocking response
-    Promise.all(emailAndNotificationTasks).catch(() => {
-      // Errors already logged individually
-    });
+    Promise.all(emailAndNotificationTasks).catch(() => {});
 
     return c.json(
       {
         status_code: CREATED,
-        message: "Applied successfully",
-        data: insert[0],
+        message: "Application submitted successfully",
+        data: insert,
       },
       CREATED,
     );
   } catch (err) {
     console.error("Error applying to internship:", err);
     return c.json(
-      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
       INTERNAL_SERVER_ERROR,
     );
   }
 };
 
-// GET /internship/saved - list saved internships for user
+/**
+ * GET /candidate/internship/save
+ * List all saved internships for user
+ */
 export const getSavedInternships: AppRouteHandler<GetSavedInternships> = async (
   c,
 ) => {
   const user = c.get("user");
+  const { sortOrder } = c.req.valid("query");
 
   try {
     const list = await db
@@ -409,14 +493,19 @@ export const getSavedInternships: AppRouteHandler<GetSavedInternships> = async (
       .from(savedInternship)
       .leftJoin(internships, eq(savedInternship.internshipId, internships.id))
       .leftJoin(units, eq(internships.createdBy, units.userId))
-      .where(eq(savedInternship.candidateId, user.id));
+      .where(eq(savedInternship.candidateId, user.id))
+      .orderBy(
+        sortOrder === "asc"
+          ? savedInternship.createdAt
+          : desc(savedInternship.createdAt),
+      );
 
     const transformed = list.map(mapSavedRow);
 
     return c.json(
       {
         status_code: OK,
-        message: "Saved internships fetched",
+        message: "Saved internships fetched successfully",
         data: transformed,
       },
       OK,
@@ -433,11 +522,15 @@ export const getSavedInternships: AppRouteHandler<GetSavedInternships> = async (
   }
 };
 
-// GET /internship/applied - list applications for user
+/**
+ * GET /candidate/internship/apply
+ * List all applications for user
+ */
 export const getAppliedInternships: AppRouteHandler<
   GetAppliedInternships
 > = async (c) => {
   const user = c.get("user");
+  const { sortOrder } = c.req.valid("query");
 
   try {
     const list = await db
@@ -452,16 +545,25 @@ export const getAppliedInternships: AppRouteHandler<
       .from(applications)
       .leftJoin(internships, eq(applications.internshipId, internships.id))
       .leftJoin(units, eq(internships.createdBy, units.userId))
-      .where(eq(applications.userId, user.id));
+      .where(eq(applications.userId, user.id))
+      .orderBy(
+        sortOrder === "asc"
+          ? applications.createdAt
+          : desc(applications.createdAt),
+      );
 
     const transformed = list.map(mapAppliedRow);
 
     return c.json(
-      { status_code: OK, message: "Applications fetched", data: transformed },
+      {
+        status_code: OK,
+        message: "Applied internships fetched successfully",
+        data: transformed,
+      },
       OK,
     );
   } catch (err) {
-    console.error("Error fetching applications:", err);
+    console.error("Error fetching applied internships:", err);
     return c.json(
       {
         status_code: INTERNAL_SERVER_ERROR,
@@ -472,12 +574,14 @@ export const getAppliedInternships: AppRouteHandler<
   }
 };
 
-// GET /internship/counts - get counts for saved and applied
+/**
+ * GET /candidate/internship/counts
+ * Get counts for saved and applied internships
+ */
 export const getCounts: AppRouteHandler<GetCounts> = async (c) => {
   const user = c.get("user");
 
   try {
-    // OPTIMIZED: Use count() instead of selecting all rows
     const [savedResult, appliedResult] = await Promise.all([
       db
         .select({ count: count() })
@@ -492,7 +596,7 @@ export const getCounts: AppRouteHandler<GetCounts> = async (c) => {
     return c.json(
       {
         status_code: OK,
-        message: "Counts fetched",
+        message: "Counts fetched successfully",
         data: {
           savedCount: savedResult[0]?.count || 0,
           appliedCount: appliedResult[0]?.count || 0,
@@ -509,13 +613,15 @@ export const getCounts: AppRouteHandler<GetCounts> = async (c) => {
   }
 };
 
-// GET /internship/share/:id - generate share links for an internship
+/**
+ * GET /candidate/internship/share/:id
+ * Generate share links for an internship
+ */
 export const shareInternship: AppRouteHandler<ShareInternship> = async (c) => {
   const { id: internshipId } = c.req.valid("param");
 
   try {
-    // OPTIMIZED: Select only needed fields
-    const found = await db
+    const [internship] = await db
       .select({
         id: internships.id,
         title: internships.title,
@@ -524,18 +630,19 @@ export const shareInternship: AppRouteHandler<ShareInternship> = async (c) => {
       .where(eq(internships.id, internshipId))
       .limit(1);
 
-    if (!found || found.length === 0) {
+    if (!internship) {
       return c.json(
-        { status_code: NOT_FOUND, message: "Internship not found" },
+        {
+          status_code: NOT_FOUND,
+          message: "Internship not found",
+          code: "INTERNSHIP_NOT_FOUND",
+          resource: { internshipId },
+        },
         NOT_FOUND,
       );
     }
 
-    const internship = found[0];
-
     const frontendBase = env.FRONTEND_URL || "https://app.yuvanext.com";
-    // Note: This token is generated but not persisted.
-    // Consider storing it if you need to track/validate shares
     const token = randomUUID();
     const url = `${frontendBase}/internships/${internshipId}?share=${token}`;
     const title = internship.title ?? "Internship Opportunity";
@@ -561,7 +668,10 @@ export const shareInternship: AppRouteHandler<ShareInternship> = async (c) => {
   }
 };
 
-// GET /internship/application-status - get application status with unit details
+/**
+ * GET /candidate/internship/application-status
+ * Get application status with unit details
+ */
 export const getApplicationStatus: AppRouteHandler<
   GetApplicationStatus
 > = async (c) => {
@@ -575,6 +685,7 @@ export const getApplicationStatus: AppRouteHandler<
         status: applications.status,
         candidateOfferDecision: applications.candidateOfferDecision,
         unitOfferDecision: applications.unitOfferDecision,
+        unitName: units.name,
         avatarUrl: units.avatarUrl,
         createdAt: applications.createdAt,
         updatedAt: applications.updatedAt,
@@ -583,12 +694,12 @@ export const getApplicationStatus: AppRouteHandler<
       .leftJoin(internships, eq(applications.internshipId, internships.id))
       .leftJoin(units, eq(internships.createdBy, units.userId))
       .where(eq(applications.userId, user.id))
-      .orderBy(applications.createdAt);
+      .orderBy(desc(applications.createdAt));
 
     return c.json(
       {
         status_code: OK,
-        message: "Application status fetched",
+        message: "Application status fetched successfully",
         data: list,
       },
       OK,
@@ -605,14 +716,16 @@ export const getApplicationStatus: AppRouteHandler<
   }
 };
 
-// POST /internship/application/:applicationId/accept-offer - accept or reject internship offer
+/**
+ * POST /candidate/internship/application/:applicationId/accept-offer
+ * Accept or reject internship offer
+ */
 export const acceptOffer: AppRouteHandler<AcceptOffer> = async (c) => {
   const user = c.get("user");
   const { applicationId } = c.req.valid("param");
   const { decision } = c.req.valid("json");
 
   try {
-    // Fetch the application to check if the unit has selected the candidate
     const [application] = await db
       .select()
       .from(applications)
@@ -626,24 +739,32 @@ export const acceptOffer: AppRouteHandler<AcceptOffer> = async (c) => {
 
     if (!application) {
       return c.json(
-        { status_code: NOT_FOUND, message: "Application not found" },
+        {
+          status_code: NOT_FOUND,
+          message: "Application not found or does not belong to you",
+          code: "APPLICATION_NOT_FOUND",
+          resource: { applicationId },
+        },
         NOT_FOUND,
       );
     }
 
-    // Check if unit has selected the candidate
     if (application.unitOfferDecision !== "selected") {
       return c.json(
         {
           status_code: CONFLICT,
           message:
             "Cannot respond to offer - unit has not selected you or offer has already been responded to",
+          code: "OFFER_NOT_AVAILABLE",
+          resource: {
+            applicationId,
+            unitOfferDecision: application.unitOfferDecision,
+          },
         },
         CONFLICT,
       );
     }
 
-    // Update candidate offer decision with the provided decision (accept or reject)
     const [updated] = await db
       .update(applications)
       .set({
@@ -660,7 +781,7 @@ export const acceptOffer: AppRouteHandler<AcceptOffer> = async (c) => {
     return c.json(
       {
         status_code: OK,
-        message: `Offer ${decision} successfully`,
+        message: `Offer ${decision}ed successfully`,
         data: updated,
       },
       OK,
