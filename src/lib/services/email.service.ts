@@ -142,7 +142,8 @@ const subjects = {
   applied: (p: EmailParams) => `Application Received - ${p.internshipTitle}`,
   shortlisted: (p: EmailParams) =>
     `Great News! You've been shortlisted - ${p.internshipTitle}`,
-  rejected: (p: EmailParams) => `Application Update - ${p.internshipTitle}`,
+  not_shortlisted: (p: EmailParams) =>
+    `Application Update - ${p.internshipTitle}`,
   interviewed: (p: EmailParams) => `Interview Scheduled - ${p.internshipTitle}`,
   hired: (p: EmailParams) =>
     `Congratulations! Offer Letter - ${p.internshipTitle}`,
@@ -150,7 +151,12 @@ const subjects = {
 
 // Send application-related email
 export async function sendApplicationEmail(
-  status: "applied" | "shortlisted" | "rejected" | "interviewed" | "hired",
+  status:
+    | "applied"
+    | "shortlisted"
+    | "not_shortlisted"
+    | "interviewed"
+    | "hired",
   params: EmailParams,
 ): Promise<boolean> {
   try {

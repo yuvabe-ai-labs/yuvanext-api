@@ -1,3 +1,4 @@
+import { create } from "node:domain";
 import { z } from "zod";
 
 // Enums
@@ -30,6 +31,14 @@ export const internshipIdParamSchema = z.object({
   id: z.uuid(),
 });
 
+export const acceptOfferParamSchema = z.object({
+  applicationId: z.uuid(),
+});
+
+export const acceptOrRejectOfferSchema = z.object({
+  decision: z.enum(["accept", "reject"]),
+});
+
 // Response Schemas
 export const savedinternshipResponseSchema = z.object({
   id: z.uuid(),
@@ -57,6 +66,16 @@ export const savedInternshipListItemSchema = z.object({
   internshipTitle: z.string().nullable(),
   internshipDescription: z.string().nullable(),
   internshipCreatedBy: z.uuid().nullable(),
+  createdBy: {
+    name: z.string().nullable(),
+    avatarUrl: z.string().nullable(),
+    address: z.string().nullable(),
+    phone: z.string().nullable(),
+    websiteUrl: z.string().nullable(),
+    description: z.string().nullable(),
+    bannerUrl: z.string().nullable(),
+    location: z.string().nullable(),
+  },
 });
 
 export const appliedInternshipListItemSchema = z.object({
@@ -68,6 +87,16 @@ export const appliedInternshipListItemSchema = z.object({
   internshipTitle: z.string().nullable(),
   internshipDescription: z.string().nullable(),
   internshipCreatedBy: z.uuid().nullable(),
+  createdBy: {
+    name: z.string().nullable(),
+    avatarUrl: z.string().nullable(),
+    address: z.string().nullable(),
+    phone: z.string().nullable(),
+    websiteUrl: z.string().nullable(),
+    description: z.string().nullable(),
+    bannerUrl: z.string().nullable(),
+    location: z.string().nullable(),
+  },
 });
 
 export const countsResponseSchema = z.object({
@@ -87,8 +116,23 @@ export const applicationStatusItemSchema = z.object({
   id: z.uuid(),
   applicationTitle: z.string().nullable(),
   status: applicationStatusEnum,
+  candidateOfferDecision: z.enum(["accept", "reject", "pending"]),
+  unitOfferDecision: z.enum(["selected", "reject", "pending"]),
   unitName: z.string().nullable(),
   avatarUrl: z.string().nullable(),
+  createdAt: z.union([z.string(), z.date()]),
+  updatedAt: z.union([z.string(), z.date()]),
+});
+
+export const acceptOfferResponseSchema = z.object({
+  id: z.uuid(),
+  userId: z.uuid(),
+  internshipId: z.uuid(),
+  status: applicationStatusEnum,
+  includedSections: z.array(z.string()).nullable(),
+  profileScore: z.number().nullable(),
+  candidateOfferDecision: z.enum(["accept", "reject", "pending"]),
+  unitOfferDecision: z.enum(["selected", "reject", "pending"]),
   createdAt: z.union([z.string(), z.date()]),
   updatedAt: z.union([z.string(), z.date()]),
 });

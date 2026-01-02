@@ -12,6 +12,7 @@ import task from "./routes/task_management/task.index";
 import unit_action from "./routes/unit_actions/actions.index";
 import unit from "./routes/unit/unit.index";
 import settings from "./routes/settings/settings.index";
+import ai_content from "./routes/ai_content_generates/ai.content.index";
 
 const app = createApp();
 
@@ -28,6 +29,7 @@ const apiRouters = [
   notification,
   task,
   settings,
+  ai_content,
 ] as const;
 
 const _routes = apiRouters.map((r) => app.route("/api", r));

@@ -25,6 +25,7 @@ import {
 } from "@/lib/services/email.service";
 
 import type {
+  AcceptOffer,
   ApplyToInternship,
   GetApplicationStatus,
   GetAppliedInternships,
@@ -34,6 +35,7 @@ import type {
   SaveInternship,
   ShareInternship,
 } from "./action.routes";
+import { candidate } from "@/config/auth-permission";
 
 // Helper function to check if email notifications are enabled for a user
 async function isEmailNotificationsEnabled(userId: string): Promise<boolean> {
@@ -70,6 +72,63 @@ async function isInAppNotificationsEnabled(userId: string): Promise<boolean> {
     return true;
   }
 }
+
+// Reusable select fragment for internship + unit metadata
+const internshipWithUnitSelect = () => ({
+  internshipTitle: internships.title,
+  internshipDescription: internships.description,
+  internshipCreatedBy: internships.createdBy,
+  unitUserId: units.userId,
+  unitName: units.name,
+  unitAddress: units.address,
+  unitPhone: units.phone,
+  unitWebsiteUrl: units.websiteUrl,
+  unitDescription: units.description,
+  unitAvatarUrl: units.avatarUrl,
+  unitBannerUrl: units.bannerUrl,
+  unitLocation: units.location,
+});
+
+// Mapping helpers to return a consistent response shape
+const mapSavedRow = (row: any) => ({
+  id: row.id,
+  internshipId: row.internshipId,
+  createdAt: row.createdAt,
+  internshipTitle: row.internshipTitle,
+  internshipDescription: row.internshipDescription,
+  createdBy: {
+    userId: row.unitUserId ?? null,
+    name: row.unitName ?? null,
+    address: row.unitAddress ?? null,
+    phone: row.unitPhone ?? null,
+    websiteUrl: row.unitWebsiteUrl ?? null,
+    description: row.unitDescription ?? null,
+    avatarUrl: row.unitAvatarUrl ?? null,
+    bannerUrl: row.unitBannerUrl ?? null,
+    location: row.unitLocation ?? null,
+  },
+});
+
+const mapAppliedRow = (row: any) => ({
+  id: row.id,
+  internshipId: row.internshipId,
+  status: row.status,
+  includedSections: row.includedSections,
+  createdAt: row.createdAt,
+  internshipTitle: row.internshipTitle,
+  internshipDescription: row.internshipDescription,
+  createdBy: {
+    userId: row.unitUserId ?? null,
+    name: row.unitName ?? null,
+    address: row.unitAddress ?? null,
+    phone: row.unitPhone ?? null,
+    websiteUrl: row.unitWebsiteUrl ?? null,
+    description: row.unitDescription ?? null,
+    avatarUrl: row.unitAvatarUrl ?? null,
+    bannerUrl: row.unitBannerUrl ?? null,
+    location: row.unitLocation ?? null,
+  },
+});
 
 // POST /internship/save - save an internship for the candidate
 export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
@@ -345,16 +404,21 @@ export const getSavedInternships: AppRouteHandler<GetSavedInternships> = async (
         id: savedInternship.id,
         internshipId: savedInternship.internshipId,
         createdAt: savedInternship.createdAt,
-        internshipTitle: internships.title,
-        internshipDescription: internships.description,
-        internshipCreatedBy: internships.createdBy,
+        ...internshipWithUnitSelect(),
       })
       .from(savedInternship)
       .leftJoin(internships, eq(savedInternship.internshipId, internships.id))
+      .leftJoin(units, eq(internships.createdBy, units.userId))
       .where(eq(savedInternship.candidateId, user.id));
 
+    const transformed = list.map(mapSavedRow);
+
     return c.json(
-      { status_code: OK, message: "Saved internships fetched", data: list },
+      {
+        status_code: OK,
+        message: "Saved internships fetched",
+        data: transformed,
+      },
       OK,
     );
   } catch (err) {
@@ -383,16 +447,17 @@ export const getAppliedInternships: AppRouteHandler<
         status: applications.status,
         includedSections: applications.includedSections,
         createdAt: applications.createdAt,
-        internshipTitle: internships.title,
-        internshipDescription: internships.description,
-        internshipCreatedBy: internships.createdBy,
+        ...internshipWithUnitSelect(),
       })
       .from(applications)
       .leftJoin(internships, eq(applications.internshipId, internships.id))
+      .leftJoin(units, eq(internships.createdBy, units.userId))
       .where(eq(applications.userId, user.id));
 
+    const transformed = list.map(mapAppliedRow);
+
     return c.json(
-      { status_code: OK, message: "Applications fetched", data: list },
+      { status_code: OK, message: "Applications fetched", data: transformed },
       OK,
     );
   } catch (err) {
@@ -508,7 +573,8 @@ export const getApplicationStatus: AppRouteHandler<
         id: applications.id,
         applicationTitle: internships.title,
         status: applications.status,
-        unitName: units.name,
+        candidateOfferDecision: applications.candidateOfferDecision,
+        unitOfferDecision: applications.unitOfferDecision,
         avatarUrl: units.avatarUrl,
         createdAt: applications.createdAt,
         updatedAt: applications.updatedAt,
@@ -534,6 +600,75 @@ export const getApplicationStatus: AppRouteHandler<
         status_code: INTERNAL_SERVER_ERROR,
         message: "Internal server error",
       },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// POST /internship/application/:applicationId/accept-offer - accept or reject internship offer
+export const acceptOffer: AppRouteHandler<AcceptOffer> = async (c) => {
+  const user = c.get("user");
+  const { applicationId } = c.req.valid("param");
+  const { decision } = c.req.valid("json");
+
+  try {
+    // Fetch the application to check if the unit has selected the candidate
+    const [application] = await db
+      .select()
+      .from(applications)
+      .where(
+        and(
+          eq(applications.id, applicationId),
+          eq(applications.userId, user.id),
+        ),
+      )
+      .limit(1);
+
+    if (!application) {
+      return c.json(
+        { status_code: NOT_FOUND, message: "Application not found" },
+        NOT_FOUND,
+      );
+    }
+
+    // Check if unit has selected the candidate
+    if (application.unitOfferDecision !== "selected") {
+      return c.json(
+        {
+          status_code: CONFLICT,
+          message:
+            "Cannot respond to offer - unit has not selected you or offer has already been responded to",
+        },
+        CONFLICT,
+      );
+    }
+
+    // Update candidate offer decision with the provided decision (accept or reject)
+    const [updated] = await db
+      .update(applications)
+      .set({
+        candidateOfferDecision: decision,
+        updatedAt: new Date(),
+      })
+      .where(eq(applications.id, applicationId))
+      .returning();
+
+    if (!updated) {
+      throw new Error("Failed to update application");
+    }
+
+    return c.json(
+      {
+        status_code: OK,
+        message: `Offer ${decision} successfully`,
+        data: updated,
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error responding to offer:", err);
+    return c.json(
+      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
       INTERNAL_SERVER_ERROR,
     );
   }

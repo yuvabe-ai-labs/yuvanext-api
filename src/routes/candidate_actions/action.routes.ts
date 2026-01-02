@@ -15,6 +15,9 @@ import {
 import { requireRole } from "@/middleware/auth";
 
 import {
+  acceptOfferParamSchema,
+  acceptOrRejectOfferSchema,
+  acceptOfferResponseSchema,
   applicationResponseSchema,
   applicationStatusItemSchema,
   appliedInternshipListItemSchema,
@@ -195,6 +198,36 @@ export const getApplicationStatus = createRoute({
   },
 });
 
+/**
+ * POST /internship/application/:applicationId/accept-offer - Accept internship offer
+ */
+export const acceptOffer = createRoute({
+  method: "post" as const,
+  path: "/candidate/internship/application/:applicationId/accept-offer",
+  tags: ["InternshipActions"],
+  middleware: requireRole({ allowedRoles: ["candidate"] }),
+  summary: "Accept or reject internship offer",
+  description:
+    "Accept or reject an internship offer if the unit has selected the candidate (candidates only)",
+  request: {
+    params: acceptOfferParamSchema,
+    body: {
+      content: {
+        "application/json": {
+          schema: acceptOrRejectOfferSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    [OK]: createResponse(OK, acceptOfferResponseSchema),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+    [CONFLICT]: createResponse(CONFLICT),
+    ...restrictedErrorResponses,
+  },
+});
+
 export type SaveInternship = typeof saveInternship;
 export type RemoveSavedInternship = typeof removeSavedInternship;
 export type ApplyToInternship = typeof applyToInternship;
@@ -203,3 +236,4 @@ export type GetAppliedInternships = typeof getAppliedInternships;
 export type GetCounts = typeof getCounts;
 export type ShareInternship = typeof shareInternship;
 export type GetApplicationStatus = typeof getApplicationStatus;
+export type AcceptOffer = typeof acceptOffer;
