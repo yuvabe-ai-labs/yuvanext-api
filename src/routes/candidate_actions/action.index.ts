@@ -14,6 +14,7 @@ router
   .openapi(routes.getAppliedInternships, handlers.getAppliedInternships)
   .openapi(routes.getCounts, handlers.getCounts)
   .openapi(routes.shareInternship, handlers.shareInternship)
-  .openapi(routes.getApplicationStatus, handlers.getApplicationStatus);
+  .openapi(routes.getApplicationStatus, handlers.getApplicationStatus)
+  .openapi(routes.acceptOffer, handlers.acceptOffer);
 
 export default router;

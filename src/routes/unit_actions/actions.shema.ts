@@ -4,7 +4,7 @@ import { z } from "zod";
 export const applicationStatusEnum = z.enum([
   "applied",
   "shortlisted",
-  "rejected",
+  "not_shortlisted",
   "interviewed",
   "hired",
 ]);

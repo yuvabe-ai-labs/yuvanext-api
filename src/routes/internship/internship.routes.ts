@@ -30,6 +30,23 @@ import {
 /**
  * GET /internships - List internships (role-based filtering)
  */
+
+/**
+ * GET /stats - Get unit statistics
+ */
+export const getUnitStats = createRoute({
+  method: "get" as const,
+  path: "/internships/stats",
+  tags: ["Internships"],
+  middleware: requireRole({ allowedRoles: ["unit"] }),
+  summary: "Get unit dashboard statistics",
+  description: "Retrieve aggregated statistics for the authenticated unit",
+  responses: {
+    [OK]: createResponse(OK, unitStatsResponseSchema),
+    ...restrictedErrorResponses,
+  },
+});
+
 export const getInternships = createRoute({
   method: "get" as const,
   path: "/internships",
@@ -149,22 +166,6 @@ export const deleteInternship = createRoute({
   responses: {
     [OK]: createResponse(OK),
     ...resourceErrorResponses,
-  },
-});
-
-/**
- * GET /stats - Get unit statistics
- */
-export const getUnitStats = createRoute({
-  method: "get" as const,
-  path: "/internships/stats",
-  tags: ["Internships"],
-  middleware: requireRole({ allowedRoles: ["unit"] }),
-  summary: "Get unit dashboard statistics",
-  description: "Retrieve aggregated statistics for the authenticated unit",
-  responses: {
-    [OK]: createResponse(OK, unitStatsResponseSchema),
-    ...restrictedErrorResponses,
   },
 });
 

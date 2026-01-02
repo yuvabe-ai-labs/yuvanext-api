@@ -43,10 +43,22 @@ export const internshipIdParamSchema = z.object({
   id: z.uuid(),
 });
 
+export const createdByMetadataSchema = z.object({
+  userId: z.uuid().nullable(),
+  name: z.string().nullable(),
+  address: z.string().nullable(),
+  phone: z.string().nullable(),
+  websiteUrl: z.string().nullable(),
+  description: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+  bannerUrl: z.string().nullable(),
+  location: z.string().nullable(),
+});
+
 // Response Schemas
 export const internshipResponseSchema = z.object({
   id: z.uuid(),
-  createdBy: z.string().uuid(),
+  createdBy: z.uuid(),
   title: z.string(),
   description: z.string().nullable(),
   duration: z.string().nullable(),
@@ -62,6 +74,7 @@ export const internshipResponseSchema = z.object({
   language: z.array(z.string()).nullable(),
   createdAt: z.union([z.string(), z.date()]),
   updatedAt: z.union([z.string(), z.date()]),
+  createdByMetadata: createdByMetadataSchema,
 });
 
 export const recommendedinternshipResponseSchema =

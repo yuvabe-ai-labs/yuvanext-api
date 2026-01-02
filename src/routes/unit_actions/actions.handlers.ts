@@ -323,7 +323,7 @@ export const updateApplicationStatus: AppRouteHandler<
         notificationType = "success";
         break;
 
-      case "rejected":
+      case "not_shortlisted":
         notificationTitle = "Application Update";
         notificationMessage = `Thank you for your interest in "${internship.title}". Unfortunately, we are moving forward with other candidates.`;
         notificationType = "info";
