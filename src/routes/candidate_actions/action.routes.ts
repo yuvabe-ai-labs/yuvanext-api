@@ -20,16 +20,18 @@ import {
   acceptOfferResponseSchema,
   applicationResponseSchema,
   applicationStatusItemSchema,
-  appliedInternshipListItemSchema,
   applyToInternshipIdSchema,
   applyToInternshipSchema,
   countsResponseSchema,
+  errorResponseSchema,
   internshipIdParamSchema,
+  sortQuerySchema,
   removeSavedInternshipSchema,
-  savedInternshipListItemSchema,
   savedinternshipResponseSchema,
   saveInternshipSchema,
   shareLinksResponseSchema,
+  savedInternshipsListSchema,
+  appliedInternshipsListSchema,
 } from "./action.schema";
 
 // ============================================================================
@@ -37,41 +39,48 @@ import {
 // ============================================================================
 
 /**
- * GET /internship/save - Get saved internships
+ * GET /candidate/internship/save - Get saved internships
  */
 export const getSavedInternships = createRoute({
   method: "get" as const,
   path: "/candidate/internship/save",
   tags: ["InternshipActions"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
-  summary: "Get saved internships",
-  description:
-    "Retrieve list of internships saved by the candidate (candidates only)",
+  summary: "Get all saved internships",
+  description: `
+    Retrieve all internships saved by the candidate.
+    
+  `,
+  request: {
+    query: sortQuerySchema,
+  },
   responses: {
-    [OK]: createResponse(OK, z.array(savedInternshipListItemSchema)),
+    [OK]: createResponse(OK, savedInternshipsListSchema),
     ...restrictedErrorResponses,
   },
 });
 
 /**
- * GET /internship/apply - Get applied internships
+ * GET /candidate/internship/apply - Get applied internships
  */
 export const getAppliedInternships = createRoute({
   method: "get" as const,
   path: "/candidate/internship/apply",
   tags: ["InternshipActions"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
-  summary: "Get applied internships",
-  description:
-    "Retrieve list of internships the candidate has applied to (candidates only)",
+  summary: "Get all applied internships",
+  description: `Retrieve all internships the candidate has applied to.`,
+  request: {
+    query: sortQuerySchema,
+  },
   responses: {
-    [OK]: createResponse(OK, z.array(appliedInternshipListItemSchema)),
+    [OK]: createResponse(OK, appliedInternshipsListSchema),
     ...restrictedErrorResponses,
   },
 });
 
 /**
- * POST /internship/save - Save an internship
+ * POST /candidate/internship/:internshipId/save - Save an internship
  */
 export const saveInternship = createRoute({
   method: "post" as const,
@@ -79,21 +88,30 @@ export const saveInternship = createRoute({
   tags: ["InternshipActions"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Save an internship",
-  description: "Save an internship for later viewing (candidates only)",
+  description: `Save an internship for later viewing.`,
   request: {
     params: saveInternshipSchema,
   },
   responses: {
     [CREATED]: createResponse(CREATED, savedinternshipResponseSchema),
-    [OK]: createResponse(OK),
-    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
-    [NOT_FOUND]: createResponse(NOT_FOUND),
+    [OK]: createResponse(
+      OK,
+      z.object({
+        message: z.string(),
+        data: savedinternshipResponseSchema,
+      }),
+    ),
+    [NOT_FOUND]: createResponse(NOT_FOUND, errorResponseSchema),
+    [UNPROCESSABLE_ENTITY]: createResponse(
+      UNPROCESSABLE_ENTITY,
+      errorResponseSchema,
+    ),
     ...restrictedErrorResponses,
   },
 });
 
 /**
- * DELETE /internship/save - Remove saved internship
+ * DELETE /candidate/internship/:internshipId/save - Remove saved internship
  */
 export const removeSavedInternship = createRoute({
   method: "delete" as const,
@@ -101,20 +119,32 @@ export const removeSavedInternship = createRoute({
   tags: ["InternshipActions"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Remove saved internship",
-  description: "Remove an internship from saved list (candidates only)",
+  description: `
+    Remove an internship from saved list.
+    
+    - Requires candidate role
+    - Returns 404 if internship wasn't previously saved
+    - Idempotent: Safe to call multiple times
+    - Only removes the bookmark, doesn't affect applications
+    
+    Note: Removing a saved internship does NOT withdraw any existing application.
+  `,
   request: {
     params: removeSavedInternshipSchema,
   },
   responses: {
-    [OK]: createResponse(OK),
-    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
-    [NOT_FOUND]: createResponse(NOT_FOUND),
+    [OK]: createResponse(OK, z.object({ message: z.string() })),
+    [NOT_FOUND]: createResponse(NOT_FOUND, errorResponseSchema),
+    [UNPROCESSABLE_ENTITY]: createResponse(
+      UNPROCESSABLE_ENTITY,
+      errorResponseSchema,
+    ),
     ...restrictedErrorResponses,
   },
 });
 
 /**
- * POST /internship/apply - Apply to an internship
+ * POST /candidate/internship/:internshipId/apply - Apply to an internship
  */
 export const applyToInternship = createRoute({
   method: "post" as const,
@@ -122,8 +152,7 @@ export const applyToInternship = createRoute({
   tags: ["InternshipActions"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Apply to an internship",
-  description:
-    "Submit an application to an internship with optional profile sections (candidates only)",
+  description: `Submit an application to an internship with optional profile sections.`,
   request: {
     params: applyToInternshipIdSchema,
     body: {
@@ -136,15 +165,18 @@ export const applyToInternship = createRoute({
   },
   responses: {
     [CREATED]: createResponse(CREATED, applicationResponseSchema),
-    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
-    [NOT_FOUND]: createResponse(NOT_FOUND),
-    [CONFLICT]: createResponse(CONFLICT),
+    [NOT_FOUND]: createResponse(NOT_FOUND, errorResponseSchema),
+    [CONFLICT]: createResponse(CONFLICT, errorResponseSchema),
+    [UNPROCESSABLE_ENTITY]: createResponse(
+      UNPROCESSABLE_ENTITY,
+      errorResponseSchema,
+    ),
     ...restrictedErrorResponses,
   },
 });
 
 /**
- * GET /internship/counts - Get counts
+ * GET /candidate/internship/counts - Get counts
  */
 export const getCounts = createRoute({
   method: "get" as const,
@@ -152,8 +184,8 @@ export const getCounts = createRoute({
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   tags: ["InternshipActions"],
   summary: "Get saved and applied counts",
-  description:
-    "Get count of saved and applied internships for the candidate (candidates only)",
+  description: `
+    Get total count of saved and applied internships for the candidate.`,
   responses: {
     [OK]: createResponse(OK, countsResponseSchema),
     ...restrictedErrorResponses,
@@ -161,7 +193,7 @@ export const getCounts = createRoute({
 });
 
 /**
- * GET /internship/share/:id - Generate share links
+ * GET /candidate/internship/share/:id - Generate share links
  */
 export const shareInternship = createRoute({
   method: "get" as const,
@@ -169,20 +201,23 @@ export const shareInternship = createRoute({
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   tags: ["InternshipActions"],
   summary: "Generate share links for an internship",
-  description: "Generate social media share links for a specific internship",
+  description: `Generate social media share links for a specific internship.`,
   request: {
     params: internshipIdParamSchema,
   },
   responses: {
     [OK]: createResponse(OK, shareLinksResponseSchema),
-    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
-    [NOT_FOUND]: createResponse(NOT_FOUND),
+    [NOT_FOUND]: createResponse(NOT_FOUND, errorResponseSchema),
+    [UNPROCESSABLE_ENTITY]: createResponse(
+      UNPROCESSABLE_ENTITY,
+      errorResponseSchema,
+    ),
     ...restrictedErrorResponses,
   },
 });
 
 /**
- * GET /internship/application-status - Get application status
+ * GET /candidate/internship/application-status - Get application status
  */
 export const getApplicationStatus = createRoute({
   method: "get" as const,
@@ -190,8 +225,7 @@ export const getApplicationStatus = createRoute({
   tags: ["InternshipActions"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Get application status with unit details",
-  description:
-    "Retrieve application status with internship and unit information (candidates only)",
+  description: `Retrieve all applications with their current status and unit information.`,
   responses: {
     [OK]: createResponse(OK, z.array(applicationStatusItemSchema)),
     ...restrictedErrorResponses,
@@ -199,7 +233,7 @@ export const getApplicationStatus = createRoute({
 });
 
 /**
- * POST /internship/application/:applicationId/accept-offer - Accept internship offer
+ * POST /candidate/internship/application/:applicationId/accept-offer - Accept or reject internship offer
  */
 export const acceptOffer = createRoute({
   method: "post" as const,
@@ -207,8 +241,7 @@ export const acceptOffer = createRoute({
   tags: ["InternshipActions"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Accept or reject internship offer",
-  description:
-    "Accept or reject an internship offer if the unit has selected the candidate (candidates only)",
+  description: `Accept or reject an internship offer from a unit`,
   request: {
     params: acceptOfferParamSchema,
     body: {
@@ -221,12 +254,19 @@ export const acceptOffer = createRoute({
   },
   responses: {
     [OK]: createResponse(OK, acceptOfferResponseSchema),
-    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
-    [NOT_FOUND]: createResponse(NOT_FOUND),
-    [CONFLICT]: createResponse(CONFLICT),
+    [NOT_FOUND]: createResponse(NOT_FOUND, errorResponseSchema),
+    [CONFLICT]: createResponse(CONFLICT, errorResponseSchema),
+    [UNPROCESSABLE_ENTITY]: createResponse(
+      UNPROCESSABLE_ENTITY,
+      errorResponseSchema,
+    ),
     ...restrictedErrorResponses,
   },
 });
+
+// ============================================================================
+// TYPE EXPORTS
+// ============================================================================
 
 export type SaveInternship = typeof saveInternship;
 export type RemoveSavedInternship = typeof removeSavedInternship;
