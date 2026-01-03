@@ -6,6 +6,7 @@ import nodemailer from "nodemailer";
 import env from "@/config/env";
 import db from "@/db";
 import { user } from "@/db/schema/auth.schema";
+import { units } from "@/db/schema/unit.schema";
 
 const transporter = nodemailer.createTransport({
   host: env.SMTP_HOST,
@@ -117,6 +118,7 @@ export async function enableUserByEmailBeforeSignin(email: string) {
 export async function updateUserRoleOnEmailVerification(
   userId: string,
   role: string,
+  website_url?: string,
 ) {
   await db
     .update(user)
@@ -125,4 +127,13 @@ export async function updateUserRoleOnEmailVerification(
       role,
     })
     .where(eq(user.id, userId));
+
+  if (role === "unit") {
+    await db.insert(units).values({
+      userId,
+      websiteUrl: website_url,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  }
 }
