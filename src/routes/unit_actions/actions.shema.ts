@@ -1,3 +1,4 @@
+import { candidate } from "@/config/auth-permission";
 import { z } from "zod";
 
 // Enums
@@ -53,7 +54,29 @@ export const applicationResponseSchema = z.object({
   application: z.object({
     id: z.string(),
     status: applicationStatusEnum,
-    profileScore: z.number().nullable(),
+    createdAt: z.union([z.string(), z.date()]),
+    updatedAt: z.union([z.string(), z.date()]),
+    candidateOfferDecision: candidateOfferDecisionEnum,
+  }),
+  internship: z.object({
+    id: z.string(),
+    title: z.string(),
+    type: z.string().nullable(),
+  }),
+  candidate: z.object({
+    userId: z.string(),
+    name: z.string(),
+    avatarUrl: z.string().nullable(),
+    skills: z.array(z.string()).nullable(),
+    profileSummary: z.string().nullable(),
+    interests: z.array(z.string()).nullable(),
+  }),
+});
+
+export const detailedApplicationResponseSchema = z.object({
+  application: z.object({
+    id: z.string(),
+    status: applicationStatusEnum,
     candidateOfferDecision: candidateOfferDecisionEnum,
     createdAt: z.union([z.string(), z.date()]),
     updatedAt: z.union([z.string(), z.date()]),

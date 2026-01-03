@@ -6,10 +6,9 @@ import * as routes from "./actions.routes";
 const router = createRouter();
 
 // Then register routes
-router.openapi(routes.getApplications, handlers.getUnitApplications);
-router.openapi(
-  routes.updateApplicationStatus,
-  handlers.updateApplicationStatus,
-);
+router
+  .openapi(routes.getApplications, handlers.getUnitApplications)
+  .openapi(routes.updateApplicationStatus, handlers.updateApplicationStatus)
+  .openapi(routes.getApplicationById, handlers.getUnitApplicationById);
 
 export default router;
