@@ -95,7 +95,11 @@ export const auth = betterAuth({
     },
     onEmailVerification: async (user: Record<string, any>) => {
       if (user.metadata?.role) {
-        await updateUserRoleOnEmailVerification(user.id, user.metadata.role);
+        await updateUserRoleOnEmailVerification(
+          user.id,
+          user.metadata.role,
+          user.metadata.website_url,
+        );
       }
     },
   },
