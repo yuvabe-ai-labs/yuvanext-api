@@ -10,6 +10,7 @@ import { requireRole } from "@/middleware/auth";
 
 import {
   applicationResponseSchema,
+  detailedApplicationResponseSchema,
   updateApplicationStatusResponseSchema,
   updateApplicationStatusSchema,
 } from "./actions.shema";
@@ -27,6 +28,25 @@ export const getApplications = createRoute({
     "Returns all applications submitted to internships posted by the unit, including candidate profile details and internship information",
   responses: {
     [OK]: createResponse(OK, z.array(applicationResponseSchema)),
+    ...restrictedErrorResponses,
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+  },
+});
+
+/**
+ * GET /applications by id - Get specific applications for unit's internships
+ */
+
+export const getApplicationById = createRoute({
+  method: "get" as const,
+  path: "/unit/applications/:applicationId",
+  tags: ["Unit Actions"],
+  middleware: requireRole({ allowedRoles: ["unit"] }),
+  summary: "Get specific application for unit's internships",
+  description:
+    "Returns a specific application submitted to an internship posted by the unit, including candidate profile details and internship information",
+  responses: {
+    [OK]: createResponse(OK, detailedApplicationResponseSchema),
     ...restrictedErrorResponses,
     [NOT_FOUND]: createResponse(NOT_FOUND),
   },
@@ -64,3 +84,4 @@ export const updateApplicationStatus = createRoute({
 
 export type GetApplications = typeof getApplications;
 export type UpdateApplicationStatus = typeof updateApplicationStatus;
+export type GetApplicationById = typeof getApplicationById;
