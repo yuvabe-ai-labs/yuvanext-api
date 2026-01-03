@@ -15,7 +15,7 @@ export function createRouter() {
   });
 }
 
-const ALLOWED_ORIGINS = [
+export const ALLOWED_ORIGINS = [
   "http://localhost:8080",
   "http://localhost:5173",
   "https://app.yuvanext.com",
@@ -30,14 +30,14 @@ export default function createApp() {
     .use(requestId())
     .use(pinoLogger())
     .use(
-      "/*",
+      "/api/auth/*",
       cors({
         origin: ALLOWED_ORIGINS,
-        credentials: true,
-        allowHeaders: ["*"],
-        allowMethods: ["*"],
-        exposeHeaders: ["*"],
+        allowHeaders: ["Content-Type", "Authorization"],
+        allowMethods: ["POST", "GET", "OPTIONS"],
+        exposeHeaders: ["Content-Length"],
         maxAge: 600,
+        credentials: true,
       }),
     );
 

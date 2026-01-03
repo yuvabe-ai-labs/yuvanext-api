@@ -14,6 +14,7 @@ import {
 
 import db from "../db/index";
 import { ac, admin, candidate, unit } from "./auth-permission";
+import { ALLOWED_ORIGINS } from "@/lib/create-app";
 
 export const auth = betterAuth({
   appName: "Yuvanext API",
@@ -47,7 +48,7 @@ export const auth = betterAuth({
       }
     },
   },
-  trustedOrigins: ["*"],
+  trustedOrigins: ALLOWED_ORIGINS,
   user: {
     additionalFields: {
       metadata: {
