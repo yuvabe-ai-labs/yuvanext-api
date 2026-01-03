@@ -12,7 +12,11 @@ import {
 } from "@/lib/openapi/response-helpers";
 import { requireRole } from "@/middleware/auth";
 
-import { unitIdParamSchema, unitResponseSchema } from "./unit.schema";
+import {
+  unitIdParamSchema,
+  unitResponseSchema,
+  unitWithInternshipsResponseSchema,
+} from "./unit.schema";
 
 /**
  * GET /units - List all units
@@ -41,12 +45,12 @@ export const getUnitById = createRoute({
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Get unit details by ID",
   description:
-    "Retrieve detailed information about a specific organization unit (candidate only)",
+    "Retrieve detailed information about a specific organization unit including their internships (candidate only)",
   request: {
     params: unitIdParamSchema,
   },
   responses: {
-    [OK]: createResponse(OK, unitResponseSchema),
+    [OK]: createResponse(OK, unitWithInternshipsResponseSchema),
     ...restrictedErrorResponses,
     [NOT_FOUND]: createResponse(NOT_FOUND),
     [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
