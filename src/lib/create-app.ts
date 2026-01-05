@@ -26,20 +26,24 @@ export const ALLOWED_ORIGINS = [
 export default function createApp() {
   const app = createRouter();
 
-  app
-    .use(requestId())
-    .use(pinoLogger())
-    .use(
-      "/api/auth/*",
-      cors({
-        origin: ALLOWED_ORIGINS,
-        allowHeaders: ["Content-Type", "Authorization"],
-        allowMethods: ["POST", "GET", "OPTIONS"],
-        exposeHeaders: ["Content-Length"],
-        maxAge: 600,
-        credentials: true,
-      }),
-    );
+  app.use(
+    "*",
+    cors({
+      origin: ALLOWED_ORIGINS,
+      allowMethods: ["POST", "GET", "OPTIONS"],
+      allowHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "X-Better-Auth",
+      ],
+      exposeHeaders: ["Content-Length", "Set-Cookie"],
+      maxAge: 600,
+      credentials: true,
+    }),
+  );
+
+  app.use(requestId()).use(pinoLogger());
 
   app.notFound(notFound);
 

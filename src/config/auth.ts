@@ -131,5 +131,13 @@ export const auth = betterAuth({
       generateId: (_options) => crypto.randomUUID(),
     },
     disableOriginCheck: true,
+    crossSubDomainCookies: {
+      enabled: true,
+    },
+    defaultCookieAttributes: {
+      sameSite: "none",
+      secure: true,
+      partitioned: true, // New browser standards will mandate this for foreign cookies
+    },
   },
 });
