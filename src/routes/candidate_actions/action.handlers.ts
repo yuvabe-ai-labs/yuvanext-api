@@ -198,69 +198,34 @@ export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
   const { internshipId } = c.req.valid("param");
 
   try {
-    const [internshipExists, existingSaved] = await Promise.all([
-      db
-        .select({ id: internships.id })
-        .from(internships)
-        .where(eq(internships.id, internshipId))
-        .limit(1),
-      db
-        .select()
-        .from(savedInternship)
-        .where(
-          and(
-            eq(savedInternship.candidateId, user.id),
-            eq(savedInternship.internshipId, internshipId),
-          ),
-        )
-        .limit(1),
-    ]);
-
-    if (!internshipExists || internshipExists.length === 0) {
-      return c.json(
-        {
-          status_code: NOT_FOUND,
-          message: "Internship not found",
-          code: "INTERNSHIP_NOT_FOUND",
-          resource: { internshipId },
-        },
-        NOT_FOUND,
-      );
-    }
-
-    if (existingSaved.length > 0) {
-      return c.json(
-        {
-          status_code: OK,
-          message: "Internship already saved",
-          data: existingSaved[0],
-        },
-        OK,
-      );
-    }
-
-    const insert = await db
+    const result = await db
       .insert(savedInternship)
       .values({ candidateId: user.id, internshipId })
+      .onConflictDoNothing()
       .returning();
+
+    const saved = result.length > 0;
 
     return c.json(
       {
-        status_code: CREATED,
-        message: "Internship saved successfully",
-        data: insert[0],
+        message: saved
+          ? "Internship saved successfully"
+          : "Internship already saved",
       },
-      CREATED,
+      saved ? CREATED : CONFLICT,
     );
-  } catch (err) {
+  } catch (err: any) {
     console.error("Error saving internship:", err);
+
     return c.json(
-      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
       INTERNAL_SERVER_ERROR,
     );
   }
 };
-
 /**
  * DELETE /candidate/internship/:internshipId/save
  * Remove saved internship

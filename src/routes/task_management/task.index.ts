@@ -8,6 +8,7 @@ const router = createRouter();
 router
   .openapi(routes.createTask, handlers.createTask)
   .openapi(routes.getAllTasks, handlers.getAllTasks)
+  .openapi(routes.getTasksByApplicationId, handlers.getTasksByApplicationId)
   .openapi(routes.deleteTask, handlers.deleteTask)
   .openapi(routes.updateTask, handlers.updateTask)
   .openapi(routes.reviewTask, handlers.reviewTask);
