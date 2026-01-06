@@ -9,6 +9,7 @@ import {
 import { requireRole } from "@/middleware/auth";
 
 import {
+  applicationByInternshipResponseSchema,
   applicationResponseSchema,
   detailedApplicationResponseSchema,
   updateApplicationStatusResponseSchema,
@@ -82,6 +83,26 @@ export const updateApplicationStatus = createRoute({
   },
 });
 
+/**
+ * GET /applications/internship/:internshipId - Get all applications for a specific internship
+ */
+export const getApplicationsByInternshipId = createRoute({
+  method: "get" as const,
+  path: "/unit/applications/internship/:internshipId",
+  tags: ["Unit Actions"],
+  middleware: requireRole({ allowedRoles: ["unit"] }),
+  summary: "Get all applications for a specific internship",
+  description:
+    "Returns all applications submitted to a specific internship posted by the unit, including candidate basic info",
+  responses: {
+    [OK]: createResponse(OK, z.array(applicationByInternshipResponseSchema)),
+    ...restrictedErrorResponses,
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+  },
+});
+
+export type GetApplicationsByInternshipId =
+  typeof getApplicationsByInternshipId;
 export type GetApplications = typeof getApplications;
 export type UpdateApplicationStatus = typeof updateApplicationStatus;
 export type GetApplicationById = typeof getApplicationById;

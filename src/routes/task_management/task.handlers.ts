@@ -102,7 +102,7 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
 
   try {
     if (user.role === "candidate") {
-      // Get all HIRED applications for this candidate with tasks
+      // Get all HIRED applications for this candidate with tasks (including empty tasks)
       const candidateTasks = await db
         .select({
           taskId: tasks.id,
@@ -117,7 +117,7 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
           unitName: units.name,
         })
         .from(applications)
-        .innerJoin(tasks, eq(tasks.applicationId, applications.id))
+        .leftJoin(tasks, eq(tasks.applicationId, applications.id)) // Changed to LEFT JOIN
         .innerJoin(internships, eq(applications.internshipId, internships.id))
         .innerJoin(userTable, eq(applications.userId, userTable.id))
         .leftJoin(units, eq(internships.createdBy, units.userId))
@@ -136,10 +136,13 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
           );
 
           if (existingInternship) {
-            existingInternship.tasks.push({
-              taskId: task.taskId,
-              taskStatus: task.taskStatus,
-            });
+            // Only add task if taskId exists
+            if (task.taskId) {
+              existingInternship.tasks.push({
+                taskId: task.taskId,
+                taskStatus: task.taskStatus!,
+              });
+            }
           } else {
             acc.push({
               internshipId: task.internshipId,
@@ -150,12 +153,14 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
               applicantId: task.applicantId,
               applicantName: task.applicantName,
               unitName: task.unitName,
-              tasks: [
-                {
-                  taskId: task.taskId,
-                  taskStatus: task.taskStatus,
-                },
-              ],
+              tasks: task.taskId
+                ? [
+                    {
+                      taskId: task.taskId,
+                      taskStatus: task.taskStatus!,
+                    },
+                  ]
+                : [], // Empty array if no tasks
             });
           }
 
@@ -186,7 +191,7 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
         OK,
       );
     } else if (user.role === "unit") {
-      // Get all tasks for HIRED candidates in this unit's internships
+      // Get all tasks for HIRED candidates in this unit's internships (including empty tasks)
       const unitTasks = await db
         .select({
           taskId: tasks.id,
@@ -201,7 +206,7 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
           unitName: units.name,
         })
         .from(applications)
-        .innerJoin(tasks, eq(tasks.applicationId, applications.id))
+        .leftJoin(tasks, eq(tasks.applicationId, applications.id)) // Changed to LEFT JOIN
         .innerJoin(internships, eq(applications.internshipId, internships.id))
         .innerJoin(userTable, eq(applications.userId, userTable.id))
         .leftJoin(units, eq(internships.createdBy, units.userId))
@@ -221,10 +226,13 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
           );
 
           if (existingGroup) {
-            existingGroup.tasks.push({
-              taskId: task.taskId,
-              taskStatus: task.taskStatus,
-            });
+            // Only add task if taskId exists
+            if (task.taskId) {
+              existingGroup.tasks.push({
+                taskId: task.taskId,
+                taskStatus: task.taskStatus!,
+              });
+            }
           } else {
             acc.push({
               internshipId: task.internshipId,
@@ -235,12 +243,14 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
               applicantId: task.applicantId,
               applicantName: task.applicantName,
               unitName: task.unitName,
-              tasks: [
-                {
-                  taskId: task.taskId,
-                  taskStatus: task.taskStatus,
-                },
-              ],
+              tasks: task.taskId
+                ? [
+                    {
+                      taskId: task.taskId,
+                      taskStatus: task.taskStatus!,
+                    },
+                  ]
+                : [],
             });
           }
 
