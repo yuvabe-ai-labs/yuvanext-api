@@ -217,18 +217,6 @@ export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
   } catch (err: any) {
     console.error("Error saving internship:", err);
 
-    if (err.code === "23503") {
-      return c.json(
-        {
-          status_code: NOT_FOUND,
-          message: "Internship not found",
-          code: "INTERNSHIP_NOT_FOUND",
-          resource: { internshipId },
-        },
-        NOT_FOUND,
-      );
-    }
-
     return c.json(
       {
         status_code: INTERNAL_SERVER_ERROR,
@@ -238,7 +226,6 @@ export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
     );
   }
 };
-
 /**
  * DELETE /candidate/internship/:internshipId/save
  * Remove saved internship
