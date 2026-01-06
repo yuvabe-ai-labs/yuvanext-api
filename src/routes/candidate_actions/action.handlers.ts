@@ -198,25 +198,26 @@ export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
   const { internshipId } = c.req.valid("param");
 
   try {
-    const [internshipExists, existingSaved] = await Promise.all([
-      db
-        .select({ id: internships.id })
-        .from(internships)
-        .where(eq(internships.id, internshipId))
-        .limit(1),
-      db
-        .select()
-        .from(savedInternship)
-        .where(
-          and(
-            eq(savedInternship.candidateId, user.id),
-            eq(savedInternship.internshipId, internshipId),
-          ),
-        )
-        .limit(1),
-    ]);
+    const result = await db
+      .insert(savedInternship)
+      .values({ candidateId: user.id, internshipId })
+      .onConflictDoNothing()
+      .returning();
 
-    if (!internshipExists || internshipExists.length === 0) {
+    const saved = result.length > 0;
+
+    return c.json(
+      {
+        message: saved
+          ? "Internship saved successfully"
+          : "Internship already saved",
+      },
+      saved ? CREATED : CONFLICT,
+    );
+  } catch (err: any) {
+    console.error("Error saving internship:", err);
+
+    if (err.code === "23503") {
       return c.json(
         {
           status_code: NOT_FOUND,
@@ -228,34 +229,11 @@ export const saveInternship: AppRouteHandler<SaveInternship> = async (c) => {
       );
     }
 
-    if (existingSaved.length > 0) {
-      return c.json(
-        {
-          status_code: OK,
-          message: "Internship already saved",
-          data: existingSaved[0],
-        },
-        OK,
-      );
-    }
-
-    const insert = await db
-      .insert(savedInternship)
-      .values({ candidateId: user.id, internshipId })
-      .returning();
-
     return c.json(
       {
-        status_code: CREATED,
-        message: "Internship saved successfully",
-        data: insert[0],
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
       },
-      CREATED,
-    );
-  } catch (err) {
-    console.error("Error saving internship:", err);
-    return c.json(
-      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
       INTERNAL_SERVER_ERROR,
     );
   }
