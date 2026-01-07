@@ -216,9 +216,18 @@ const extractProfileKeywords = (userProfile: any): string[] => {
       .replace(/research & emerging fields/g, "emerging technologies research")
       .trim();
 
+  // Filter to ensure only strings are processed
+  const allKeywords = [
+    ...userSkills,
+    ...userInterests,
+    ...userCourses,
+    ...projectSkills,
+  ];
+
   return [
     ...new Set(
-      [...userSkills, ...userInterests, ...userCourses, ...projectSkills]
+      allKeywords
+        .filter((keyword) => typeof keyword === "string" && keyword.length > 0)
         .map(normalize)
         .filter(Boolean),
     ),
