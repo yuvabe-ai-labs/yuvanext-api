@@ -57,13 +57,13 @@ const transporter = nodemailer.createTransport({
 });
 
 // Resolve templates directory
-const templatesDir =
-  process.env.NODE_ENV === "production"
-    ? path.join(process.cwd(), "templates") // Docker/Lambda
-    : path.join(process.cwd(), "src", "templates"); // Local dev
+// FIX: Detect if running in Lambda (compiled) or Local (source)
+const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+const baseFolder = isLambda ? "dist" : "src";
+const templatesDir = path.join(process.cwd(), baseFolder, "templates");
 
 console.log("Templates directory:", templatesDir);
-// FIXED: Use forward slashes or let path.join handle it
+
 const templateFiles: Record<string, string> = {
   applied: path.join(templatesDir, "applied.html"),
   shortlisted: path.join(templatesDir, "shortlisted.html"),
@@ -98,9 +98,13 @@ async function loadTemplates() {
     const results = await Promise.allSettled(
       keys.map(async (k) => {
         const filePath = templateFiles[k];
-
-        const content = await readFile(filePath, "utf-8");
-        compiledTemplates[k] = Handlebars.compile(content);
+        try {
+          const content = await readFile(filePath, "utf-8");
+          compiledTemplates[k] = Handlebars.compile(content);
+        } catch (err) {
+          // Rethrow with path for better debugging
+          throw new Error(`Error loading ${k} at ${filePath}: ${err}`);
+        }
       }),
     );
 
@@ -195,7 +199,8 @@ export async function sendApplicationEmail(
     });
 
     return true;
-  } catch {
+  } catch (error) {
+    console.error(`Error sending application email (${status}):`, error);
     return false;
   }
 }
