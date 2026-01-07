@@ -19,9 +19,13 @@ const transporter = nodemailer.createTransport({
 });
 
 function loadTemplate(templateName: string, variables: Record<string, string>) {
+  // FIX: Detect if running in Lambda (compiled) or Local (source)
+  const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+  const baseFolder = isLambda ? "dist" : "src";
+
   const templatePath = path.join(
     process.cwd(),
-    "src",
+    baseFolder,
     "templates",
     templateName,
   );

@@ -1,4 +1,4 @@
-// chatbot.handlers.ts - Refactored with optimized DB calls
+// File: src/chatbot/chatbot.handlers.ts
 
 import { eq } from "drizzle-orm";
 
@@ -99,7 +99,8 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
           onboardingCompleted: false,
         };
       }
-    } catch {
+    } catch (err) {
+      console.error(`Error ensuring profile exists for ${role}:`, err);
       return {
         exists: false,
         onboardingCompleted: false,
@@ -131,7 +132,8 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
           .where(eq(units.userId, userId));
       }
       return true;
-    } catch {
+    } catch (err) {
+      console.error("Error marking onboarding complete:", err);
       return false;
     }
   };
@@ -323,6 +325,7 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
 
       return { success: true, extractedValue };
     } catch (err) {
+      console.error(`Error saving field ${field}:`, err);
       return {
         success: false,
         error: String(err instanceof Error ? err.message : "Database error"),
@@ -396,7 +399,8 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
         fieldsToSave = detection.fieldsDetected
           .filter((f) => f.confidence > 0.7)
           .map((f) => ({ field: f.field, value: f.value }));
-      } catch {
+      } catch (err) {
+        console.warn("Field detection failed:", err);
         // Continue without auto-save if detection fails
       }
     }
@@ -495,6 +499,17 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
       200,
     );
   } catch (err: any) {
+    // === CRITICAL LOGGING FOR LAMBDA DIAGNOSIS ===
+    console.error("❌ Chatbot Handler Critical Error:", {
+      message: err.message,
+      stack: err.stack,
+      cause: err.cause,
+      name: err.name,
+      // Log extra details if it's an AWS SDK error
+      awsError: err.$metadata,
+    });
+    // ============================================
+
     if (err?.message === "Request timeout") {
       return c.json(
         {

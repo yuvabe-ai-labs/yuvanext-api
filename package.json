@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && tsc-alias",
+    "build": "tsc && tsc-alias && copyfiles -u 1 src/templates/*.html dist/templates",
     "start": "node dist/index.js",
     "deploy:zip": "pnpm build && zip -r lambda.zip dist node_modules package.json pnpm-lock.yaml",
     "clean": "rm -rf dist",
@@ -50,6 +50,7 @@
     "@types/node": "^20.11.17",
     "@types/nodemailer": "^7.0.4",
     "@types/pg": "^8.15.6",
+    "copyfiles": "^2.4.1",
     "drizzle-kit": "^0.31.7",
     "eslint": "^9.38.0",
     "eslint-config-prettier": "^10.1.8",
