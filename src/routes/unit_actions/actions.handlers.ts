@@ -28,6 +28,7 @@ import { createZoomMeeting } from "@/lib/services/zoom.service";
 import type {
   GetApplicationById,
   GetApplications,
+  GetApplicationsByInternshipId,
   UpdateApplicationStatus,
 } from "./actions.routes";
 
@@ -358,27 +359,10 @@ export const getUnitApplications: AppRouteHandler<GetApplications> = async (
 ) => {
   const user = c.get("user");
   try {
-    // Get all internships created by this unit
-    const unitInternships = await db
-      .select({ id: internships.id })
-      .from(internships)
-      .where(eq(internships.createdBy, user.id));
-
-    if (unitInternships.length === 0) {
-      return c.json(
-        {
-          status_code: OK,
-          message: "No internships found for this unit",
-          data: [],
-        },
-        OK,
-      );
-    }
-
-    // Get all applications for these internships with related data
+    // Get all internships created by this unit with their applications
     const applicationsData = await db
       .select({
-        // Application fields
+        // Application fields (will be null if no application exists)
         applicationId: applications.id,
         applicationStatus: applications.status,
         applicationCreatedAt: applications.createdAt,
@@ -392,7 +376,7 @@ export const getUnitApplications: AppRouteHandler<GetApplications> = async (
         internshipType: internships.jobType,
         internshipDuration: internships.duration,
 
-        // Candidate fields
+        // Candidate fields (will be null if no application exists)
         candidateUserId: candidates.userId,
         candidateType: candidates.type,
         candidateLocation: candidates.location,
@@ -408,41 +392,45 @@ export const getUnitApplications: AppRouteHandler<GetApplications> = async (
         candidateInternship: candidates.internship,
         candidateProjects: candidates.projects,
 
-        // User fields
+        // User fields (will be null if no application exists)
         userName: userTable.name,
         userEmail: userTable.email,
         userImage: userTable.image,
       })
-      .from(applications)
-      .innerJoin(internships, eq(applications.internshipId, internships.id))
-      .innerJoin(candidates, eq(applications.userId, candidates.userId))
-      .innerJoin(userTable, eq(applications.userId, userTable.id))
+      .from(internships)
+      .leftJoin(applications, eq(applications.internshipId, internships.id)) // Changed to leftJoin
+      .leftJoin(candidates, eq(applications.userId, candidates.userId)) // Changed to leftJoin
+      .leftJoin(userTable, eq(applications.userId, userTable.id)) // Changed to leftJoin
       .where(eq(internships.createdBy, user.id))
       .orderBy(desc(applications.createdAt));
 
-    // Format the response
-    const formattedApplications = applicationsData.map((app) => ({
-      application: {
-        id: app.applicationId,
-        status: app.applicationStatus,
-        createdAt: app.applicationCreatedAt,
-        updatedAt: app.applicationUpdatedAt,
-        candidateOfferDecision: app.candidateOfferDecision,
-      },
-      internship: {
-        id: app.internshipId,
-        title: app.internshipTitle,
-        type: app.internshipType,
-      },
-      candidate: {
-        userId: app.candidateUserId,
-        name: app.userName,
-        avatarUrl: app.candidateAvatarUrl,
-        skills: app.candidateSkills,
-        profileSummary: app.candidateProfileSummary,
-        interests: app.candidateInterests,
-      },
-    }));
+    console.log(`Found ${applicationsData.length} records for unit ${user.id}`);
+
+    // Filter out internships without applications and format the response
+    const formattedApplications = applicationsData
+      .filter((app) => app.applicationId !== null) // Only include rows with actual applications
+      .map((app) => ({
+        application: {
+          id: app.applicationId!,
+          status: app.applicationStatus!,
+          createdAt: app.applicationCreatedAt!,
+          updatedAt: app.applicationUpdatedAt!,
+          candidateOfferDecision: app.candidateOfferDecision,
+        },
+        internship: {
+          id: app.internshipId,
+          title: app.internshipTitle,
+          type: app.internshipType,
+        },
+        candidate: {
+          userId: app.candidateUserId!,
+          name: app.userName!,
+          avatarUrl: app.candidateAvatarUrl,
+          skills: app.candidateSkills!,
+          profileSummary: app.candidateProfileSummary!,
+          interests: app.candidateInterests!,
+        },
+      }));
 
     return c.json(
       {
@@ -575,6 +563,90 @@ export const getUnitApplicationById: AppRouteHandler<
     );
   } catch (err) {
     console.error("Error fetching unit application by ID:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// GET /applications/internship/:internshipId - Get all applications for a specific internship
+export const getApplicationsByInternshipId: AppRouteHandler<
+  GetApplicationsByInternshipId
+> = async (c) => {
+  const user = c.get("user");
+  const internshipId = c.req.param("internshipId");
+
+  try {
+    // First verify that the internship belongs to this unit
+    const [internship] = await db
+      .select()
+      .from(internships)
+      .where(eq(internships.id, internshipId))
+      .limit(1);
+
+    if (!internship) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Internship not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    if (internship.createdBy !== user.id) {
+      return c.json(
+        {
+          status_code: FORBIDDEN,
+          message: "You can only view applications for your own internships",
+        },
+        FORBIDDEN,
+      );
+    }
+
+    // Get all applications for this internship
+    const applicationsData = await db
+      .select({
+        applicationId: applications.id,
+        applicationStatus: applications.status,
+        candidateName: userTable.name,
+        candidateAvatarUrl: candidates.avatarUrl,
+        candidateSkills: candidates.skills,
+        candidateInterests: candidates.interests,
+        internshipTitle: internships.title,
+      })
+      .from(applications)
+      .innerJoin(internships, eq(applications.internshipId, internships.id))
+      .innerJoin(candidates, eq(applications.userId, candidates.userId))
+      .innerJoin(userTable, eq(applications.userId, userTable.id))
+      .where(eq(applications.internshipId, internshipId))
+      .orderBy(desc(applications.createdAt));
+
+    const formattedApplications = applicationsData.map((app) => ({
+      applicationId: app.applicationId,
+      candidateName: app.candidateName,
+      candidateAvatarUrl: app.candidateAvatarUrl,
+      internshipTitle: app.internshipTitle,
+      status: app.applicationStatus,
+      candidateSkills: app.candidateSkills,
+      candidateInterests: app.candidateInterests,
+    }));
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Applications retrieved successfully",
+        data: formattedApplications,
+        total: formattedApplications.length,
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error fetching applications by internship ID:", err);
     return c.json(
       {
         status_code: INTERNAL_SERVER_ERROR,

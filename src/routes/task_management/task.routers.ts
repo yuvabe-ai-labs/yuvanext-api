@@ -12,9 +12,10 @@ import {
 } from "@/lib/openapi/response-helpers";
 import { requireRole } from "@/middleware/auth";
 import {
+  groupedTasksResponseSchema,
+  applicationIdParamSchema,
+  applicationTasksResponseSchema,
   createTaskSchema,
-  enrichedtaskResponseSchema,
-  getTasksQuerySchema,
   reviewTaskSchema,
   taskIdParamSchema,
   taskResponseSchema,
@@ -62,22 +63,40 @@ export const createTask = createRoute({
 });
 
 /**
- * GET /tasks - Get all tasks with internship details and progress
+ * GET /tasks - Get all tasks for hired candidates
  */
 export const getAllTasks = createRoute({
   method: "get" as const,
   path: "/tasks",
-  tags: ["Tasks - Candidate"],
-  summary: "Get all tasks",
+  tags: ["Tasks"],
+  summary: "Get all tasks for hired candidates (grouped by internship)",
   middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
   description:
-    "Get all tasks for the authenticated candidate. Optionally filter by applicationId",
+    "Get all tasks for hired candidates grouped by internship. Candidates see their own tasks with unit info. Units see tasks for all hired candidates in their internships grouped by internship and applicant.",
+  request: {},
+  responses: {
+    [OK]: createResponse(OK, z.array(groupedTasksResponseSchema)),
+    ...restrictedErrorResponses,
+  },
+});
+
+/**
+ * GET /tasks/application/:applicationId - Get all tasks by application ID
+ */
+export const getTasksByApplicationId = createRoute({
+  method: "get" as const,
+  path: "/tasks/application/{applicationId}",
+  tags: ["Tasks - Unit and Candidate"],
+  middleware: requireRole({ allowedRoles: ["unit", "candidate"] }),
+  summary: "Get all tasks by application ID",
+  description:
+    "Get all tasks for a hired application in this unit's internships (Unit and Candidate)",
   request: {
-    query: getTasksQuerySchema,
+    params: applicationIdParamSchema,
   },
   responses: {
-    [OK]: createResponse(OK, z.array(enrichedtaskResponseSchema)),
-    ...restrictedErrorResponses,
+    [OK]: createResponse(OK, z.array(applicationTasksResponseSchema)),
+    ...taskErrorResponses,
   },
 });
 
@@ -159,6 +178,7 @@ export const reviewTask = createRoute({
 
 export type CreateTask = typeof createTask;
 export type GetAllTasks = typeof getAllTasks;
+export type GetTasksByApplicationId = typeof getTasksByApplicationId;
 export type UpdateTask = typeof updateTask;
 export type DeleteTask = typeof deleteTask;
 export type ReviewTask = typeof reviewTask;

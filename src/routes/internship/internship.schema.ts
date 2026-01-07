@@ -73,6 +73,7 @@ export const internshipResponseSchema = z.object({
   language: z.array(z.string()).nullable(),
   createdAt: z.union([z.string(), z.date()]),
   updatedAt: z.union([z.string(), z.date()]),
+  applicationCount: z.number().optional(),
   createdBy: createdByMetadataSchema,
 });
 

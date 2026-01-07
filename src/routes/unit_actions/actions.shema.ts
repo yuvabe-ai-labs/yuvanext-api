@@ -138,3 +138,13 @@ export const getApplicationsResponseSchema = z
     total: z.number(),
   })
   .catchall(z.any()); // Allows for the data array to be included
+
+export const applicationByInternshipResponseSchema = z.object({
+  applicationId: z.string(),
+  candidateName: z.string(),
+  candidateAvatarUrl: z.string().nullable(),
+  internshipTitle: z.string(),
+  status: applicationStatusEnum,
+  candidateSkills: z.array(z.string()).nullable(),
+  candidateInterests: z.array(z.string()).nullable(),
+});

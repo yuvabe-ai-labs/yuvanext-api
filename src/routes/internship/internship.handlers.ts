@@ -216,9 +216,18 @@ const extractProfileKeywords = (userProfile: any): string[] => {
       .replace(/research & emerging fields/g, "emerging technologies research")
       .trim();
 
+  // Filter to ensure only strings are processed
+  const allKeywords = [
+    ...userSkills,
+    ...userInterests,
+    ...userCourses,
+    ...projectSkills,
+  ];
+
   return [
     ...new Set(
-      [...userSkills, ...userInterests, ...userCourses, ...projectSkills]
+      allKeywords
+        .filter((keyword) => typeof keyword === "string" && keyword.length > 0)
         .map(normalize)
         .filter(Boolean),
     ),
@@ -410,12 +419,52 @@ export const getInternships: AppRouteHandler<GetInternships> = async (c) => {
     let internshipList: InternshipWithMetadata[];
 
     if (user.role === "unit") {
-      // Units see only their created internships
-      internshipList = await fetchInternshipsWithMetadata(
-        eq(internships.createdBy, user.id),
-      );
+      // Units see their internships with application counts
+      const rawList = await db
+        .select({
+          ...getInternshipSelectQuery(),
+          applicationCount: count(applications.id),
+        })
+        .from(internships)
+        .leftJoin(units, eq(internships.createdBy, units.userId))
+        .leftJoin(applications, eq(applications.internshipId, internships.id))
+        .where(eq(internships.createdBy, user.id))
+        .groupBy(
+          internships.id,
+          internships.createdBy,
+          internships.title,
+          internships.description,
+          internships.duration,
+          internships.payment,
+          internships.status,
+          internships.closingDate,
+          internships.createdAt,
+          internships.updatedAt,
+          internships.isPaid,
+          internships.minAgeRequired,
+          internships.jobType,
+          internships.benefits,
+          internships.skillsRequired,
+          internships.responsibilities,
+          internships.language,
+          units.userId,
+          units.name,
+          units.address,
+          units.phone,
+          units.websiteUrl,
+          units.description,
+          units.avatarUrl,
+          units.bannerUrl,
+          units.location,
+        )
+        .orderBy(desc(internships.createdAt));
+
+      internshipList = rawList.map((raw) => ({
+        ...transformToInternshipWithMetadata(raw),
+        applicationCount: raw.applicationCount,
+      }));
     } else if (user.role === "candidate") {
-      // Candidates see all active internships
+      // Candidates see all active internships without application counts
       internshipList = await fetchInternshipsWithMetadata(
         eq(internships.status, "active"),
       );

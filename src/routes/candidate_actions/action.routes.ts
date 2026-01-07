@@ -27,7 +27,6 @@ import {
   internshipIdParamSchema,
   sortQuerySchema,
   removeSavedInternshipSchema,
-  savedinternshipResponseSchema,
   saveInternshipSchema,
   shareLinksResponseSchema,
   savedInternshipsListSchema,
@@ -83,24 +82,18 @@ export const getAppliedInternships = createRoute({
  * POST /candidate/internship/:internshipId/save - Save an internship
  */
 export const saveInternship = createRoute({
-  method: "post" as const,
+  method: "post",
   path: "/candidate/internship/:internshipId/save",
   tags: ["InternshipActions"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Save an internship",
-  description: `Save an internship for later viewing.`,
+  description: "Save an internship for later viewing.",
   request: {
     params: saveInternshipSchema,
   },
   responses: {
-    [CREATED]: createResponse(CREATED, savedinternshipResponseSchema),
-    [OK]: createResponse(
-      OK,
-      z.object({
-        message: z.string(),
-        data: savedinternshipResponseSchema,
-      }),
-    ),
+    [CREATED]: createResponse(CREATED, z.object({ message: z.string() })),
+    [CONFLICT]: createResponse(CONFLICT, z.object({ message: z.string() })),
     [NOT_FOUND]: createResponse(NOT_FOUND, errorResponseSchema),
     [UNPROCESSABLE_ENTITY]: createResponse(
       UNPROCESSABLE_ENTITY,

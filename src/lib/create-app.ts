@@ -30,7 +30,7 @@ export default function createApp() {
     "*",
     cors({
       origin: ALLOWED_ORIGINS,
-      allowMethods: ["POST", "GET", "OPTIONS"],
+      allowMethods: ["POST", "GET", "OPTIONS", "PUT", "DELETE", "PATCH"],
       allowHeaders: [
         "Content-Type",
         "Authorization",
