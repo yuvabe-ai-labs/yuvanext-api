@@ -615,9 +615,12 @@ export const getApplicationsByInternshipId: AppRouteHandler<
         applicationStatus: applications.status,
         candidateName: userTable.name,
         candidateAvatarUrl: candidates.avatarUrl,
+        profileSummary: candidates.profileSummary,
         candidateSkills: candidates.skills,
         candidateInterests: candidates.interests,
         internshipTitle: internships.title,
+        createdAt: applications.createdAt,
+        updatedAt: applications.updatedAt,
       })
       .from(applications)
       .innerJoin(internships, eq(applications.internshipId, internships.id))
@@ -632,6 +635,9 @@ export const getApplicationsByInternshipId: AppRouteHandler<
       candidateAvatarUrl: app.candidateAvatarUrl,
       internshipTitle: app.internshipTitle,
       status: app.applicationStatus,
+      createdAt: app.createdAt,
+      updatedAt: app.updatedAt,
+      profileSummary: app.profileSummary,
       candidateSkills: app.candidateSkills,
       candidateInterests: app.candidateInterests,
     }));
