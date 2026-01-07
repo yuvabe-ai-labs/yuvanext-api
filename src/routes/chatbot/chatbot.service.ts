@@ -1,4 +1,5 @@
 // chatbot.service.ts - Enhanced with Unit field detection
+// Fixed: Uses IAM role for Lambda instead of explicit credentials
 
 import type { Readable } from "node:stream";
 
@@ -13,8 +14,12 @@ import env from "@/config/env";
 const AWS_REGION = env.AWS_REGION;
 const DEFAULT_MODEL = env.BEDROCK_MODEL_ID;
 
+// FIXED: Let AWS SDK use IAM role credentials automatically in Lambda
+// Only use explicit credentials if both are provided AND we're not in Lambda
+const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+
 const maybeCredentials =
-  env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
+  !isLambda && env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
     ? {
         accessKeyId: env.AWS_ACCESS_KEY_ID,
         secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
