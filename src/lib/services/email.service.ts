@@ -1,7 +1,6 @@
 import Handlebars from "handlebars";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import nodemailer from "nodemailer";
 
 import env from "@/config/env";
@@ -58,9 +57,12 @@ const transporter = nodemailer.createTransport({
 });
 
 // Resolve templates directory
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const templatesDir = path.join(__dirname, "../../templates");
+const templatesDir =
+  process.env.NODE_ENV === "production"
+    ? path.join(process.cwd(), "templates") // Docker/Lambda
+    : path.join(process.cwd(), "src", "templates"); // Local dev
 
+console.log("Templates directory:", templatesDir);
 // FIXED: Use forward slashes or let path.join handle it
 const templateFiles: Record<string, string> = {
   applied: path.join(templatesDir, "applied.html"),
