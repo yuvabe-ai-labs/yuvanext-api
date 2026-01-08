@@ -1,27 +1,179 @@
 import { z } from "zod";
 
-// Request Schemas
-export const candidateIdParamSchema = z.object({
-  id: z.uuid(),
+// =====================================================
+// QUERY PARAMETER SCHEMAS
+// =====================================================
+
+export const candidateQuerySchema = z.object({
+  filter: z
+    .enum(["recent", "all", "applied", "hired", "shortlisted"])
+    .optional(),
+  page: z.coerce.number().int().positive().default(1).optional(),
+  limit: z.coerce.number().int().positive().max(100).default(10).optional(),
 });
 
-export const candidateTypeEnum = z.enum([
-  "student",
-  "fresher",
-  "working",
-  "graduate",
-]);
+export const unitQuerySchema = z.object({
+  filter: z.enum(["recent", "active"]).optional(),
+  page: z.coerce.number().int().positive().default(1).optional(),
+  limit: z.coerce.number().int().positive().max(100).default(10).optional(),
+});
 
-// Basic candidate list response (id, email, profile summary, avatar)
-export const candidateListResponseSchema = z.object({
+export const applicationQuerySchema = z.object({
+  filter: z.enum(["recent", "interview"]).optional(),
+  page: z.coerce.number().int().positive().default(1).optional(),
+  limit: z.coerce.number().int().positive().max(100).default(10).optional(),
+});
+
+// =====================================================
+// PARAMETER SCHEMAS
+// =====================================================
+
+export const candidateIdParamSchema = z.object({
+  id: z.string().uuid(),
+});
+
+export const unitIdParamSchema = z.object({
+  id: z.string().uuid(),
+});
+
+// =====================================================
+// RESPONSE SCHEMAS
+// =====================================================
+
+// 1. Overall Stats Response
+export const overallStatsResponseSchema = z.object({
+  totalUnits: z.number(),
+  totalCandidates: z.number(),
+  totalActiveInternships: z.number(),
+  totalCourses: z.number(),
+  totalHiredCandidates: z.number(),
+  healthPercentage: z.number().default(97),
+});
+
+// 2. Recent Candidates Response
+export const recentCandidateSchema = z.object({
+  userId: z.string(),
+  name: z.string().nullable(),
+  type: z.enum(["student", "fresher", "working", "graduate"]).nullable(),
+  location: z.string().nullable(),
+});
+
+// 3. Recent Units Response
+export const recentUnitSchema = z.object({
   userId: z.string(),
   name: z.string().nullable(),
   address: z.string().nullable(),
-  candidateType: candidateTypeEnum.nullable(),
-  avatarUrl: z.string().nullable(),
 });
 
-// Full candidate response with all details
+// 5. Active Units with Stats Response
+export const activeUnitWithStatsSchema = z.object({
+  userId: z.string(),
+  name: z.string().nullable(),
+  email: z.string().nullable(),
+  totalApplications: z.number(),
+  totalActiveInternships: z.number(),
+});
+
+// 6. Recent Applied Candidates Response
+export const recentAppliedCandidateSchema = z.object({
+  applicationId: z.string(),
+  candidateId: z.string(),
+  candidateName: z.string().nullable(),
+  candidateAvatar: z.string().nullable(),
+  internshipTitle: z.string(),
+  applicationStatus: z.enum([
+    "applied",
+    "shortlisted",
+    "not_shortlisted",
+    "interviewed",
+    "hired",
+  ]),
+  appliedAt: z.date(),
+  unitName: z.string().nullable(),
+});
+
+// 8. Applied Candidates with Pagination Response
+export const appliedCandidateSchema = z.object({
+  candidateId: z.string(),
+  avatarUrl: z.string().nullable(),
+  name: z.string().nullable(),
+  internshipName: z.string(),
+  applicationStatus: z.enum([
+    "applied",
+    "shortlisted",
+    "not_shortlisted",
+    "interviewed",
+    "hired",
+  ]),
+  skills: z.array(z.string()).nullable(),
+  interests: z.array(z.string()).nullable(),
+});
+
+// 9. Hired Candidates Response
+export const hiredCandidateSchema = z.object({
+  candidateId: z.string(),
+  avatarUrl: z.string().nullable(),
+  name: z.string().nullable(),
+  internshipName: z.string(),
+  applicationStatus: z.enum(["hired"]),
+  unitAvatarUrl: z.string().nullable(),
+  internshipDuration: z.string().nullable(),
+  internshipJobType: z.enum(["part_time", "full_time", "both"]).nullable(),
+  applicationId: z.string(),
+  hasTask: z.boolean(),
+});
+
+// 10. Interview Scheduled Candidates Response
+export const interviewScheduledCandidateSchema = z.object({
+  candidateId: z.string(),
+  name: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+  profileSummary: z.string().nullable(),
+  internshipDuration: z.string().nullable(),
+  internshipJobType: z.enum(["part_time", "full_time", "both"]).nullable(),
+  unitId: z.string(),
+  unitAvatarUrl: z.string().nullable(),
+  applicationId: z.string(),
+  interviewDate: z.date(),
+});
+
+// 11. Shortlisted Candidates Response
+export const shortlistedCandidateSchema = z.object({
+  candidateId: z.string(),
+  avatarUrl: z.string().nullable(),
+  name: z.string().nullable(),
+  internshipName: z.string(),
+  applicationStatus: z.enum(["shortlisted"]),
+  skills: z.array(z.string()).nullable(),
+  interests: z.array(z.string()).nullable(),
+});
+
+// 12. Unit Registration Stats Response
+export const unitRegistrationStatsSchema = z.object({
+  totalRegisteredUnits: z.number(),
+  activeUnits: z.number(),
+  activeJobPosts: z.number(),
+  totalApplications: z.number(),
+});
+
+// Pagination Metadata
+export const paginationMetadataSchema = z.object({
+  currentPage: z.number(),
+  totalPages: z.number(),
+  totalItems: z.number(),
+  itemsPerPage: z.number(),
+});
+
+// Paginated Response Wrapper
+export const createPaginatedResponseSchema = <T extends z.ZodTypeAny>(
+  itemSchema: T,
+) =>
+  z.object({
+    data: z.array(itemSchema),
+    pagination: paginationMetadataSchema,
+  });
+
+// Full candidate details (existing)
 export const candidateFullResponseSchema = z.object({
   userId: z.string(),
   email: z.email().nullable(),
