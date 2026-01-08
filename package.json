@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && tsc-alias",
+    "build": "tsc && tsc-alias ",
     "start": "node dist/index.js",
     "deploy:zip": "pnpm build && zip -r lambda.zip dist node_modules package.json pnpm-lock.yaml",
     "clean": "rm -rf dist",

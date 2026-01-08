@@ -145,6 +145,9 @@ export const applicationByInternshipResponseSchema = z.object({
   candidateAvatarUrl: z.string().nullable(),
   internshipTitle: z.string(),
   status: applicationStatusEnum,
+  profileSummary: z.string().nullable(),
+  createdAt: z.union([z.string(), z.date()]),
+  updatedAt: z.union([z.string(), z.date()]),
   candidateSkills: z.array(z.string()).nullable(),
   candidateInterests: z.array(z.string()).nullable(),
 });

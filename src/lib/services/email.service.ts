@@ -1,7 +1,6 @@
 import Handlebars from "handlebars";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import nodemailer from "nodemailer";
 
 import env from "@/config/env";
@@ -58,10 +57,13 @@ const transporter = nodemailer.createTransport({
 });
 
 // Resolve templates directory
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const templatesDir = path.join(__dirname, "../../templates");
+// FIX: Detect if running in Lambda (compiled) or Local (source)
+const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+const baseFolder = isLambda ? "dist" : "src";
+const templatesDir = path.join(process.cwd(), baseFolder, "templates");
 
-// FIXED: Use forward slashes or let path.join handle it
+console.log("Templates directory:", templatesDir);
+
 const templateFiles: Record<string, string> = {
   applied: path.join(templatesDir, "applied.html"),
   shortlisted: path.join(templatesDir, "shortlisted.html"),
@@ -96,9 +98,13 @@ async function loadTemplates() {
     const results = await Promise.allSettled(
       keys.map(async (k) => {
         const filePath = templateFiles[k];
-
-        const content = await readFile(filePath, "utf-8");
-        compiledTemplates[k] = Handlebars.compile(content);
+        try {
+          const content = await readFile(filePath, "utf-8");
+          compiledTemplates[k] = Handlebars.compile(content);
+        } catch (err) {
+          // Rethrow with path for better debugging
+          throw new Error(`Error loading ${k} at ${filePath}: ${err}`);
+        }
       }),
     );
 
@@ -168,7 +174,7 @@ export async function sendApplicationEmail(
     if (!template) {
       const availableTemplates = Object.keys(compiledTemplates).join(", ");
       const errorMsg = `Template not found for status: ${status}. Available templates: ${availableTemplates || "NONE"}`;
-      console.warn(errorMsg);
+      console.error(errorMsg);
       throw new Error(errorMsg);
     }
 
@@ -193,12 +199,13 @@ export async function sendApplicationEmail(
     });
 
     return true;
-  } catch {
+  } catch (error) {
+    console.error(`Error sending application email (${status}):`, error);
     return false;
   }
 }
 
-// NEW: Send application notification email to unit (when candidate applies)
+// Send application notification email to unit (when candidate applies)
 export async function sendUnitApplicationNotification(
   params: UnitApplicationNotificationParams,
 ): Promise<boolean> {
@@ -267,7 +274,7 @@ export async function sendUnitInterviewEmail(
   }
 }
 
-// NEW: Send email change verification
+// Send email change verification
 export async function sendChangeEmailVerification(
   params: ChangeEmailVerificationParams,
 ): Promise<boolean> {
@@ -302,9 +309,13 @@ export async function verifyEmailConfiguration(): Promise<boolean> {
   try {
     await transporter.verify();
     return true;
-  } catch {
+  } catch (error) {
+    console.error("✗ Email configuration verification failed:", error);
     return false;
   }
 }
 
-loadTemplates().catch(() => {});
+// Preload templates on module initialization
+loadTemplates().catch((error) => {
+  console.error("Failed to preload email templates:", error);
+});

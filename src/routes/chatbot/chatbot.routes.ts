@@ -78,18 +78,26 @@ const errorExamples = {
 // ============================================================================
 
 /**
- * POST /chatbot - Interactive onboarding chatbot
+ * POST /chatbot - Interactive onboarding chatbot with streaming support
  */
 export const chat = createRoute({
   method: "post" as const,
   path: "/chatbot",
   tags: ["Chatbot"],
   middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
-  summary: "Chat with onboarding bot used for both unit and candidate",
+  summary: "Chat with onboarding bot (Streaming SSE)",
   description: `
-Interactive AI-powered chatbot for onboarding new users.
+Interactive AI-powered chatbot for onboarding new users with real-time streaming responses.
+
+**Streaming Format:**
+This endpoint returns Server-Sent Events (SSE) with the following event types:
+- \`start\`: Streaming has begun
+- \`chunk\`: Text chunk with incremental content
+- \`complete\`: Final response with metadata (onboardingCompleted flag)
+- \`error\`: Error information
 
 **Features:**
+- Real-time streaming responses (text appears as it's generated)
 - Conversational profile completion
 - Auto-detects and saves profile fields from natural language
 - Intelligent data validation with retry logic
@@ -104,9 +112,20 @@ Collects: name, type, phone, location, focus areas, skills offered, opportunitie
 
 **Usage:**
 1. Send messages naturally (e.g., "I'm a student interested in web development")
-2. The bot will guide you through required fields
+2. The bot will stream responses in real-time via SSE
 3. Answer questions conversationally
 4. Onboarding completes automatically when all fields are filled
+
+**SSE Event Example:**
+\`\`\`
+event: chunk
+data: {"text": "Hello", "chunkIndex": 1}
+
+event: complete
+data: {"message": "Stream completed", "fullResponse": "Hello world", "onboardingCompleted": false}
+\`\`\`
+
+**Note:** For already completed onboarding, returns a regular JSON response instead of streaming.
   `.trim(),
   request: {
     body: {
@@ -138,11 +157,18 @@ Collects: name, type, phone, location, focus areas, skills offered, opportunitie
   },
   responses: {
     [OK]: {
-      description: "Successful chat response",
+      description: "Successful chat response (JSON) or SSE stream",
       content: {
         "application/json": {
           schema: chatSuccessResponseSchema,
           examples: successExamples,
+        },
+        "text/event-stream": {
+          schema: {
+            type: "string",
+            description:
+              "Server-Sent Events stream with chunk/complete/error events",
+          },
         },
       },
     },

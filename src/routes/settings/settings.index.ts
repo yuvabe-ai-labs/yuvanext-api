@@ -9,5 +9,9 @@ router.openapi(routes.changePhone, handlers.changePhone);
 router.openapi(routes.updateNotifications, handlers.updateNotifications);
 router.openapi(routes.setDisability, handlers.setDisability);
 router.openapi(routes.deactivateAccount, handlers.deactivateAccount);
+router.openapi(
+  routes.getNotificationSettings,
+  handlers.getNotificationSettingsHandler,
+);
 
 export default router;
