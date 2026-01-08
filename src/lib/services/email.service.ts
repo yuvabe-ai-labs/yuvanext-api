@@ -174,7 +174,7 @@ export async function sendApplicationEmail(
     if (!template) {
       const availableTemplates = Object.keys(compiledTemplates).join(", ");
       const errorMsg = `Template not found for status: ${status}. Available templates: ${availableTemplates || "NONE"}`;
-      console.warn(errorMsg);
+      console.error(errorMsg);
       throw new Error(errorMsg);
     }
 
@@ -205,7 +205,7 @@ export async function sendApplicationEmail(
   }
 }
 
-// NEW: Send application notification email to unit (when candidate applies)
+// Send application notification email to unit (when candidate applies)
 export async function sendUnitApplicationNotification(
   params: UnitApplicationNotificationParams,
 ): Promise<boolean> {
@@ -274,7 +274,7 @@ export async function sendUnitInterviewEmail(
   }
 }
 
-// NEW: Send email change verification
+// Send email change verification
 export async function sendChangeEmailVerification(
   params: ChangeEmailVerificationParams,
 ): Promise<boolean> {
@@ -309,9 +309,13 @@ export async function verifyEmailConfiguration(): Promise<boolean> {
   try {
     await transporter.verify();
     return true;
-  } catch {
+  } catch (error) {
+    console.error("✗ Email configuration verification failed:", error);
     return false;
   }
 }
 
-loadTemplates().catch(() => {});
+// Preload templates on module initialization
+loadTemplates().catch((error) => {
+  console.error("Failed to preload email templates:", error);
+});

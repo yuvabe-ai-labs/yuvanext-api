@@ -19,7 +19,7 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*.ts", "src/**/*.html"],
   "exclude": ["node_modules", "dist"],
   "tsc-alias": {
     "resolveFullPaths": true
