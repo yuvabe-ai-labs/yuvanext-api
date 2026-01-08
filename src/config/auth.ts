@@ -10,7 +10,7 @@ import {
   updateUserRoleOnEmailVerification,
   enableUserByEmailBeforeSignin,
   sendChangeEmailConfirmation,
-} from "@/routes/auth/auth.service";
+} from "@/routes/auth/auth.services";
 
 import db from "../db/index";
 import { ac, admin, candidate, unit } from "./auth-permission";
