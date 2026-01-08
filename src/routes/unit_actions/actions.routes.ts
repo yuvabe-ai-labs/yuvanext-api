@@ -42,7 +42,7 @@ export const getApplicationById = createRoute({
   method: "get" as const,
   path: "/unit/applications/:applicationId",
   tags: ["Unit Actions"],
-  middleware: requireRole({ allowedRoles: ["unit"] }),
+  middleware: requireRole({ allowedRoles: ["unit", "admin"] }),
   summary: "Get specific application for unit's internships",
   description:
     "Returns a specific application submitted to an internship posted by the unit, including candidate profile details and internship information",
