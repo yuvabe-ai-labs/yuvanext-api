@@ -321,18 +321,15 @@ export const getTasksByApplicationId: AppRouteHandler<
   const { applicationId } = c.req.valid("param");
 
   try {
-    // Build where conditions based on user role
     let whereConditions;
 
     if (user.role === "candidate") {
-      // Candidate can only access their own applications
       whereConditions = and(
         eq(applications.id, applicationId),
         eq(applications.userId, user.id),
         eq(applications.status, "hired"),
       );
     } else if (user.role === "unit") {
-      // Unit can access applications for their internships
       whereConditions = and(
         eq(applications.id, applicationId),
         eq(internships.createdBy, user.id),
@@ -348,14 +345,14 @@ export const getTasksByApplicationId: AppRouteHandler<
       );
     }
 
-    // Fetch the application tasks with all details
     const applicationTasks = await db
       .select({
+        // ---- Task fields (nullable) ----
         taskId: tasks.id,
         taskStatus: tasks.status,
         taskTitle: tasks.title,
         taskDescription: tasks.description,
-        taskCreatedAt: sql<string>`${tasks.createdAt}::text`,
+        taskCreatedAt: sql<string | null>`${tasks.createdAt}::text`,
         taskEndDate: tasks.endDate,
         taskStartDate: tasks.startDate,
         taskStartTime: tasks.startTime,
@@ -365,26 +362,34 @@ export const getTasksByApplicationId: AppRouteHandler<
         taskSubmittedAt: sql<string | null>`${tasks.submittedAt}::text`,
         taskReviewRemarks: tasks.reviewRemarks,
         taskReviewedAt: sql<string | null>`${tasks.reviewedAt}::text`,
+
+        // ---- Application / applicant ----
         applicationId: applications.id,
         applicantId: applications.userId,
         applicantName: userTable.name,
         applicantEmail: userTable.email,
+        candidateAvatarUrl: candidates.avatarUrl,
+        candidatePhoneNumber: candidates.phone,
+
+        // ---- Internship ----
         internshipId: internships.id,
         internshipName: internships.title,
         internshipCreatedAt: sql<string>`${internships.createdAt}::text`,
         internshipClosingDate: internships.closingDate,
       })
       .from(applications)
-      .innerJoin(tasks, eq(tasks.applicationId, applications.id))
+      .leftJoin(tasks, eq(tasks.applicationId, applications.id)) // ✅ LEFT JOIN
       .innerJoin(internships, eq(applications.internshipId, internships.id))
       .innerJoin(userTable, eq(applications.userId, userTable.id))
+      .innerJoin(candidates, eq(applications.userId, candidates.userId))
       .where(whereConditions);
 
+    // ❌ Do NOT return NOT_FOUND when no task
     if (applicationTasks.length === 0) {
       return c.json(
         {
           status_code: NOT_FOUND,
-          message: "No tasks found for this application",
+          message: "Application not found",
         },
         NOT_FOUND,
       );

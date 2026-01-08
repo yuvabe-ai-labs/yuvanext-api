@@ -1,27 +1,26 @@
-// File: src/chatbot/chatbot.handlers.ts
+// chatbot.handlers.ts - Type-safe streaming response
 
 import { eq } from "drizzle-orm";
-
-import type { AppRouteHandler } from "@/types/app.types";
+import { streamSSE } from "hono/streaming";
+import type { Context } from "hono";
 
 import db from "@/db";
 import { candidates } from "@/db/schema/candidate.schema";
 import { units } from "@/db/schema/unit.schema";
 
-import type { Chat } from "./chatbot.routes";
-
 import {
   addToConversation,
   detectAndExtractFields,
-  generateTextFromModel,
+  generateTextStreamFromModel,
   getConversation,
   getLastBotQuestion,
   validateAndExtractData,
 } from "./chatbot.service";
 import { CANDIDATE_SYSTEM_PROMPT, UNIT_SYSTEM_PROMPT } from "./prompts";
 
-export const chat: AppRouteHandler<Chat> = async (c) => {
-  const { message } = c.req.valid("json");
+export const chat = async (c: Context) => {
+  const body = await c.req.json();
+  const { message } = body;
 
   const user = c.get("user");
 
@@ -99,8 +98,7 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
           onboardingCompleted: false,
         };
       }
-    } catch (err) {
-      console.error(`Error ensuring profile exists for ${role}:`, err);
+    } catch {
       return {
         exists: false,
         onboardingCompleted: false,
@@ -132,8 +130,7 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
           .where(eq(units.userId, userId));
       }
       return true;
-    } catch (err) {
-      console.error("Error marking onboarding complete:", err);
+    } catch {
       return false;
     }
   };
@@ -325,7 +322,6 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
 
       return { success: true, extractedValue };
     } catch (err) {
-      console.error(`Error saving field ${field}:`, err);
       return {
         success: false,
         error: String(err instanceof Error ? err.message : "Database error"),
@@ -361,7 +357,7 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
       );
     }
 
-    // If onboarding is already completed, return static message
+    // If onboarding is already completed, return static JSON (not streaming)
     if (onboardingStatus.onboardingCompleted) {
       const completionMessage =
         role === "candidate"
@@ -399,8 +395,7 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
         fieldsToSave = detection.fieldsDetected
           .filter((f) => f.confidence > 0.7)
           .map((f) => ({ field: f.field, value: f.value }));
-      } catch (err) {
-        console.warn("Field detection failed:", err);
+      } catch {
         // Continue without auto-save if detection fails
       }
     }
@@ -431,7 +426,7 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
       }
     }
 
-    // If there were validation failures, return retry prompt
+    // If there were validation failures, return JSON error (not streaming)
     if (failedFields.length > 0) {
       const retryMessage = failedFields[0].error;
       return c.json(
@@ -445,71 +440,90 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
       );
     }
 
-    // Generate bot response
-    const resultPromise = generateTextFromModel(
-      message,
-      SYSTEM_PROMPT,
-      storedHistory,
-    );
+    // STREAMING RESPONSE - Return raw Response
+    return streamSSE(c, async (stream) => {
+      let fullResponse = "";
+      let chunkCount = 0;
 
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Request timeout")), 55000),
-    );
+      try {
+        // Send initial event to signal start
+        await stream.writeSSE({
+          event: "start",
+          data: JSON.stringify({ message: "Streaming started" }),
+        });
 
-    const result = await Promise.race([resultPromise, timeoutPromise]);
+        // Stream the AI response
+        for await (const chunk of generateTextStreamFromModel(
+          message,
+          SYSTEM_PROMPT,
+          storedHistory,
+        )) {
+          fullResponse += chunk;
+          chunkCount++;
 
-    const botResponse = (result as any)?.text;
-    if (!botResponse) {
-      throw new Error("No response from model");
-    }
+          await stream.writeSSE({
+            event: "chunk",
+            data: JSON.stringify({
+              text: chunk,
+              chunkIndex: chunkCount,
+            }),
+          });
+        }
 
-    // Check if bot response indicates completion
-    const completionPhrases = [
-      "perfect! you're all set",
-      "you're all set",
-      "profile is complete",
-      "find the best matches for you",
-      "help you find the best candidates",
-    ];
+        // Check if bot response indicates completion
+        const completionPhrases = [
+          "perfect! you're all set",
+          "you're all set",
+          "profile is complete",
+          "find the best matches for you",
+          "help you find the best candidates",
+        ];
 
-    const isCompletionMessage = completionPhrases.some((phrase) =>
-      botResponse.toLowerCase().includes(phrase.toLowerCase()),
-    );
+        const isCompletionMessage = completionPhrases.some((phrase) =>
+          fullResponse.toLowerCase().includes(phrase.toLowerCase()),
+        );
 
-    if (isCompletionMessage) {
-      await markOnboardingComplete(userId, role);
-    }
+        if (isCompletionMessage) {
+          await markOnboardingComplete(userId, role);
+        }
 
-    // Persist conversation
-    try {
-      addToConversation(convoKey, { role: "user", content: message });
-      addToConversation(convoKey, { role: "assistant", content: botResponse });
-    } catch (err) {
-      console.warn("Failed to persist conversation:", err);
-    }
+        // Persist conversation
+        try {
+          addToConversation(convoKey, { role: "user", content: message });
+          addToConversation(convoKey, {
+            role: "assistant",
+            content: fullResponse,
+          });
+        } catch (err) {
+          console.warn("Failed to persist conversation:", err);
+        }
 
-    return c.json(
-      {
-        success: true as const,
-        response: botResponse
-          .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "")
-          .trim(),
-        ...(isCompletionMessage && { onboardingCompleted: true }),
-      },
-      200,
-    );
-  } catch (err: any) {
-    // === CRITICAL LOGGING FOR LAMBDA DIAGNOSIS ===
-    console.error("❌ Chatbot Handler Critical Error:", {
-      message: err.message,
-      stack: err.stack,
-      cause: err.cause,
-      name: err.name,
-      // Log extra details if it's an AWS SDK error
-      awsError: err.$metadata,
+        // Send completion event
+        await stream.writeSSE({
+          event: "complete",
+          data: JSON.stringify({
+            message: "Stream completed",
+            fullResponse: fullResponse,
+            onboardingCompleted: isCompletionMessage,
+            totalChunks: chunkCount,
+          }),
+        });
+      } catch (err: any) {
+        // Send error event
+        await stream.writeSSE({
+          event: "error",
+          data: JSON.stringify({
+            error: String(err?.message || err),
+            errorType:
+              err?.name === "ThrottlingException" ? "THROTTLING" : "UNKNOWN",
+          }),
+        });
+      } finally {
+        // Close the stream
+        await stream.close();
+      }
     });
-    // ============================================
-
+  } catch (err: any) {
     if (err?.message === "Request timeout") {
       return c.json(
         {
