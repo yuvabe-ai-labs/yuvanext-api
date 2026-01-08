@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
-import fs from "node:fs";
+import Handlebars from "handlebars";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import nodemailer from "nodemailer";
 
@@ -18,21 +19,31 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-function loadTemplate(templateName: string, variables: Record<string, string>) {
-  const templatePath = path.join(
-    process.cwd(),
-    "src",
-    "templates",
-    templateName,
-  );
+// FIX: Detect if running in Lambda (compiled) or Local (source)
+const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+const baseFolder = isLambda ? "dist" : "src";
+const templatesDir = path.join(process.cwd(), baseFolder, "templates");
 
-  let html = fs.readFileSync(templatePath, "utf-8");
+// Cache compiled templates
+const compiledTemplates: Record<string, Handlebars.TemplateDelegate> = {};
 
-  Object.keys(variables).forEach((key) => {
-    html = html.replace(new RegExp(`{{${key}}}`, "g"), variables[key]);
-  });
+async function loadTemplate(
+  templateName: string,
+  variables: Record<string, string>,
+): Promise<string> {
+  try {
+    // Check cache first
+    if (!compiledTemplates[templateName]) {
+      const templatePath = path.join(templatesDir, templateName);
+      const content = await readFile(templatePath, "utf-8");
+      compiledTemplates[templateName] = Handlebars.compile(content);
+    }
 
-  return html;
+    return compiledTemplates[templateName](variables);
+  } catch (error) {
+    console.error(`Error loading template ${templateName}:`, error);
+    throw new Error(`Failed to load template: ${templateName}`);
+  }
 }
 
 export async function sendChangeEmailConfirmation(
@@ -42,19 +53,26 @@ export async function sendChangeEmailConfirmation(
   name: string,
   token: string,
 ) {
-  const html = loadTemplate("change-email-verification.html", {
-    newEmail,
-    url,
-    name,
-    token,
-  });
+  try {
+    const html = await loadTemplate("change-email-verification.html", {
+      newEmail,
+      url,
+      name,
+      token,
+    });
 
-  return transporter.sendMail({
-    from: env.SMTP_USER,
-    to: currentEmail,
-    subject: "Confirm Your Email Change",
-    html,
-  });
+    await transporter.sendMail({
+      from: env.SMTP_USER,
+      to: currentEmail,
+      subject: "Confirm Your Email Change",
+      html,
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error sending change email confirmation:", error);
+    throw error;
+  }
 }
 
 export async function sendVerificationMail(
@@ -62,30 +80,44 @@ export async function sendVerificationMail(
   username: string,
   url: string,
 ) {
-  const html = loadTemplate("verify-email.html", {
-    name: username,
-    url,
-  });
+  try {
+    const html = await loadTemplate("verify-email.html", {
+      name: username,
+      url,
+    });
 
-  return transporter.sendMail({
-    from: env.SMTP_USER,
-    to: recipient,
-    subject: "Welcome to YuvaNext — Please Verify Your Account",
-    html,
-  });
+    await transporter.sendMail({
+      from: env.SMTP_USER,
+      to: recipient,
+      subject: "Welcome to YuvaNext – Please Verify Your Account",
+      html,
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error sending verification email:", error);
+    throw error;
+  }
 }
 
 export async function sendResetPasswordEmail(recipient: string, url: string) {
-  const html = loadTemplate("reset-password.html", {
-    url,
-  });
+  try {
+    const html = await loadTemplate("reset-password.html", {
+      url,
+    });
 
-  return transporter.sendMail({
-    from: env.SMTP_USER,
-    to: recipient,
-    subject: "Reset Your Password",
-    html,
-  });
+    await transporter.sendMail({
+      from: env.SMTP_USER,
+      to: recipient,
+      subject: "Reset Your Password",
+      html,
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error sending reset password email:", error);
+    throw error;
+  }
 }
 
 export async function enableUserByEmailBeforeSignin(email: string) {
@@ -109,9 +141,9 @@ export async function enableUserByEmailBeforeSignin(email: string) {
       })
       .where(eq(user.id, existingUser.id));
 
-    console.log("User enabled successfully");
+    console.log("User enabled successfully"); // Fixed: was console.error
   } else {
-    console.log("User was not disabled, no action needed");
+    console.log("User was not disabled, no action needed"); // Fixed: was console.error
   }
 }
 
@@ -178,3 +210,19 @@ export async function updateUserRoleOnEmailVerification(
     }
   }
 }
+
+// Pre-load templates on module initialization (optional but recommended)
+async function preloadTemplates() {
+  const templates = [
+    "verify-email.html",
+    "reset-password.html",
+    "change-email-verification.html",
+  ];
+  await Promise.allSettled(
+    templates.map((template) => loadTemplate(template, {})),
+  );
+}
+// Preload templates in the background (don't await to avoid blocking)
+preloadTemplates().catch((error) => {
+  console.warn("Failed to preload auth templates:", error);
+});
