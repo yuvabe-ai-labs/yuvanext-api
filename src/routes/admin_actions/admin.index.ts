@@ -17,6 +17,8 @@ router
 
   // Unit endpoints
   .openapi(routes.getUnits, handlers.getUnits)
+  .openapi(routes.addCompany, handlers.addCompany)
+  .openapi(routes.deactivateUnit, handlers.deactivateUnit)
 
   // Application endpoints
   .openapi(routes.getApplications, handlers.getApplications);

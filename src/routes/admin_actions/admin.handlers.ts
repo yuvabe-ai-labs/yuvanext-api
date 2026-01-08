@@ -3,7 +3,7 @@ import type { AppRouteHandler } from "@/types/app.types";
 
 import db from "@/db";
 import { applications } from "@/db/schema/application.schema";
-import { user as userTable } from "@/db/schema/auth.schema";
+import { user as userTable, account, session } from "@/db/schema/auth.schema";
 import { candidates } from "@/db/schema/candidate.schema";
 import { courses } from "@/db/schema/course.schema";
 import { internships } from "@/db/schema/internship.schema";
@@ -14,7 +14,11 @@ import {
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
   OK,
+  CREATED,
+  CONFLICT,
+  BAD_REQUEST,
 } from "@/lib/openapi/http-status-codes";
+import { auth } from "@/config/auth";
 
 import type {
   GetOverallStats,
@@ -23,6 +27,8 @@ import type {
   GetUnits,
   GetApplications,
   GetUnitStats,
+  AddCompany,
+  DeactivateUnit,
 } from "./admin.routes";
 
 // 1. GET /admin/stats/overview - Overall Statistics
@@ -65,6 +71,187 @@ export const getOverallStats: AppRouteHandler<GetOverallStats> = async (c) => {
     );
   } catch (err) {
     console.error("Error fetching overall stats:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// 13. POST /admin/units/add-company - Add Company/Unit by Admin
+export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
+  const body = c.req.valid("json");
+
+  try {
+    // Check if email already exists
+    const existingUser = await db
+      .select({ id: userTable.id })
+      .from(userTable)
+      .where(eq(userTable.email, body.companyEmail))
+      .limit(1);
+
+    if (existingUser.length > 0) {
+      return c.json(
+        {
+          status_code: CONFLICT,
+          message: "Email already exists",
+        },
+        CONFLICT,
+      );
+    }
+
+    // Use Better Auth's signup method
+    const signUpResult = await auth.api.signUpEmail({
+      body: {
+        email: body.companyEmail,
+        password: body.password,
+        name: body.companyName,
+        // Store unit-specific data in metadata for later processing
+        metadata: {
+          role: "unit",
+          companyType: body.companyType,
+          contactNumber: body.contactNumber,
+          industryType: body.industryType,
+          address: body.address,
+          aboutCompany: body.aboutCompany,
+          serviceOffered: body.serviceOffered,
+          achievements: body.achievements || "",
+        },
+      },
+    });
+
+    if (!signUpResult) {
+      return c.json(
+        {
+          status_code: BAD_REQUEST,
+          message: "Failed to create user account",
+        },
+        BAD_REQUEST,
+      );
+    }
+
+    // Extract user data from Better Auth response
+    const userData = signUpResult.user;
+
+    return c.json(
+      {
+        status_code: CREATED,
+        message: "Company created successfully. Verification email sent.",
+        data: {
+          userId: userData.id,
+          email: userData.email,
+          name: userData.name,
+          message: "Please verify email to activate the account",
+        },
+      },
+      CREATED,
+    );
+  } catch (err: any) {
+    console.error("Error adding company:", err);
+
+    // Handle specific Better Auth errors
+    if (err.message?.includes("already exists")) {
+      return c.json(
+        {
+          status_code: CONFLICT,
+          message: "Email already exists",
+        },
+        CONFLICT,
+      );
+    }
+
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// 14. PATCH /admin/units/:id/deactivate - Deactivate Unit by Admin
+export const deactivateUnit: AppRouteHandler<DeactivateUnit> = async (c) => {
+  const { id } = c.req.valid("param");
+
+  try {
+    // Check if unit exists
+    const existingUnit = await db
+      .select({ userId: units.userId })
+      .from(units)
+      .where(eq(units.userId, id))
+      .limit(1);
+
+    if (existingUnit.length === 0) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Unit not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    // Check if user exists
+    const existingUser = await db
+      .select({
+        id: userTable.id,
+        role: userTable.role,
+        accountDisabled: userTable.accountDisabled,
+      })
+      .from(userTable)
+      .where(eq(userTable.id, id))
+      .limit(1);
+
+    if (existingUser.length === 0) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "User not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    if (existingUser[0].role !== "unit") {
+      return c.json(
+        {
+          status_code: BAD_REQUEST,
+          message: "User is not a unit account",
+        },
+        BAD_REQUEST,
+      );
+    }
+
+    // Deactivate the user account
+    await db
+      .update(userTable)
+      .set({
+        accountDisabled: true,
+        updatedAt: new Date(),
+      })
+      .where(eq(userTable.id, id));
+
+    // Remove all active sessions for this user
+    await db.delete(session).where(eq(session.userId, id));
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Unit deactivated successfully",
+        data: {
+          userId: id,
+          accountDisabled: true,
+          message: "Unit account has been deactivated and all sessions removed",
+        },
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error deactivating unit:", err);
     return c.json(
       {
         status_code: INTERNAL_SERVER_ERROR,

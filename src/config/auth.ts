@@ -99,6 +99,7 @@ export const auth = betterAuth({
           user.id,
           user.metadata.role,
           user.metadata.website_url,
+          user.metadata, // Pass the full metadata object
         );
       }
     },

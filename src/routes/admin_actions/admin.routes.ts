@@ -4,6 +4,9 @@ import { z } from "zod";
 import {
   NOT_FOUND,
   OK,
+  CREATED,
+  BAD_REQUEST,
+  CONFLICT,
   UNPROCESSABLE_ENTITY,
 } from "@/lib/openapi/http-status-codes";
 import {
@@ -29,6 +32,10 @@ import {
   unitRegistrationStatsSchema,
   createPaginatedResponseSchema,
   candidateFullResponseSchema,
+  addCompanyRequestSchema,
+  addCompanyResponseSchema,
+  deactivateUnitParamSchema,
+  deactivateUnitResponseSchema,
 } from "./admin.schema";
 
 // 1. GET /admin/stats/overview - Overall Statistics
@@ -158,9 +165,59 @@ export const getUnitStats = createRoute({
   },
 });
 
+// 13. POST /admin/units/add-company - Add Company/Unit by Admin
+export const addCompany = createRoute({
+  method: "post" as const,
+  path: "/admin/units/add-company",
+  tags: ["Admin"],
+  middleware: requireRole({ allowedRoles: ["admin"] }),
+  summary: "Add a new company/unit",
+  description:
+    "Admin can add a new company/unit with all details and send verification email",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: addCompanyRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    [CREATED]: createResponse(CREATED, addCompanyResponseSchema),
+    ...restrictedErrorResponses,
+    [BAD_REQUEST]: createResponse(BAD_REQUEST),
+    [CONFLICT]: createResponse(CONFLICT),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
+  },
+});
+
+// 14. PATCH /admin/units/:id/deactivate - Deactivate Unit by Admin
+export const deactivateUnit = createRoute({
+  method: "patch" as const,
+  path: "/admin/units/{id}/deactivate",
+  tags: ["Admin"],
+  middleware: requireRole({ allowedRoles: ["admin"] }),
+  summary: "Deactivate a unit",
+  description:
+    "Admin can deactivate a unit account and remove all active sessions",
+  request: {
+    params: deactivateUnitParamSchema,
+  },
+  responses: {
+    [OK]: createResponse(OK, deactivateUnitResponseSchema),
+    ...restrictedErrorResponses,
+    [BAD_REQUEST]: createResponse(BAD_REQUEST),
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
+  },
+});
+
 export type GetOverallStats = typeof getOverallStats;
 export type GetCandidates = typeof getCandidates;
 export type GetCandidateById = typeof getCandidateById;
 export type GetUnits = typeof getUnits;
 export type GetApplications = typeof getApplications;
 export type GetUnitStats = typeof getUnitStats;
+export type AddCompany = typeof addCompany;
+export type DeactivateUnit = typeof deactivateUnit;

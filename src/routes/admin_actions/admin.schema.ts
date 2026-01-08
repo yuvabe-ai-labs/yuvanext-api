@@ -156,6 +156,44 @@ export const unitRegistrationStatsSchema = z.object({
   totalApplications: z.number(),
 });
 
+// =====================================================
+// ADD COMPANY REQUEST SCHEMA
+// =====================================================
+
+export const addCompanyRequestSchema = z.object({
+  companyName: z.string().min(1, "Company name is required"),
+  companyEmail: z.string().email("Valid email is required"),
+  contactNumber: z.string().min(6, "Valid contact number is required"),
+  companyType: z.enum(["auroville_unit", "non_auroville_unit"]),
+  industryType: z.string().min(1, "Industry type is required"),
+  address: z.string().min(1, "Address is required"),
+  aboutCompany: z.string().min(1, "About the company is required"),
+  serviceOffered: z.string().min(1, "Service offered is required"),
+  achievements: z.string().optional(),
+  password: z.string().min(4, "Password must be at least 4 characters"),
+});
+
+export const addCompanyResponseSchema = z.object({
+  userId: z.string().uuid(),
+  email: z.string().email(),
+  name: z.string(),
+  message: z.string(),
+});
+
+// =====================================================
+// DEACTIVATE UNIT REQUEST SCHEMA
+// =====================================================
+
+export const deactivateUnitParamSchema = z.object({
+  id: z.string().uuid(),
+});
+
+export const deactivateUnitResponseSchema = z.object({
+  userId: z.string().uuid(),
+  accountDisabled: z.boolean(),
+  message: z.string(),
+});
+
 // Pagination Metadata
 export const paginationMetadataSchema = z.object({
   currentPage: z.number(),
