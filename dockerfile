@@ -12,10 +12,5 @@ COPY package.json pnpm-lock.yaml ./
 # Install production dependencies with peer dependencies, ignoring scripts
 RUN pnpm install --prod --ignore-scripts --shamefully-hoist
 
-# Copy built files
-COPY dist ./dist
-
-COPY src/templates ./templates
-
 # Set Lambda handler (lambda.js with named export 'handler')
-CMD ["dist/lambda.handler"]
+CMD ["src/lambda.handler"]
