@@ -105,4 +105,6 @@ export const applicationTasksResponseSchema = z.object({
   internshipName: z.string().nullable(),
   internshipStartDate: z.string().nullable(),
   internshipEndDate: z.string().nullable(),
+  candidateAvatarUrl: z.string().nullable(),
+  candidatePhoneNumber: z.string().nullable(),
 });
