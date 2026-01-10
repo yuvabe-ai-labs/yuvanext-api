@@ -25,10 +25,10 @@ export const getAllUnits = createRoute({
   method: "get" as const,
   path: "/units",
   tags: ["Units"],
-  middleware: requireRole({ allowedRoles: ["candidate"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "admin"] }),
   summary: "Get all units",
   description:
-    "Retrieve a list of all organization units/companies (candidate only)",
+    "Retrieve a list of all organization units/companies (candidate and admin only)",
   responses: {
     [OK]: createResponse(OK, z.array(unitResponseSchema)),
     ...restrictedErrorResponses,
@@ -42,10 +42,10 @@ export const getUnitById = createRoute({
   method: "get" as const,
   path: "/units/{id}",
   tags: ["Units"],
-  middleware: requireRole({ allowedRoles: ["candidate"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "admin"] }),
   summary: "Get unit details by ID",
   description:
-    "Retrieve detailed information about a specific organization unit including their internships (candidate only)",
+    "Retrieve detailed information about a specific organization unit including their internships (candidate and admin only)",
   request: {
     params: unitIdParamSchema,
   },
