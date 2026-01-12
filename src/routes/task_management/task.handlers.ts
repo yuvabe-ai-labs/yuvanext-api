@@ -378,13 +378,12 @@ export const getTasksByApplicationId: AppRouteHandler<
         internshipClosingDate: internships.closingDate,
       })
       .from(applications)
-      .leftJoin(tasks, eq(tasks.applicationId, applications.id)) // ✅ LEFT JOIN
+      .leftJoin(tasks, eq(tasks.applicationId, applications.id))
       .innerJoin(internships, eq(applications.internshipId, internships.id))
       .innerJoin(userTable, eq(applications.userId, userTable.id))
       .innerJoin(candidates, eq(applications.userId, candidates.userId))
       .where(whereConditions);
 
-    // ❌ Do NOT return NOT_FOUND when no task
     if (applicationTasks.length === 0) {
       return c.json(
         {
@@ -395,11 +394,45 @@ export const getTasksByApplicationId: AppRouteHandler<
       );
     }
 
+    // Transform the flat result into nested structure
+    const firstRow = applicationTasks[0];
+
+    const response = {
+      applicationId: firstRow.applicationId,
+      applicantId: firstRow.applicantId,
+      applicantName: firstRow.applicantName,
+      applicantEmail: firstRow.applicantEmail,
+      candidateAvatarUrl: firstRow.candidateAvatarUrl,
+      candidatePhoneNumber: firstRow.candidatePhoneNumber,
+      internshipId: firstRow.internshipId,
+      internshipName: firstRow.internshipName,
+      internshipCreatedAt: firstRow.internshipCreatedAt,
+      internshipClosingDate: firstRow.internshipClosingDate,
+      tasks: applicationTasks
+        .filter((row) => row.taskId !== null) // Filter out rows with no task
+        .map((row) => ({
+          taskId: row.taskId,
+          taskStatus: row.taskStatus,
+          taskTitle: row.taskTitle,
+          taskDescription: row.taskDescription,
+          taskCreatedAt: row.taskCreatedAt,
+          taskEndDate: row.taskEndDate,
+          taskStartDate: row.taskStartDate,
+          taskStartTime: row.taskStartTime,
+          taskEndTime: row.taskEndTime,
+          taskColor: row.taskColor,
+          taskSubmissionLink: row.taskSubmissionLink,
+          taskSubmittedAt: row.taskSubmittedAt,
+          taskReviewRemarks: row.taskReviewRemarks,
+          taskReviewedAt: row.taskReviewedAt,
+        })),
+    };
+
     return c.json(
       {
         status_code: OK,
         message: "Tasks retrieved successfully",
-        data: applicationTasks,
+        data: response,
       },
       OK,
     );

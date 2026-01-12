@@ -56,6 +56,8 @@ export const recentCandidateSchema = z.object({
   name: z.string().nullable(),
   type: z.enum(["student", "fresher", "working", "graduate"]).nullable(),
   location: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+  createdAt: z.date(),
 });
 
 // 3. Recent Units Response
@@ -63,6 +65,7 @@ export const recentUnitSchema = z.object({
   userId: z.string(),
   name: z.string().nullable(),
   address: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
 });
 
 // 5. Active Units with Stats Response
@@ -72,6 +75,8 @@ export const activeUnitWithStatsSchema = z.object({
   email: z.string().nullable(),
   totalApplications: z.number(),
   totalActiveInternships: z.number(),
+  avatarUrl: z.string().nullable(),
+  internshipCreatedAt: z.date().nullable(),
 });
 
 // 6. Recent Applied Candidates Response
@@ -79,7 +84,10 @@ export const recentAppliedCandidateSchema = z.object({
   applicationId: z.string(),
   candidateId: z.string(),
   candidateName: z.string().nullable(),
-  candidateAvatar: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+  skills: z.array(z.string()).nullable(),
+  interests: z.array(z.string()).nullable(),
+  profileSummary: z.string().nullable(),
   internshipTitle: z.string(),
   applicationStatus: z.enum([
     "applied",
@@ -117,6 +125,7 @@ export const hiredCandidateSchema = z.object({
   internshipName: z.string(),
   applicationStatus: z.enum(["hired"]),
   unitAvatarUrl: z.string().nullable(),
+  unitName: z.string().nullable(),
   internshipDuration: z.string().nullable(),
   internshipJobType: z.enum(["part_time", "full_time", "both"]).nullable(),
   applicationId: z.string(),
@@ -146,6 +155,7 @@ export const shortlistedCandidateSchema = z.object({
   applicationStatus: z.enum(["shortlisted"]),
   skills: z.array(z.string()).nullable(),
   interests: z.array(z.string()).nullable(),
+  profileSummary: z.string().nullable(),
 });
 
 // 12. Unit Registration Stats Response

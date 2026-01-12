@@ -276,6 +276,8 @@ export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
             name: userTable.name,
             type: candidates.type,
             location: candidates.location,
+            avatarUrl: candidates.avatarUrl,
+            createdAt: candidates.createdAt,
           })
           .from(candidates)
           .leftJoin(userTable, eq(candidates.userId, userTable.id))
@@ -303,6 +305,7 @@ export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
               name: userTable.name,
               type: candidates.type,
               location: candidates.location,
+              avatarUrl: candidates.avatarUrl,
             })
             .from(candidates)
             .leftJoin(userTable, eq(candidates.userId, userTable.id))
@@ -345,6 +348,7 @@ export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
               applicationStatus: applications.status,
               skills: candidates.skills,
               interests: candidates.interests,
+              profileSummary: candidates.profileSummary,
             })
             .from(applications)
             .innerJoin(candidates, eq(applications.userId, candidates.userId))
@@ -397,6 +401,7 @@ export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
               internshipName: internships.title,
               applicationStatus: applications.status,
               unitAvatarUrl: units.avatarUrl,
+              unitName: units.name,
               internshipDuration: internships.duration,
               internshipJobType: internships.jobType,
               applicationId: applications.id,
@@ -458,6 +463,7 @@ export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
               applicationStatus: applications.status,
               skills: candidates.skills,
               interests: candidates.interests,
+              profileSummary: candidates.profileSummary,
             })
             .from(applications)
             .innerJoin(candidates, eq(applications.userId, candidates.userId))
@@ -599,6 +605,7 @@ export const getUnits: AppRouteHandler<GetUnits> = async (c) => {
             userId: units.userId,
             name: units.name,
             address: units.address,
+            avatarUrl: units.avatarUrl,
           })
           .from(units)
           .orderBy(desc(units.createdAt))
@@ -625,8 +632,10 @@ export const getUnits: AppRouteHandler<GetUnits> = async (c) => {
               userId: units.userId,
               name: units.name,
               email: userTable.email,
+              avatarUrl: units.avatarUrl,
               totalApplications: sql<number>`COUNT(DISTINCT ${applications.id})`,
               totalActiveInternships: sql<number>`COUNT(DISTINCT CASE WHEN ${internships.status} = 'active' THEN ${internships.id} END)`,
+              internshipCreatedAt: sql<Date>`MAX(${internships.createdAt})`,
             })
             .from(units)
             .leftJoin(userTable, eq(units.userId, userTable.id))
@@ -715,6 +724,9 @@ export const getApplications: AppRouteHandler<GetApplications> = async (c) => {
             applicationStatus: applications.status,
             appliedAt: applications.createdAt,
             unitName: units.name,
+            skills: candidates.skills,
+            interests: candidates.interests,
+            profileSummary: candidates.profileSummary,
           })
           .from(applications)
           .innerJoin(candidates, eq(applications.userId, candidates.userId))
