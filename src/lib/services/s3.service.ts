@@ -16,20 +16,19 @@ const s3Client = new S3Client({
     secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
   },
 });
-
 // Get bucket name based on environment
 function getBucketName(): string {
   const bucketMap: Record<string, string> = {
     production: "yuvanext-platform-assets",
     development: "yuvanext-platform-assets-dev",
-    test: "yuvanext-platform-assets-stg",
+    staging: "yuvanext-platform-assets-stg",
   };
 
   return bucketMap[env.NODE_ENV] || "yuvanext-platform-assets-dev";
 }
 
 // File type definitions
-export type FileType =
+export type SourceName =
   | "avatar"
   | "banner"
   | "gallery"
@@ -43,7 +42,7 @@ export type UserRole = "candidate" | "unit";
  */
 export function generateS3Key(
   userId: string,
-  fileType: FileType,
+  fileType: SourceName,
   fileName: string,
   role: UserRole,
 ): string {
@@ -92,7 +91,7 @@ export function generateS3Key(
 export async function uploadFileToS3(
   file: File | Buffer,
   userId: string,
-  fileType: FileType,
+  fileType: SourceName,
   role: UserRole,
   fileName?: string,
 ): Promise<string> {
@@ -227,7 +226,7 @@ function extractKeyFromUrl(url: string, bucket: string): string | null {
  */
 export async function generatePresignedUploadUrl(
   userId: string,
-  fileType: FileType,
+  fileType: SourceName,
   fileName: string,
   role: UserRole,
   expiresIn: number = 3600,

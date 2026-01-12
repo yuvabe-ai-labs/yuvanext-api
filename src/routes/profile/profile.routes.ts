@@ -9,6 +9,10 @@ import {
   validationErrorResponses,
 } from "@/lib/openapi/response-helpers";
 import { requireRole } from "@/middleware/auth";
+import {
+  imageFileSchema,
+  videoFileSchema,
+} from "@/lib/services/file-validation";
 
 import { profileResponseSchema, updateProfileSchema } from "./profile.schema";
 
@@ -71,9 +75,9 @@ export const uploadAvatar = createRoute({
       content: {
         "multipart/form-data": {
           schema: z.object({
-            file: z
-              .any()
-              .describe("Avatar image file (PNG, JPG, JPEG, WebP, max 5MB)"),
+            file: imageFileSchema.describe(
+              "Avatar image file (PNG, JPG, JPEG, WebP, max 5MB)",
+            ),
           }),
         },
       },
@@ -83,7 +87,7 @@ export const uploadAvatar = createRoute({
     [OK]: createResponse(
       OK,
       z.object({
-        avatarUrl: z.string().url(),
+        avatarUrl: z.url(),
       }),
     ),
     ...commonErrorResponses,
@@ -123,9 +127,9 @@ export const uploadBanner = createRoute({
       content: {
         "multipart/form-data": {
           schema: z.object({
-            file: z
-              .any()
-              .describe("Banner image file (PNG, JPG, JPEG, WebP, max 5MB)"),
+            file: imageFileSchema.describe(
+              "Banner image file (PNG, JPG, JPEG, WebP, max 5MB)",
+            ),
           }),
         },
       },
@@ -135,7 +139,7 @@ export const uploadBanner = createRoute({
     [OK]: createResponse(
       OK,
       z.object({
-        bannerUrl: z.string().url(),
+        bannerUrl: z.url(),
       }),
     ),
     ...commonErrorResponses,
@@ -174,9 +178,9 @@ export const uploadGalleryImage = createRoute({
       content: {
         "multipart/form-data": {
           schema: z.object({
-            file: z
-              .any()
-              .describe("Gallery image file (PNG, JPG, JPEG, WebP, max 5MB)"),
+            file: imageFileSchema.describe(
+              "Gallery image file (PNG, JPG, JPEG, WebP, max 5MB)",
+            ),
           }),
         },
       },
@@ -186,7 +190,7 @@ export const uploadGalleryImage = createRoute({
     [OK]: createResponse(
       OK,
       z.object({
-        galleryImageUrl: z.string().url(),
+        galleryImageUrl: z.url(),
         galleryImages: z.array(z.string().url()),
       }),
     ),
@@ -207,7 +211,7 @@ export const deleteGalleryImage = createRoute({
   description: "Delete specific gallery image from S3 and remove from array",
   request: {
     query: z.object({
-      imageUrl: z.string().url(),
+      imageUrl: z.url(),
     }),
   },
   responses: {
@@ -236,9 +240,9 @@ export const uploadTestimonialVideo = createRoute({
       content: {
         "multipart/form-data": {
           schema: z.object({
-            file: z
-              .any()
-              .describe("Testimonial video file (MP4, WebM, MOV, max 5MB)"),
+            file: videoFileSchema.describe(
+              "Testimonial video file (MP4, WebM, MOV, max 5MB)",
+            ),
           }),
         },
       },
@@ -249,7 +253,7 @@ export const uploadTestimonialVideo = createRoute({
       OK,
       z.object({
         videoUrl: z.url(),
-        galleryVideos: z.array(z.string().url()),
+        galleryVideos: z.array(z.url()),
       }),
     ),
     ...commonErrorResponses,
@@ -270,7 +274,7 @@ export const deleteTestimonialVideo = createRoute({
     "Delete specific testimonial video from S3 and remove from array",
   request: {
     query: z.object({
-      videoUrl: z.string().url(),
+      videoUrl: z.url(),
     }),
   },
   responses: {

@@ -19,11 +19,6 @@ import {
   cleanupOldFile,
   type UserRole,
 } from "@/lib/services/s3.service";
-import {
-  validateImageFile,
-  validateVideoFile,
-  FileValidationError,
-} from "@/lib/services/file-validation";
 
 import type {
   GetProfile,
@@ -592,19 +587,6 @@ export const uploadAvatar: AppRouteHandler<UploadAvatar> = async (c) => {
       );
     }
 
-    // Validate file
-    try {
-      await validateImageFile(file);
-    } catch (err) {
-      if (err instanceof FileValidationError) {
-        return c.json(
-          { status_code: BAD_REQUEST, message: err.message },
-          BAD_REQUEST,
-        );
-      }
-      throw err;
-    }
-
     // Get current avatar to delete
     let currentAvatarUrl: string | null = null;
     if (user.role === "candidate") {
@@ -740,19 +722,6 @@ export const uploadBanner: AppRouteHandler<UploadBanner> = async (c) => {
       );
     }
 
-    // Validate file
-    try {
-      await validateImageFile(file);
-    } catch (err) {
-      if (err instanceof FileValidationError) {
-        return c.json(
-          { status_code: BAD_REQUEST, message: err.message },
-          BAD_REQUEST,
-        );
-      }
-      throw err;
-    }
-
     // Get current banner
     const unit = await db.query.units.findFirst({
       where: eq(units.userId, user.id),
@@ -852,19 +821,6 @@ export const uploadGalleryImage: AppRouteHandler<UploadGalleryImage> = async (
         { status_code: BAD_REQUEST, message: "No file provided" },
         BAD_REQUEST,
       );
-    }
-
-    // Validate file
-    try {
-      await validateImageFile(file);
-    } catch (err) {
-      if (err instanceof FileValidationError) {
-        return c.json(
-          { status_code: BAD_REQUEST, message: err.message },
-          BAD_REQUEST,
-        );
-      }
-      throw err;
     }
 
     // Upload to S3
@@ -983,19 +939,6 @@ export const uploadTestimonialVideo: AppRouteHandler<
         { status_code: BAD_REQUEST, message: "No file provided" },
         BAD_REQUEST,
       );
-    }
-
-    // Validate file
-    try {
-      await validateVideoFile(file);
-    } catch (err) {
-      if (err instanceof FileValidationError) {
-        return c.json(
-          { status_code: BAD_REQUEST, message: err.message },
-          BAD_REQUEST,
-        );
-      }
-      throw err;
     }
 
     // Upload to S3

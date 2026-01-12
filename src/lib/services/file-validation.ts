@@ -1,67 +1,73 @@
 /**
  * File validation utilities for uploads
  */
+import { z } from "zod";
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_FILE_SIZE_IMAGE = 5 * 1024 * 1024; // 5MB
+const MAX_FILE_SIZE_VIDEO = 50 * 1024 * 1024; // 50MB
 
-export const ALLOWED_IMAGE_TYPES = [
-  "image/jpeg",
-  "image/jpg",
-  "image/png",
-  "image/webp",
-];
+export const ALLOWED_IMAGE_TYPES = ["image/jpg", "image/png"];
 
-export const ALLOWED_VIDEO_TYPES = [
-  "video/mp4",
-  "video/webm",
-  "video/quicktime", // MOV
-];
-
-export class FileValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "FileValidationError";
-  }
-}
+export const ALLOWED_VIDEO_TYPES = ["video/mp4"];
 
 /**
- * Validate image file
- * @param file - File object to validate
- * @throws FileValidationError if validation fails
+ * Zod schema for image file upload
+ * Validates file type and size using refine()
+ * Uses z.any() with .openapi() metadata for proper schema generation
  */
-export async function validateImageFile(file: File): Promise<void> {
-  // Check file type
-  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-    throw new FileValidationError(
-      `Invalid image format. Allowed formats: PNG, JPG, JPEG, WebP`,
-    );
-  }
-
-  // Check file size
-  if (file.size > MAX_FILE_SIZE) {
-    throw new FileValidationError(
-      `File size exceeds 5MB limit. Current size: ${(file.size / (1024 * 1024)).toFixed(2)}MB`,
-    );
-  }
-}
+export const imageFileSchema = z
+  .any()
+  .refine(
+    (file: unknown) => {
+      if (!(file instanceof File)) return false;
+      return ALLOWED_IMAGE_TYPES.includes(file.type);
+    },
+    {
+      message: "Invalid image format. Allowed formats: PNG, JPG, JPEG, WebP",
+    },
+  )
+  .refine(
+    (file: unknown) => {
+      if (!(file instanceof File)) return false;
+      return file.size <= MAX_FILE_SIZE_IMAGE;
+    },
+    {
+      message: "File size exceeds 5MB limit",
+    },
+  )
+  .openapi({
+    type: "string",
+    format: "binary",
+    description: "Image file (PNG, JPG, JPEG, WebP) - max 5MB",
+  });
 
 /**
- * Validate video file
- * @param file - File object to validate
- * @throws FileValidationError if validation fails
+ * Zod schema for video file upload
+ * Validates file type and size using refine()
+ * Uses z.any() with .openapi() metadata for proper schema generation
  */
-export async function validateVideoFile(file: File): Promise<void> {
-  // Check file type
-  if (!ALLOWED_VIDEO_TYPES.includes(file.type)) {
-    throw new FileValidationError(
-      `Invalid video format. Allowed formats: MP4, WebM, MOV`,
-    );
-  }
-
-  // Check file size
-  if (file.size > MAX_FILE_SIZE) {
-    throw new FileValidationError(
-      `File size exceeds 5MB limit. Current size: ${(file.size / (1024 * 1024)).toFixed(2)}MB`,
-    );
-  }
-}
+export const videoFileSchema = z
+  .any()
+  .refine(
+    (file: unknown) => {
+      if (!(file instanceof File)) return false;
+      return ALLOWED_VIDEO_TYPES.includes(file.type);
+    },
+    {
+      message: "Invalid video format. Allowed formats: MP4, WebM, MOV",
+    },
+  )
+  .refine(
+    (file: unknown) => {
+      if (!(file instanceof File)) return false;
+      return file.size <= MAX_FILE_SIZE_VIDEO;
+    },
+    {
+      message: "File size exceeds 50MB limit",
+    },
+  )
+  .openapi({
+    type: "string",
+    format: "binary",
+    description: "Video file (MP4, WebM, MOV) - max 50MB",
+  });
