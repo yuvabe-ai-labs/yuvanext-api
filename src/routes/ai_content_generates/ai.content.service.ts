@@ -145,9 +145,16 @@ export async function generateInternshipContent(
   sections: ContentSection[],
 ): Promise<GeneratedContent | null> {
   try {
+    console.log(
+      "🔍 Generating content - Model:",
+      DEFAULT_MODEL,
+      "Region:",
+      AWS_REGION,
+    );
+
     const prompt = buildPrompt(title, sections);
 
-    // OpenAI GPT format only
+    // OpenAI GPT format
     const payload = {
       messages: [
         {
@@ -160,17 +167,17 @@ export async function generateInternshipContent(
           content: prompt,
         },
       ],
-      max_tokens: 2000,
+      max_tokens: 1000,
       temperature: 0.7,
     };
 
+    // FIXED: Removed contentType and accept to match working chatbot
     const command = new InvokeModelCommand({
       modelId: DEFAULT_MODEL,
-      contentType: "application/json",
-      accept: "application/json",
       body: JSON.stringify(payload),
     });
 
+    console.log("🔍 Sending command to Bedrock...");
     const response = await client.send(command);
 
     if (!response.body) {
@@ -179,6 +186,7 @@ export async function generateInternshipContent(
     }
 
     const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+    console.log("🔍 Response received, parsing...");
 
     // Handle OpenAI response format
     let generatedText: string | undefined;
@@ -195,11 +203,19 @@ export async function generateInternshipContent(
 
     // Parse the JSON response from AI
     const parsedContent = parseAIResponse(generatedText, sections);
+
+    if (parsedContent) {
+      console.log("✅ Content generated successfully");
+    } else {
+      console.error("❌ Failed to parse content");
+    }
+
     return parsedContent;
   } catch (err) {
     console.error("Error generating content with Bedrock:", err);
     if (err instanceof Error) {
       console.error("Error details:", err.message);
+      console.error("Error stack:", err.stack);
     }
     return null;
   }
@@ -209,9 +225,11 @@ export async function enhanceProfileDescription(
   description: string,
 ): Promise<string | null> {
   try {
+    console.log("🔍 Enhancing profile - Model:", DEFAULT_MODEL);
+
     const prompt = description;
 
-    // OpenAI GPT format only
+    // OpenAI GPT format
     const payload = {
       messages: [
         {
@@ -224,17 +242,17 @@ export async function enhanceProfileDescription(
           content: prompt,
         },
       ],
-      max_tokens: 1500,
+      max_tokens: 1000,
       temperature: 0.7,
     };
 
+    // FIXED: Removed contentType and accept to match working chatbot
     const command = new InvokeModelCommand({
       modelId: DEFAULT_MODEL,
-      contentType: "application/json",
-      accept: "application/json",
       body: JSON.stringify(payload),
     });
 
+    console.log("🔍 Sending enhancement request to Bedrock...");
     const response = await client.send(command);
 
     if (!response.body) {
@@ -259,11 +277,13 @@ export async function enhanceProfileDescription(
 
     // Clean up the response
     const cleaned = cleanEnhancedText(enhancedText);
+    console.log("✅ Profile enhanced successfully");
     return cleaned;
   } catch (err) {
     console.error("Error enhancing profile description:", err);
     if (err instanceof Error) {
       console.error("Error details:", err.message);
+      console.error("Error stack:", err.stack);
     }
     return null;
   }
