@@ -728,7 +728,7 @@ export const getCandidateById: AppRouteHandler<GetCandidateById> = async (
 
 // 4-5-7. GET /admin/units - Get Units with Filters
 export const getUnits: AppRouteHandler<GetUnits> = async (c) => {
-  const { filter = "all", page = 1, limit = 10 } = c.req.valid("query");
+  const { filter = "active", page = 1, limit = 10 } = c.req.valid("query");
 
   try {
     switch (filter) {
@@ -755,7 +755,7 @@ export const getUnits: AppRouteHandler<GetUnits> = async (c) => {
         );
       }
 
-      case "all": {
+      case "active": {
         // Get active units with stats (paginated or limited to 10)
         const offset = page > 1 ? (page - 1) * limit : 0;
         const actualLimit = page > 1 ? limit : 10;
