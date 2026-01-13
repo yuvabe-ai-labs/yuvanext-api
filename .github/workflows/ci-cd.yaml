@@ -44,18 +44,21 @@ jobs:
             echo "DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}" >> $GITHUB_ENV
             echo "IMAGE_TAG=prod" >> $GITHUB_ENV
             echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_PROD }}" >> $GITHUB_ENV
+            echo "S3_BUCKET_NAME=${{secrets.BUCKET_NAME_PROD}}" >> $GITHUB_ENV
           elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
-            echo "NODE_ENV=production" >> $GITHUB_ENV
+            echo "NODE_ENV=staging" >> $GITHUB_ENV
             echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_STAGING }}" >> $GITHUB_ENV
             echo "DATABASE_URL=${{ secrets.DATABASE_URL_STAGING }}" >> $GITHUB_ENV
             echo "IMAGE_TAG=stag" >> $GITHUB_ENV
             echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_STAGING }}" >> $GITHUB_ENV
+            echo "S3_BUCKET_NAME=${{ secrets.BUCKET_NAME_STAGING }}" >> $GITHUB_ENV
           else
             echo "NODE_ENV=development" >> $GITHUB_ENV
             echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_DEV }}" >> $GITHUB_ENV
             echo "DATABASE_URL=${{ secrets.DATABASE_URL_DEV }}" >> $GITHUB_ENV
             echo "IMAGE_TAG=dev" >> $GITHUB_ENV
             echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_DEV }}" >> $GITHUB_ENV
+            echo "S3_BUCKET_NAME=${{ secrets.BUCKET_NAME_DEV }}" >> $GITHUB_ENV
           fi
       - uses: actions/checkout@v4
       # --------------------
@@ -123,6 +126,7 @@ jobs:
           BETTER_AUTH_URL: ${{ env.BETTER_AUTH_URL }}
           FUNCTION_NAME: ${{ env.FUNCTION_NAME }}
           NODE_ENV: ${{ env.NODE_ENV }}
+          S3_BUCKET_NAME: ${{ env.S3_BUCKET_NAME }}
           IMAGE_URI: ${{ env.IMAGE_URI }}
         run: |
           set +e
@@ -144,6 +148,7 @@ jobs:
             --arg ZOOM_ACCOUNT_ID "$ZOOM_ACCOUNT_ID" \
             --arg ZOOM_CLIENT_ID "$ZOOM_CLIENT_ID" \
             --arg ZOOM_CLIENT_SECRET "$ZOOM_CLIENT_SECRET" \
+            --arg S3_BUCKET_NAME "$S3_BUCKET_NAME" \
             '{Variables: {
               NODE_ENV: $NODE_ENV,
               DATABASE_URL: $DATABASE_URL,
@@ -156,7 +161,8 @@ jobs:
               BEDROCK_MODEL_ID: $BEDROCK_MODEL_ID,
               ZOOM_ACCOUNT_ID: $ZOOM_ACCOUNT_ID,
               ZOOM_CLIENT_ID: $ZOOM_CLIENT_ID,
-              ZOOM_CLIENT_SECRET: $ZOOM_CLIENT_SECRET
+              ZOOM_CLIENT_SECRET: $ZOOM_CLIENT_SECRET,
+              S3_BUCKET_NAME: $S3_BUCKET_NAME
             }}')
 
           if [ $EXISTS -ne 0 ]; then

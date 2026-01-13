@@ -27,6 +27,7 @@ const EnvSchema = z.object({
   AWS_REGION: z.string(),
   AWS_ACCESS_KEY_ID: z.string(),
   AWS_SECRET_ACCESS_KEY: z.string(),
+  S3_BUCKET_NAME: z.string(),
   BEDROCK_MODEL_ID: z.string(),
 
   ZOOM_CLIENT_ID: z.string().optional(),

@@ -18,13 +18,7 @@ const s3Client = new S3Client({
 });
 // Get bucket name based on environment
 function getBucketName(): string {
-  const bucketMap: Record<string, string> = {
-    production: "yuvanext-platform-assets",
-    development: "yuvanext-platform-assets-dev",
-    staging: "yuvanext-platform-assets-stg",
-  };
-
-  return bucketMap[env.NODE_ENV] || "yuvanext-platform-assets-dev";
+  return env.S3_BUCKET_NAME;
 }
 
 // File type definitions
