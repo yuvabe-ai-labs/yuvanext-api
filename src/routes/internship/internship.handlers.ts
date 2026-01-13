@@ -508,7 +508,9 @@ export const getInternshipById: AppRouteHandler<GetInternshipById> = async (
         ? and(eq(internships.id, id), eq(internships.createdBy, user.id))
         : user.role === "candidate"
           ? and(eq(internships.id, id), eq(internships.status, "active"))
-          : null;
+          : user.role === "admin"
+            ? eq(internships.id, id)
+            : null;
 
     if (!whereCondition) {
       return c.json(

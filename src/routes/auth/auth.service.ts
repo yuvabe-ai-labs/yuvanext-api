@@ -7,6 +7,7 @@ import nodemailer from "nodemailer";
 import env from "@/config/env";
 import db from "@/db";
 import { user } from "@/db/schema/auth.schema";
+import { candidates } from "@/db/schema/candidate.schema";
 import { units } from "@/db/schema/unit.schema";
 
 const transporter = nodemailer.createTransport({
@@ -162,7 +163,25 @@ export async function updateUserRoleOnEmailVerification(
     })
     .where(eq(user.id, userId));
 
-  if (role === "unit") {
+  if (role === "candidate") {
+    // Check if candidate already exists (to avoid duplicate inserts)
+    const existingCandidate = await db
+      .select({ userId: candidates.userId })
+      .from(candidates)
+      .where(eq(candidates.userId, userId))
+      .limit(1);
+
+    if (existingCandidate.length === 0) {
+      // Create new candidate profile
+      await db.insert(candidates).values({
+        userId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        onboardingCompleted: false,
+      });
+      console.log("Candidate profile created for user:", userId);
+    }
+  } else if (role === "unit") {
     // Check if unit already exists (to avoid duplicate inserts)
     const existingUnit = await db
       .select({ userId: units.userId })

@@ -10,9 +10,27 @@ import {
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
   OK,
+  BAD_REQUEST,
 } from "@/lib/openapi/http-status-codes";
 
-import type { GetProfile, UpdateProfile } from "./profile.routes";
+import {
+  uploadFileToS3,
+  deleteFileFromS3,
+  cleanupOldFile,
+} from "@/lib/services/s3.service";
+
+import type {
+  GetProfile,
+  UpdateProfile,
+  UploadAvatar,
+  DeleteAvatar,
+  UploadBanner,
+  DeleteBanner,
+  UploadGalleryImage,
+  DeleteGalleryImage,
+  UploadTestimonialVideo,
+  DeleteTestimonialVideo,
+} from "./profile.routes";
 
 // Helper function to calculate candidate profile score
 function calculateCandidateScore(candidate: any): number {
@@ -166,7 +184,6 @@ export const getProfile: AppRouteHandler<GetProfile> = async (c) => {
           id: userTable.id,
           name: userTable.name,
           email: userTable.email,
-          image: userTable.image,
           role: userTable.role,
           createdAt: userTable.createdAt,
           updatedAt: userTable.updatedAt,
@@ -212,7 +229,6 @@ export const getProfile: AppRouteHandler<GetProfile> = async (c) => {
         id: data.id,
         name: data.name,
         email: data.email,
-        image: data.image,
         role: data.role,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
@@ -303,7 +319,7 @@ export const getProfile: AppRouteHandler<GetProfile> = async (c) => {
       // Construct unit profile
       const unitProfile = {
         id: data.id,
-        name: data.unitName || data.userName, // Prefer unit name, fallback to user name
+        name: data.unitName || data.userName,
         email: data.email,
         image: data.image,
         role: data.role,
@@ -550,6 +566,566 @@ export const updateProfile: AppRouteHandler<UpdateProfile> = async (c) => {
       {
         status_code: INTERNAL_SERVER_ERROR,
         message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// POST /profile/upload-avatar - Upload avatar
+export const uploadAvatar: AppRouteHandler<UploadAvatar> = async (c) => {
+  const user = c.get("user");
+
+  try {
+    const { file } = c.req.valid("form");
+
+    if (!file) {
+      return c.json(
+        { status_code: BAD_REQUEST, message: "No file provided" },
+        BAD_REQUEST,
+      );
+    }
+
+    let oldAvatarUrl: string | null = null;
+    let newAvatarUrl: string | null = null;
+
+    // Transaction: get old URL, upload new file, update DB
+    await db.transaction(async (tx) => {
+      // Get current avatar URL
+      if (user.role === "candidate") {
+        const candidate = await tx.query.candidates.findFirst({
+          where: eq(candidates.userId, user.id),
+        });
+        oldAvatarUrl = candidate?.avatarUrl || null;
+      } else if (user.role === "unit") {
+        const unit = await tx.query.units.findFirst({
+          where: eq(units.userId, user.id),
+        });
+        oldAvatarUrl = unit?.avatarUrl || null;
+      }
+
+      // Upload new avatar to S3
+      newAvatarUrl = await uploadFileToS3(file, user.id, "avatar");
+
+      // Update database within transaction
+      if (user.role === "candidate") {
+        await tx
+          .update(candidates)
+          .set({ avatarUrl: newAvatarUrl, updatedAt: new Date() })
+          .where(eq(candidates.userId, user.id));
+      } else if (user.role === "unit") {
+        await tx
+          .update(units)
+          .set({ avatarUrl: newAvatarUrl, updatedAt: new Date() })
+          .where(eq(units.userId, user.id));
+      }
+    });
+
+    // Fire-and-forget: delete old file after successful transaction commit
+    if (oldAvatarUrl) {
+      void (async () => {
+        try {
+          await cleanupOldFile(oldAvatarUrl);
+        } catch (err) {
+          console.error("Error cleaning up old avatar (background):", err);
+        }
+      })();
+    }
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Avatar uploaded successfully",
+        data: { avatarUrl: newAvatarUrl },
+      },
+      OK,
+    );
+  } catch (_err) {
+    console.error("Error uploading avatar:", _err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Failed to upload avatar",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// DELETE /profile/avatar - Delete avatar
+export const deleteAvatar: AppRouteHandler<DeleteAvatar> = async (c) => {
+  const user = c.get("user");
+
+  try {
+    let avatarUrlToDelete: string | null = null;
+
+    // Transaction: get URL and update DB
+    await db.transaction(async (tx) => {
+      // Get current avatar URL
+      if (user.role === "candidate") {
+        const candidate = await tx.query.candidates.findFirst({
+          where: eq(candidates.userId, user.id),
+        });
+        avatarUrlToDelete = candidate?.avatarUrl || null;
+      } else if (user.role === "unit") {
+        const unit = await tx.query.units.findFirst({
+          where: eq(units.userId, user.id),
+        });
+        avatarUrlToDelete = unit?.avatarUrl || null;
+      }
+
+      if (!avatarUrlToDelete) {
+        throw new Error("No avatar found");
+      }
+
+      // Update database within transaction
+      if (user.role === "candidate") {
+        await tx
+          .update(candidates)
+          .set({ avatarUrl: null, updatedAt: new Date() })
+          .where(eq(candidates.userId, user.id));
+      } else if (user.role === "unit") {
+        await tx
+          .update(units)
+          .set({ avatarUrl: null, updatedAt: new Date() })
+          .where(eq(units.userId, user.id));
+      }
+    });
+
+    // Fire-and-forget: delete from S3 after successful transaction commit
+    if (avatarUrlToDelete) {
+      void (async () => {
+        try {
+          await deleteFileFromS3(avatarUrlToDelete);
+        } catch (err) {
+          console.error("Error deleting avatar from S3 (background):", err);
+        }
+      })();
+    }
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Avatar deleted successfully",
+      },
+      OK,
+    );
+  } catch (_err) {
+    if ((_err as Error).message === "No avatar found") {
+      return c.json(
+        { status_code: NOT_FOUND, message: "No avatar found" },
+        NOT_FOUND,
+      );
+    }
+    console.error("Error deleting avatar:", _err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Failed to delete avatar",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// POST /profile/upload-banner - Upload banner (Units only)
+export const uploadBanner: AppRouteHandler<UploadBanner> = async (c) => {
+  const user = c.get("user");
+
+  try {
+    const { file } = c.req.valid("form");
+
+    if (!file) {
+      return c.json(
+        { status_code: BAD_REQUEST, message: "No file provided" },
+        BAD_REQUEST,
+      );
+    }
+
+    let oldBannerUrl: string | null = null;
+    let newBannerUrl: string | null = null;
+
+    // Transaction: get old URL, upload new file, update DB
+    await db.transaction(async (tx) => {
+      // Get current banner URL
+      const unit = await tx.query.units.findFirst({
+        where: eq(units.userId, user.id),
+      });
+      oldBannerUrl = unit?.bannerUrl || null;
+
+      // Upload new banner to S3
+      newBannerUrl = await uploadFileToS3(file, user.id, "banner", "unit");
+
+      // Update database within transaction
+      await tx
+        .update(units)
+        .set({ bannerUrl: newBannerUrl, updatedAt: new Date() })
+        .where(eq(units.userId, user.id));
+    });
+
+    // Fire-and-forget: delete old file after successful transaction commit
+    if (oldBannerUrl) {
+      void (async () => {
+        try {
+          await cleanupOldFile(oldBannerUrl);
+        } catch (err) {
+          console.error("Error cleaning up old banner (background):", err);
+        }
+      })();
+    }
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Banner uploaded successfully",
+        data: { bannerUrl: newBannerUrl },
+      },
+      OK,
+    );
+  } catch (_err) {
+    console.error("Error uploading banner:", _err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Failed to upload banner",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// DELETE /profile/banner - Delete banner (Units only)
+export const deleteBanner: AppRouteHandler<DeleteBanner> = async (c) => {
+  const user = c.get("user");
+
+  try {
+    let bannerUrlToDelete: string | null = null;
+
+    // Transaction: get URL and update DB
+    await db.transaction(async (tx) => {
+      // Get current banner URL
+      const unit = await tx.query.units.findFirst({
+        where: eq(units.userId, user.id),
+      });
+      bannerUrlToDelete = unit?.bannerUrl || null;
+
+      if (!bannerUrlToDelete) {
+        throw new Error("No banner found");
+      }
+
+      // Update database within transaction
+      await tx
+        .update(units)
+        .set({ bannerUrl: null, updatedAt: new Date() })
+        .where(eq(units.userId, user.id));
+    });
+
+    // Fire-and-forget: delete from S3 after successful transaction commit
+    if (bannerUrlToDelete) {
+      void (async () => {
+        try {
+          await deleteFileFromS3(bannerUrlToDelete);
+        } catch (err) {
+          console.error("Error deleting banner from S3 (background):", err);
+        }
+      })();
+    }
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Banner deleted successfully",
+      },
+      OK,
+    );
+  } catch (_err) {
+    if ((_err as Error).message === "No banner found") {
+      return c.json(
+        { status_code: NOT_FOUND, message: "No banner found" },
+        NOT_FOUND,
+      );
+    }
+    console.error("Error deleting banner:", _err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Failed to delete banner",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// POST /profile/upload-gallery - Upload gallery image (Units only)
+export const uploadGalleryImage: AppRouteHandler<UploadGalleryImage> = async (
+  c,
+) => {
+  const user = c.get("user");
+
+  try {
+    const { file } = c.req.valid("form");
+
+    if (!file) {
+      return c.json(
+        { status_code: BAD_REQUEST, message: "No file provided" },
+        BAD_REQUEST,
+      );
+    }
+
+    let updatedGalleryImages: string[] = [];
+
+    // Transaction: upload file, update DB
+    await db.transaction(async (tx) => {
+      // Upload to S3
+      const galleryImageUrl = await uploadFileToS3(
+        file,
+        user.id,
+        "gallery",
+        "unit",
+      );
+
+      // Get current gallery images
+      const unit = await tx.query.units.findFirst({
+        where: eq(units.userId, user.id),
+      });
+      const currentGalleryImages = unit?.galleryImages || [];
+
+      // Add new image to array
+      updatedGalleryImages = [...currentGalleryImages, galleryImageUrl];
+
+      // Update database within transaction
+      await tx
+        .update(units)
+        .set({ galleryImages: updatedGalleryImages, updatedAt: new Date() })
+        .where(eq(units.userId, user.id));
+    });
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Gallery image uploaded successfully",
+        data: {
+          galleryImages: updatedGalleryImages,
+        },
+      },
+      OK,
+    );
+  } catch (_err) {
+    console.error("Error uploading gallery image:", _err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Failed to upload gallery image",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// DELETE /profile/gallery - Delete gallery image (Units only)
+export const deleteGalleryImage: AppRouteHandler<DeleteGalleryImage> = async (
+  c,
+) => {
+  const user = c.get("user");
+
+  try {
+    const { imageUrl } = c.req.valid("query");
+
+    let updatedGalleryImages: string[] = [];
+
+    // Transaction: get URL, update DB
+    await db.transaction(async (tx) => {
+      // Get current gallery images
+      const unit = await tx.query.units.findFirst({
+        where: eq(units.userId, user.id),
+      });
+      const currentGalleryImages = unit?.galleryImages || [];
+
+      if (!currentGalleryImages.includes(imageUrl)) {
+        throw new Error("Image not found in gallery");
+      }
+
+      // Remove from array
+      updatedGalleryImages = currentGalleryImages.filter(
+        (url) => url !== imageUrl,
+      );
+
+      // Update database within transaction
+      await tx
+        .update(units)
+        .set({ galleryImages: updatedGalleryImages, updatedAt: new Date() })
+        .where(eq(units.userId, user.id));
+    });
+
+    // Fire-and-forget: delete from S3 after successful transaction commit
+    void (async () => {
+      try {
+        await deleteFileFromS3(imageUrl);
+      } catch (err) {
+        console.error(
+          "Error deleting gallery image from S3 (background):",
+          err,
+        );
+      }
+    })();
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Gallery image deleted successfully",
+        data: { galleryImages: updatedGalleryImages },
+      },
+      OK,
+    );
+  } catch (_err) {
+    if ((_err as Error).message === "Image not found in gallery") {
+      return c.json(
+        { status_code: NOT_FOUND, message: "Image not found in gallery" },
+        NOT_FOUND,
+      );
+    }
+    console.error("Error deleting gallery image:", _err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Failed to delete gallery image",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// POST /profile/upload-testimonial - Upload testimonial video (Units only)
+export const uploadTestimonialVideo: AppRouteHandler<
+  UploadTestimonialVideo
+> = async (c) => {
+  const user = c.get("user");
+
+  try {
+    const { file } = c.req.valid("form");
+
+    if (!file) {
+      return c.json(
+        { status_code: BAD_REQUEST, message: "No file provided" },
+        BAD_REQUEST,
+      );
+    }
+
+    let updatedVideos: string[] = [];
+
+    // Transaction: upload file, update DB
+    await db.transaction(async (tx) => {
+      // Upload to S3
+      const videoUrl = await uploadFileToS3(
+        file,
+        user.id,
+        "testimonial-videos",
+        "unit",
+      );
+
+      // Get current videos
+      const unit = await tx.query.units.findFirst({
+        where: eq(units.userId, user.id),
+      });
+      const currentVideos = unit?.galleryVideos || [];
+
+      // Add new video to array
+      updatedVideos = [...currentVideos, videoUrl];
+
+      // Update database within transaction
+      await tx
+        .update(units)
+        .set({ galleryVideos: updatedVideos, updatedAt: new Date() })
+        .where(eq(units.userId, user.id));
+    });
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Testimonial video uploaded successfully",
+        data: {
+          galleryVideos: updatedVideos,
+        },
+      },
+      OK,
+    );
+  } catch (_err) {
+    console.error("Error uploading testimonial video:", _err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Failed to upload testimonial video",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// DELETE /profile/testimonial - Delete testimonial video (Units only)
+export const deleteTestimonialVideo: AppRouteHandler<
+  DeleteTestimonialVideo
+> = async (c) => {
+  const user = c.get("user");
+
+  try {
+    const { videoUrl } = c.req.valid("query");
+
+    let updatedVideos: string[] = [];
+
+    // Transaction: get URL, update DB
+    await db.transaction(async (tx) => {
+      // Get current videos
+      const unit = await tx.query.units.findFirst({
+        where: eq(units.userId, user.id),
+      });
+      const currentVideos = unit?.galleryVideos || [];
+
+      if (!currentVideos.includes(videoUrl)) {
+        throw new Error("Video not found in gallery");
+      }
+
+      // Remove from array
+      updatedVideos = currentVideos.filter((url) => url !== videoUrl);
+
+      // Update database within transaction
+      await tx
+        .update(units)
+        .set({ galleryVideos: updatedVideos, updatedAt: new Date() })
+        .where(eq(units.userId, user.id));
+    });
+
+    // Fire-and-forget: delete from S3 after successful transaction commit
+    void (async () => {
+      try {
+        await deleteFileFromS3(videoUrl);
+      } catch (err) {
+        console.error(
+          "Error deleting testimonial video from S3 (background):",
+          err,
+        );
+      }
+    })();
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Testimonial video deleted successfully",
+        data: { galleryVideos: updatedVideos },
+      },
+      OK,
+    );
+  } catch (_err) {
+    if ((_err as Error).message === "Video not found in gallery") {
+      return c.json(
+        { status_code: NOT_FOUND, message: "Video not found in gallery" },
+        NOT_FOUND,
+      );
+    }
+    console.error("Error deleting testimonial video:", _err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Failed to delete testimonial video",
       },
       INTERNAL_SERVER_ERROR,
     );

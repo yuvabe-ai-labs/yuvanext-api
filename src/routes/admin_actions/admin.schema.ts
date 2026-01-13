@@ -43,10 +43,15 @@ export const unitIdParamSchema = z.object({
 // 1. Overall Stats Response
 export const overallStatsResponseSchema = z.object({
   totalUnits: z.number(),
+  newUnitsThisMonth: z.string(),
   totalCandidates: z.number(),
+  newCandidatesThisMonth: z.string(),
   totalActiveInternships: z.number(),
+  newInternshipsThisMonth: z.string(),
   totalCourses: z.number(),
+  newCoursesThisMonth: z.string(),
   totalHiredCandidates: z.number(),
+  newHiresThisMonth: z.string(),
   healthPercentage: z.number().default(97),
 });
 
@@ -56,6 +61,8 @@ export const recentCandidateSchema = z.object({
   name: z.string().nullable(),
   type: z.enum(["student", "fresher", "working", "graduate"]).nullable(),
   location: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+  createdAt: z.date(),
 });
 
 // 3. Recent Units Response
@@ -63,6 +70,7 @@ export const recentUnitSchema = z.object({
   userId: z.string(),
   name: z.string().nullable(),
   address: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
 });
 
 // 5. Active Units with Stats Response
@@ -72,6 +80,9 @@ export const activeUnitWithStatsSchema = z.object({
   email: z.string().nullable(),
   totalApplications: z.number(),
   totalActiveInternships: z.number(),
+  avatarUrl: z.string().nullable(),
+  internshipCreatedAt: z.date().nullable(),
+  accountStatus: z.boolean(),
 });
 
 // 6. Recent Applied Candidates Response
@@ -79,7 +90,10 @@ export const recentAppliedCandidateSchema = z.object({
   applicationId: z.string(),
   candidateId: z.string(),
   candidateName: z.string().nullable(),
-  candidateAvatar: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+  skills: z.array(z.string()).nullable(),
+  interests: z.array(z.string()).nullable(),
+  profileSummary: z.string().nullable(),
   internshipTitle: z.string(),
   applicationStatus: z.enum([
     "applied",
@@ -117,6 +131,7 @@ export const hiredCandidateSchema = z.object({
   internshipName: z.string(),
   applicationStatus: z.enum(["hired"]),
   unitAvatarUrl: z.string().nullable(),
+  unitName: z.string().nullable(),
   internshipDuration: z.string().nullable(),
   internshipJobType: z.enum(["part_time", "full_time", "both"]).nullable(),
   applicationId: z.string(),
@@ -146,6 +161,7 @@ export const shortlistedCandidateSchema = z.object({
   applicationStatus: z.enum(["shortlisted"]),
   skills: z.array(z.string()).nullable(),
   interests: z.array(z.string()).nullable(),
+  profileSummary: z.string().nullable(),
 });
 
 // 12. Unit Registration Stats Response
@@ -185,7 +201,7 @@ export const addCompanyResponseSchema = z.object({
 // =====================================================
 
 export const deactivateUnitParamSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
 });
 
 export const deactivateUnitResponseSchema = z.object({
@@ -239,4 +255,45 @@ export const candidateFullResponseSchema = z.object({
   internship: z.array(z.any()).nullable(),
   projects: z.array(z.any()).nullable(),
   socialLinks: z.record(z.string(), z.string()).nullable(),
+});
+
+// get candidate and unit full response schema for admin only id name and created at
+export const candidateAndUnitForAdminSchema = z.object({
+  id: z.string(),
+  name: z.string().nullable(),
+  createdAt: z.date(),
+});
+
+export const internshipForAdminSchema = z.object({
+  internshipId: z.string(),
+  name: z.string(),
+  createdById: z.string(),
+  createdByName: z.string().nullable(),
+  totalApplications: z.number(),
+  duration: z.string().nullable(),
+  createdAt: z.date(),
+  status: z.string(),
+});
+
+// =====================================================
+// INTERNSHIP ADMIN ENDPOINTS SCHEMAS
+// =====================================================
+
+// Query schema for getting all internships
+export const getAllInternshipsQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1).optional(),
+  limit: z.coerce.number().int().positive().max(100).default(10).optional(),
+});
+
+// Response schema for disable/enable internship
+export const disableInternshipResponseSchema = z.object({
+  internshipId: z.string(),
+  status: z.string(),
+  message: z.string(),
+});
+
+export const enableInternshipResponseSchema = z.object({
+  internshipId: z.string(),
+  status: z.string(),
+  message: z.string(),
 });

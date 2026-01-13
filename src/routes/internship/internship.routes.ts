@@ -86,7 +86,7 @@ export const createInternship = createRoute({
   method: "post" as const,
   path: "/internships",
   tags: ["Internships"],
-  middleware: requireRole({ allowedRoles: ["unit"] }),
+  middleware: requireRole({ allowedRoles: ["unit", "admin"] }),
   summary: "Create new internship posting",
   description: "Create a new internship (units only)",
   request: {
@@ -112,7 +112,7 @@ export const getInternshipById = createRoute({
   method: "get" as const,
   path: "/internships/{id}",
   tags: ["Internships"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "admin"] }),
   summary: "Get internship by ID",
   description: "Retrieve detailed information about a specific internship",
   request: {
