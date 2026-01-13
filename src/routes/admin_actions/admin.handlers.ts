@@ -489,14 +489,10 @@ export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
               internships,
               eq(applications.internshipId, internships.id),
             )
-            .where(eq(applications.status, "applied"))
             .orderBy(desc(applications.createdAt))
             .limit(limit)
             .offset(offset),
-          db
-            .select({ count: count() })
-            .from(applications)
-            .where(eq(applications.status, "applied")),
+          db.select({ count: count() }).from(applications),
         ]);
 
         const totalItems = totalCountResult[0]?.count || 0;
