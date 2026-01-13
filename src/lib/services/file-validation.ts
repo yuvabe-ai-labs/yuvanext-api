@@ -23,7 +23,7 @@ export const imageFileSchema = z
       return ALLOWED_IMAGE_TYPES.includes(file.type);
     },
     {
-      message: "Invalid image format. Allowed formats: PNG, JPG, JPEG, WebP",
+      message: "Invalid image format. Allowed formats: PNG, JPG",
     },
   )
   .refine(
@@ -38,7 +38,7 @@ export const imageFileSchema = z
   .openapi({
     type: "string",
     format: "binary",
-    description: "Image file (PNG, JPG, JPEG, WebP) - max 5MB",
+    description: "Image file (PNG, JPG) - max 5MB",
   });
 
 /**
@@ -54,7 +54,7 @@ export const videoFileSchema = z
       return ALLOWED_VIDEO_TYPES.includes(file.type);
     },
     {
-      message: "Invalid video format. Allowed formats: MP4, WebM, MOV",
+      message: "Invalid video format. Allowed formats: MP4",
     },
   )
   .refine(
@@ -69,5 +69,5 @@ export const videoFileSchema = z
   .openapi({
     type: "string",
     format: "binary",
-    description: "Video file (MP4, WebM, MOV) - max 50MB",
+    description: "Video file (MP4) - max 50MB",
   });

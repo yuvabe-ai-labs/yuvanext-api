@@ -17,7 +17,6 @@ import {
   uploadFileToS3,
   deleteFileFromS3,
   cleanupOldFile,
-  type UserRole,
 } from "@/lib/services/s3.service";
 
 import type {
@@ -587,51 +586,57 @@ export const uploadAvatar: AppRouteHandler<UploadAvatar> = async (c) => {
       );
     }
 
-    // Get current avatar to delete
-    let currentAvatarUrl: string | null = null;
-    if (user.role === "candidate") {
-      const candidate = await db.query.candidates.findFirst({
-        where: eq(candidates.userId, user.id),
-      });
-      currentAvatarUrl = candidate?.avatarUrl || null;
-    } else if (user.role === "unit") {
-      const unit = await db.query.units.findFirst({
-        where: eq(units.userId, user.id),
-      });
-      currentAvatarUrl = unit?.avatarUrl || null;
-    }
+    let oldAvatarUrl: string | null = null;
+    let newAvatarUrl: string | null = null;
 
-    // Delete old avatar if exists
-    if (currentAvatarUrl) {
-      await cleanupOldFile(currentAvatarUrl);
-    }
+    // Transaction: get old URL, upload new file, update DB
+    await db.transaction(async (tx) => {
+      // Get current avatar URL
+      if (user.role === "candidate") {
+        const candidate = await tx.query.candidates.findFirst({
+          where: eq(candidates.userId, user.id),
+        });
+        oldAvatarUrl = candidate?.avatarUrl || null;
+      } else if (user.role === "unit") {
+        const unit = await tx.query.units.findFirst({
+          where: eq(units.userId, user.id),
+        });
+        oldAvatarUrl = unit?.avatarUrl || null;
+      }
 
-    // Upload new avatar
-    const avatarUrl = await uploadFileToS3(
-      file,
-      user.id,
-      "avatar",
-      user.role as UserRole,
-    );
+      // Upload new avatar to S3
+      newAvatarUrl = await uploadFileToS3(file, user.id, "avatar");
 
-    // Update database
-    if (user.role === "candidate") {
-      await db
-        .update(candidates)
-        .set({ avatarUrl, updatedAt: new Date() })
-        .where(eq(candidates.userId, user.id));
-    } else if (user.role === "unit") {
-      await db
-        .update(units)
-        .set({ avatarUrl, updatedAt: new Date() })
-        .where(eq(units.userId, user.id));
+      // Update database within transaction
+      if (user.role === "candidate") {
+        await tx
+          .update(candidates)
+          .set({ avatarUrl: newAvatarUrl, updatedAt: new Date() })
+          .where(eq(candidates.userId, user.id));
+      } else if (user.role === "unit") {
+        await tx
+          .update(units)
+          .set({ avatarUrl: newAvatarUrl, updatedAt: new Date() })
+          .where(eq(units.userId, user.id));
+      }
+    });
+
+    // Fire-and-forget: delete old file after successful transaction commit
+    if (oldAvatarUrl) {
+      void (async () => {
+        try {
+          await cleanupOldFile(oldAvatarUrl);
+        } catch (err) {
+          console.error("Error cleaning up old avatar (background):", err);
+        }
+      })();
     }
 
     return c.json(
       {
         status_code: OK,
         message: "Avatar uploaded successfully",
-        data: { avatarUrl },
+        data: { avatarUrl: newAvatarUrl },
       },
       OK,
     );
@@ -652,41 +657,50 @@ export const deleteAvatar: AppRouteHandler<DeleteAvatar> = async (c) => {
   const user = c.get("user");
 
   try {
-    // Get current avatar
-    let currentAvatarUrl: string | null = null;
-    if (user.role === "candidate") {
-      const candidate = await db.query.candidates.findFirst({
-        where: eq(candidates.userId, user.id),
-      });
-      currentAvatarUrl = candidate?.avatarUrl || null;
-    } else if (user.role === "unit") {
-      const unit = await db.query.units.findFirst({
-        where: eq(units.userId, user.id),
-      });
-      currentAvatarUrl = unit?.avatarUrl || null;
-    }
+    let avatarUrlToDelete: string | null = null;
 
-    if (!currentAvatarUrl) {
-      return c.json(
-        { status_code: NOT_FOUND, message: "No avatar found" },
-        NOT_FOUND,
-      );
-    }
+    // Transaction: get URL and update DB
+    await db.transaction(async (tx) => {
+      // Get current avatar URL
+      if (user.role === "candidate") {
+        const candidate = await tx.query.candidates.findFirst({
+          where: eq(candidates.userId, user.id),
+        });
+        avatarUrlToDelete = candidate?.avatarUrl || null;
+      } else if (user.role === "unit") {
+        const unit = await tx.query.units.findFirst({
+          where: eq(units.userId, user.id),
+        });
+        avatarUrlToDelete = unit?.avatarUrl || null;
+      }
 
-    // Delete from S3
-    await deleteFileFromS3(currentAvatarUrl);
+      if (!avatarUrlToDelete) {
+        throw new Error("No avatar found");
+      }
 
-    // Update database
-    if (user.role === "candidate") {
-      await db
-        .update(candidates)
-        .set({ avatarUrl: null, updatedAt: new Date() })
-        .where(eq(candidates.userId, user.id));
-    } else if (user.role === "unit") {
-      await db
-        .update(units)
-        .set({ avatarUrl: null, updatedAt: new Date() })
-        .where(eq(units.userId, user.id));
+      // Update database within transaction
+      if (user.role === "candidate") {
+        await tx
+          .update(candidates)
+          .set({ avatarUrl: null, updatedAt: new Date() })
+          .where(eq(candidates.userId, user.id));
+      } else if (user.role === "unit") {
+        await tx
+          .update(units)
+          .set({ avatarUrl: null, updatedAt: new Date() })
+          .where(eq(units.userId, user.id));
+      }
+    });
+
+    // Fire-and-forget: delete from S3 after successful transaction commit
+    if (avatarUrlToDelete) {
+      void (async () => {
+        try {
+          await deleteFileFromS3(avatarUrlToDelete);
+        } catch (err) {
+          console.error("Error deleting avatar from S3 (background):", err);
+        }
+      })();
     }
 
     return c.json(
@@ -697,6 +711,12 @@ export const deleteAvatar: AppRouteHandler<DeleteAvatar> = async (c) => {
       OK,
     );
   } catch (_err) {
+    if ((_err as Error).message === "No avatar found") {
+      return c.json(
+        { status_code: NOT_FOUND, message: "No avatar found" },
+        NOT_FOUND,
+      );
+    }
     console.error("Error deleting avatar:", _err);
     return c.json(
       {
@@ -722,31 +742,43 @@ export const uploadBanner: AppRouteHandler<UploadBanner> = async (c) => {
       );
     }
 
-    // Get current banner
-    const unit = await db.query.units.findFirst({
-      where: eq(units.userId, user.id),
+    let oldBannerUrl: string | null = null;
+    let newBannerUrl: string | null = null;
+
+    // Transaction: get old URL, upload new file, update DB
+    await db.transaction(async (tx) => {
+      // Get current banner URL
+      const unit = await tx.query.units.findFirst({
+        where: eq(units.userId, user.id),
+      });
+      oldBannerUrl = unit?.bannerUrl || null;
+
+      // Upload new banner to S3
+      newBannerUrl = await uploadFileToS3(file, user.id, "banner", "unit");
+
+      // Update database within transaction
+      await tx
+        .update(units)
+        .set({ bannerUrl: newBannerUrl, updatedAt: new Date() })
+        .where(eq(units.userId, user.id));
     });
-    const currentBannerUrl = unit?.bannerUrl || null;
 
-    // Delete old banner if exists
-    if (currentBannerUrl) {
-      await cleanupOldFile(currentBannerUrl);
+    // Fire-and-forget: delete old file after successful transaction commit
+    if (oldBannerUrl) {
+      void (async () => {
+        try {
+          await cleanupOldFile(oldBannerUrl);
+        } catch (err) {
+          console.error("Error cleaning up old banner (background):", err);
+        }
+      })();
     }
-
-    // Upload new banner
-    const bannerUrl = await uploadFileToS3(file, user.id, "banner", "unit");
-
-    // Update database
-    await db
-      .update(units)
-      .set({ bannerUrl, updatedAt: new Date() })
-      .where(eq(units.userId, user.id));
 
     return c.json(
       {
         status_code: OK,
         message: "Banner uploaded successfully",
-        data: { bannerUrl },
+        data: { bannerUrl: newBannerUrl },
       },
       OK,
     );
@@ -767,26 +799,37 @@ export const deleteBanner: AppRouteHandler<DeleteBanner> = async (c) => {
   const user = c.get("user");
 
   try {
-    const unit = await db.query.units.findFirst({
-      where: eq(units.userId, user.id),
+    let bannerUrlToDelete: string | null = null;
+
+    // Transaction: get URL and update DB
+    await db.transaction(async (tx) => {
+      // Get current banner URL
+      const unit = await tx.query.units.findFirst({
+        where: eq(units.userId, user.id),
+      });
+      bannerUrlToDelete = unit?.bannerUrl || null;
+
+      if (!bannerUrlToDelete) {
+        throw new Error("No banner found");
+      }
+
+      // Update database within transaction
+      await tx
+        .update(units)
+        .set({ bannerUrl: null, updatedAt: new Date() })
+        .where(eq(units.userId, user.id));
     });
-    const currentBannerUrl = unit?.bannerUrl || null;
 
-    if (!currentBannerUrl) {
-      return c.json(
-        { status_code: NOT_FOUND, message: "No banner found" },
-        NOT_FOUND,
-      );
+    // Fire-and-forget: delete from S3 after successful transaction commit
+    if (bannerUrlToDelete) {
+      void (async () => {
+        try {
+          await deleteFileFromS3(bannerUrlToDelete);
+        } catch (err) {
+          console.error("Error deleting banner from S3 (background):", err);
+        }
+      })();
     }
-
-    // Delete from S3
-    await deleteFileFromS3(currentBannerUrl);
-
-    // Update database
-    await db
-      .update(units)
-      .set({ bannerUrl: null, updatedAt: new Date() })
-      .where(eq(units.userId, user.id));
 
     return c.json(
       {
@@ -796,6 +839,12 @@ export const deleteBanner: AppRouteHandler<DeleteBanner> = async (c) => {
       OK,
     );
   } catch (_err) {
+    if ((_err as Error).message === "No banner found") {
+      return c.json(
+        { status_code: NOT_FOUND, message: "No banner found" },
+        NOT_FOUND,
+      );
+    }
     console.error("Error deleting banner:", _err);
     return c.json(
       {
@@ -823,35 +872,39 @@ export const uploadGalleryImage: AppRouteHandler<UploadGalleryImage> = async (
       );
     }
 
-    // Upload to S3
-    const galleryImageUrl = await uploadFileToS3(
-      file,
-      user.id,
-      "gallery",
-      "unit",
-    );
+    let updatedGalleryImages: string[] = [];
 
-    // Get current gallery images
-    const unit = await db.query.units.findFirst({
-      where: eq(units.userId, user.id),
+    // Transaction: upload file, update DB
+    await db.transaction(async (tx) => {
+      // Upload to S3
+      const galleryImageUrl = await uploadFileToS3(
+        file,
+        user.id,
+        "gallery",
+        "unit",
+      );
+
+      // Get current gallery images
+      const unit = await tx.query.units.findFirst({
+        where: eq(units.userId, user.id),
+      });
+      const currentGalleryImages = unit?.galleryImages || [];
+
+      // Add new image to array
+      updatedGalleryImages = [...currentGalleryImages, galleryImageUrl];
+
+      // Update database within transaction
+      await tx
+        .update(units)
+        .set({ galleryImages: updatedGalleryImages, updatedAt: new Date() })
+        .where(eq(units.userId, user.id));
     });
-    const currentGalleryImages = unit?.galleryImages || [];
-
-    // Add new image to array
-    const updatedGalleryImages = [...currentGalleryImages, galleryImageUrl];
-
-    // Update database
-    await db
-      .update(units)
-      .set({ galleryImages: updatedGalleryImages, updatedAt: new Date() })
-      .where(eq(units.userId, user.id));
 
     return c.json(
       {
         status_code: OK,
         message: "Gallery image uploaded successfully",
         data: {
-          galleryImageUrl,
           galleryImages: updatedGalleryImages,
         },
       },
@@ -878,32 +931,43 @@ export const deleteGalleryImage: AppRouteHandler<DeleteGalleryImage> = async (
   try {
     const { imageUrl } = c.req.valid("query");
 
-    // Get current gallery images
-    const unit = await db.query.units.findFirst({
-      where: eq(units.userId, user.id),
-    });
-    const currentGalleryImages = unit?.galleryImages || [];
+    let updatedGalleryImages: string[] = [];
 
-    if (!currentGalleryImages.includes(imageUrl)) {
-      return c.json(
-        { status_code: NOT_FOUND, message: "Image not found in gallery" },
-        NOT_FOUND,
+    // Transaction: get URL, update DB
+    await db.transaction(async (tx) => {
+      // Get current gallery images
+      const unit = await tx.query.units.findFirst({
+        where: eq(units.userId, user.id),
+      });
+      const currentGalleryImages = unit?.galleryImages || [];
+
+      if (!currentGalleryImages.includes(imageUrl)) {
+        throw new Error("Image not found in gallery");
+      }
+
+      // Remove from array
+      updatedGalleryImages = currentGalleryImages.filter(
+        (url) => url !== imageUrl,
       );
-    }
 
-    // Delete from S3
-    await deleteFileFromS3(imageUrl);
+      // Update database within transaction
+      await tx
+        .update(units)
+        .set({ galleryImages: updatedGalleryImages, updatedAt: new Date() })
+        .where(eq(units.userId, user.id));
+    });
 
-    // Remove from array
-    const updatedGalleryImages = currentGalleryImages.filter(
-      (url) => url !== imageUrl,
-    );
-
-    // Update database
-    await db
-      .update(units)
-      .set({ galleryImages: updatedGalleryImages, updatedAt: new Date() })
-      .where(eq(units.userId, user.id));
+    // Fire-and-forget: delete from S3 after successful transaction commit
+    void (async () => {
+      try {
+        await deleteFileFromS3(imageUrl);
+      } catch (err) {
+        console.error(
+          "Error deleting gallery image from S3 (background):",
+          err,
+        );
+      }
+    })();
 
     return c.json(
       {
@@ -914,6 +978,12 @@ export const deleteGalleryImage: AppRouteHandler<DeleteGalleryImage> = async (
       OK,
     );
   } catch (_err) {
+    if ((_err as Error).message === "Image not found in gallery") {
+      return c.json(
+        { status_code: NOT_FOUND, message: "Image not found in gallery" },
+        NOT_FOUND,
+      );
+    }
     console.error("Error deleting gallery image:", _err);
     return c.json(
       {
@@ -941,35 +1011,39 @@ export const uploadTestimonialVideo: AppRouteHandler<
       );
     }
 
-    // Upload to S3
-    const videoUrl = await uploadFileToS3(
-      file,
-      user.id,
-      "testimonial-videos",
-      "unit",
-    );
+    let updatedVideos: string[] = [];
 
-    // Get current videos
-    const unit = await db.query.units.findFirst({
-      where: eq(units.userId, user.id),
+    // Transaction: upload file, update DB
+    await db.transaction(async (tx) => {
+      // Upload to S3
+      const videoUrl = await uploadFileToS3(
+        file,
+        user.id,
+        "testimonial-videos",
+        "unit",
+      );
+
+      // Get current videos
+      const unit = await tx.query.units.findFirst({
+        where: eq(units.userId, user.id),
+      });
+      const currentVideos = unit?.galleryVideos || [];
+
+      // Add new video to array
+      updatedVideos = [...currentVideos, videoUrl];
+
+      // Update database within transaction
+      await tx
+        .update(units)
+        .set({ galleryVideos: updatedVideos, updatedAt: new Date() })
+        .where(eq(units.userId, user.id));
     });
-    const currentVideos = unit?.galleryVideos || [];
-
-    // Add new video to array
-    const updatedVideos = [...currentVideos, videoUrl];
-
-    // Update database
-    await db
-      .update(units)
-      .set({ galleryVideos: updatedVideos, updatedAt: new Date() })
-      .where(eq(units.userId, user.id));
 
     return c.json(
       {
         status_code: OK,
         message: "Testimonial video uploaded successfully",
         data: {
-          videoUrl,
           galleryVideos: updatedVideos,
         },
       },
@@ -996,30 +1070,41 @@ export const deleteTestimonialVideo: AppRouteHandler<
   try {
     const { videoUrl } = c.req.valid("query");
 
-    // Get current videos
-    const unit = await db.query.units.findFirst({
-      where: eq(units.userId, user.id),
+    let updatedVideos: string[] = [];
+
+    // Transaction: get URL, update DB
+    await db.transaction(async (tx) => {
+      // Get current videos
+      const unit = await tx.query.units.findFirst({
+        where: eq(units.userId, user.id),
+      });
+      const currentVideos = unit?.galleryVideos || [];
+
+      if (!currentVideos.includes(videoUrl)) {
+        throw new Error("Video not found in gallery");
+      }
+
+      // Remove from array
+      updatedVideos = currentVideos.filter((url) => url !== videoUrl);
+
+      // Update database within transaction
+      await tx
+        .update(units)
+        .set({ galleryVideos: updatedVideos, updatedAt: new Date() })
+        .where(eq(units.userId, user.id));
     });
-    const currentVideos = unit?.galleryVideos || [];
 
-    if (!currentVideos.includes(videoUrl)) {
-      return c.json(
-        { status_code: NOT_FOUND, message: "Video not found in gallery" },
-        NOT_FOUND,
-      );
-    }
-
-    // Delete from S3
-    await deleteFileFromS3(videoUrl);
-
-    // Remove from array
-    const updatedVideos = currentVideos.filter((url) => url !== videoUrl);
-
-    // Update database
-    await db
-      .update(units)
-      .set({ galleryVideos: updatedVideos, updatedAt: new Date() })
-      .where(eq(units.userId, user.id));
+    // Fire-and-forget: delete from S3 after successful transaction commit
+    void (async () => {
+      try {
+        await deleteFileFromS3(videoUrl);
+      } catch (err) {
+        console.error(
+          "Error deleting testimonial video from S3 (background):",
+          err,
+        );
+      }
+    })();
 
     return c.json(
       {
@@ -1030,6 +1115,12 @@ export const deleteTestimonialVideo: AppRouteHandler<
       OK,
     );
   } catch (_err) {
+    if ((_err as Error).message === "Video not found in gallery") {
+      return c.json(
+        { status_code: NOT_FOUND, message: "Video not found in gallery" },
+        NOT_FOUND,
+      );
+    }
     console.error("Error deleting testimonial video:", _err);
     return c.json(
       {

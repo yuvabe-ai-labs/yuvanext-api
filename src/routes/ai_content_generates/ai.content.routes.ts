@@ -25,7 +25,7 @@ export const generateInternshipContent = createRoute({
   method: "post" as const,
   path: "/unit/ai/generate-content",
   tags: ["AI Content Generation"],
-  middleware: requireRole({ allowedRoles: ["unit"] }),
+  middleware: requireRole({ allowedRoles: ["unit", "admin"] }),
   summary: "Generate internship content using AI",
   description:
     "Generate compelling content for internship postings including about section, key responsibilities, benefits, and required skills based on the internship title",

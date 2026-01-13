@@ -19,8 +19,19 @@ router
   .openapi(routes.getUnits, handlers.getUnits)
   .openapi(routes.addCompany, handlers.addCompany)
   .openapi(routes.deactivateUnit, handlers.deactivateUnit)
+  .openapi(routes.activateUnit, handlers.activateUnit)
+
+  // get the all candidates and unit data for admin
+  .openapi(routes.getAllCandidatesAndUnits, handlers.getAllCandidatesAndUnits)
 
   // Application endpoints
-  .openapi(routes.getApplications, handlers.getApplications);
+  .openapi(routes.getApplications, handlers.getApplications)
+
+  // disable the created internship by admin
+  .openapi(routes.disableInternship, handlers.disableInternship)
+  .openapi(routes.enableInternship, handlers.enableInternship)
+
+  // get all internships with pagination
+  .openapi(routes.getAllInternships, handlers.getAllInternships);
 
 export default router;

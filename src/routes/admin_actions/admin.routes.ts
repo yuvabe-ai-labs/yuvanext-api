@@ -36,6 +36,11 @@ import {
   addCompanyResponseSchema,
   deactivateUnitParamSchema,
   deactivateUnitResponseSchema,
+  candidateAndUnitForAdminSchema,
+  internshipForAdminSchema,
+  getAllInternshipsQuerySchema,
+  disableInternshipResponseSchema,
+  enableInternshipResponseSchema,
 } from "./admin.schema";
 
 // 1. GET /admin/stats/overview - Overall Statistics
@@ -213,6 +218,103 @@ export const deactivateUnit = createRoute({
   },
 });
 
+export const activateUnit = createRoute({
+  method: "patch" as const,
+  path: "/admin/units/{id}/activate",
+  tags: ["Admin"],
+  middleware: requireRole({ allowedRoles: ["admin"] }),
+  summary: "Activate a unit",
+  description: "Admin can activate a deactivated unit account",
+  request: {
+    params: deactivateUnitParamSchema,
+  },
+  responses: {
+    [OK]: createResponse(OK, deactivateUnitResponseSchema),
+    ...restrictedErrorResponses,
+    [BAD_REQUEST]: createResponse(BAD_REQUEST),
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
+  },
+});
+
+export const getAllCandidatesAndUnits = createRoute({
+  method: "get" as const,
+  path: "/admin/all",
+  tags: ["Admin"],
+  middleware: requireRole({ allowedRoles: ["admin"] }),
+  summary: "Get all candidates and units data for admin",
+  description:
+    "Retrieve all candidates and units data for administrative purposes",
+  responses: {
+    [OK]: createResponse(OK, candidateAndUnitForAdminSchema),
+    ...restrictedErrorResponses,
+  },
+});
+
+// 16. PATCH /admin/internships/:id/disable - Disable Internship by Admin
+export const disableInternship = createRoute({
+  method: "patch" as const,
+  path: "/admin/internships/{id}/disable",
+  tags: ["Admin"],
+  middleware: requireRole({ allowedRoles: ["admin"] }),
+  summary: "Disable an internship",
+  description: "Admin can disable/close an internship posting",
+  request: {
+    params: z.object({
+      id: z.string().uuid("Invalid internship ID"),
+    }),
+  },
+  responses: {
+    [OK]: createResponse(OK, disableInternshipResponseSchema),
+    ...restrictedErrorResponses,
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
+  },
+});
+
+// 17. PATCH /admin/internships/:id/enable - Enable Internship by Admin
+export const enableInternship = createRoute({
+  method: "patch" as const,
+  path: "/admin/internships/{id}/enable",
+  tags: ["Admin"],
+  middleware: requireRole({ allowedRoles: ["admin"] }),
+  summary: "Enable an internship",
+  description: "Admin can enable/reactivate a disabled internship posting",
+  request: {
+    params: z.object({
+      id: z.string().uuid("Invalid internship ID"),
+    }),
+  },
+  responses: {
+    [OK]: createResponse(OK, enableInternshipResponseSchema),
+    ...restrictedErrorResponses,
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
+  },
+});
+
+// 18. GET /admin/internships - Get All Internships with Pagination
+export const getAllInternships = createRoute({
+  method: "get" as const,
+  path: "/admin/internships",
+  tags: ["Admin"],
+  middleware: requireRole({ allowedRoles: ["admin"] }),
+  summary: "Get all internships with pagination",
+  description:
+    "Retrieve all internships with pagination, sorted by creation date",
+  request: {
+    query: getAllInternshipsQuerySchema,
+  },
+  responses: {
+    [OK]: createResponse(
+      OK,
+      createPaginatedResponseSchema(internshipForAdminSchema),
+    ),
+    ...restrictedErrorResponses,
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
+  },
+});
+
 export type GetOverallStats = typeof getOverallStats;
 export type GetCandidates = typeof getCandidates;
 export type GetCandidateById = typeof getCandidateById;
@@ -221,3 +323,8 @@ export type GetApplications = typeof getApplications;
 export type GetUnitStats = typeof getUnitStats;
 export type AddCompany = typeof addCompany;
 export type DeactivateUnit = typeof deactivateUnit;
+export type ActivateUnit = typeof activateUnit;
+export type GetAllCandidatesAndUnits = typeof getAllCandidatesAndUnits;
+export type DisableInternship = typeof disableInternship;
+export type EnableInternship = typeof enableInternship;
+export type GetAllInternships = typeof getAllInternships;

@@ -44,7 +44,6 @@ export function generateS3Key(
   userId: string,
   fileType: SourceName,
   fileName: string,
-  role: UserRole,
 ): string {
   // Generate unique filename to avoid collisions
   const timestamp = Date.now();
@@ -57,28 +56,12 @@ export function generateS3Key(
     case "avatar":
       return `${userId}/avatar/${uniqueFileName}`;
     case "banner":
-      // Only for units
-      if (role !== "unit") {
-        throw new Error("Banner images are only available for units");
-      }
       return `${userId}/banner/${uniqueFileName}`;
     case "gallery":
-      // Only for units
-      if (role !== "unit") {
-        throw new Error("Gallery images are only available for units");
-      }
       return `${userId}/gallery/${uniqueFileName}`;
     case "testimonial-videos":
-      // Only for units
-      if (role !== "unit") {
-        throw new Error("Testimonial videos are only available for units");
-      }
       return `${userId}/testimonial-videos/${uniqueFileName}`;
     case "profile-image":
-      // For candidates
-      if (role !== "candidate") {
-        throw new Error("Profile images are only available for candidates");
-      }
       return `${userId}/profile/${uniqueFileName}`;
     default:
       throw new Error(`Invalid file type: ${fileType}`);
@@ -92,7 +75,6 @@ export async function uploadFileToS3(
   file: File | Buffer,
   userId: string,
   fileType: SourceName,
-  role: UserRole,
   fileName?: string,
 ): Promise<string> {
   try {
@@ -116,7 +98,7 @@ export async function uploadFileToS3(
     }
 
     // Generate S3 key
-    const key = generateS3Key(userId, fileType, originalFileName, role);
+    const key = generateS3Key(userId, fileType, originalFileName);
 
     // Upload to S3
     const command = new PutObjectCommand({
@@ -228,12 +210,11 @@ export async function generatePresignedUploadUrl(
   userId: string,
   fileType: SourceName,
   fileName: string,
-  role: UserRole,
   expiresIn: number = 3600,
 ): Promise<{ url: string; key: string }> {
   try {
     const bucket = getBucketName();
-    const key = generateS3Key(userId, fileType, fileName, role);
+    const key = generateS3Key(userId, fileType, fileName);
 
     const command = new PutObjectCommand({
       Bucket: bucket,

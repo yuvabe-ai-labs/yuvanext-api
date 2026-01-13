@@ -64,7 +64,7 @@ export const updateProfile = createRoute({
  */
 export const uploadAvatar = createRoute({
   method: "post" as const,
-  path: "/profile/upload-avatar",
+  path: "/profile/avatar",
   tags: ["Profile", "File Upload"],
   middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
   summary: "Upload avatar image",
@@ -76,7 +76,7 @@ export const uploadAvatar = createRoute({
         "multipart/form-data": {
           schema: z.object({
             file: imageFileSchema.describe(
-              "Avatar image file (PNG, JPG, JPEG, WebP, max 5MB)",
+              "Avatar image file (PNG, JPG, max 5MB)",
             ),
           }),
         },
@@ -116,7 +116,7 @@ export const deleteAvatar = createRoute({
  */
 export const uploadBanner = createRoute({
   method: "post" as const,
-  path: "/profile/upload-banner",
+  path: "/profile/banner",
   tags: ["Profile", "File Upload"],
   middleware: requireRole({ allowedRoles: ["unit"] }),
   summary: "Upload banner image (Units only)",
@@ -128,7 +128,7 @@ export const uploadBanner = createRoute({
         "multipart/form-data": {
           schema: z.object({
             file: imageFileSchema.describe(
-              "Banner image file (PNG, JPG, JPEG, WebP, max 5MB)",
+              "Banner image file (PNG, JPG max 50MB)",
             ),
           }),
         },
@@ -168,7 +168,7 @@ export const deleteBanner = createRoute({
  */
 export const uploadGalleryImage = createRoute({
   method: "post" as const,
-  path: "/profile/upload-gallery",
+  path: "/profile/gallery",
   tags: ["Profile", "File Upload"],
   middleware: requireRole({ allowedRoles: ["unit"] }),
   summary: "Upload gallery image (Units only)",
@@ -230,7 +230,7 @@ export const deleteGalleryImage = createRoute({
  */
 export const uploadTestimonialVideo = createRoute({
   method: "post" as const,
-  path: "/profile/upload-testimonial",
+  path: "/profile/testimonial",
   tags: ["Profile", "File Upload"],
   middleware: requireRole({ allowedRoles: ["unit"] }),
   summary: "Upload testimonial video (Units only)",

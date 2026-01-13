@@ -29,27 +29,66 @@ import type {
   GetUnitStats,
   AddCompany,
   DeactivateUnit,
+  ActivateUnit,
+  GetAllCandidatesAndUnits,
+  DisableInternship,
+  EnableInternship,
+  GetAllInternships,
 } from "./admin.routes";
 
 // 1. GET /admin/stats/overview - Overall Statistics
 export const getOverallStats: AppRouteHandler<GetOverallStats> = async (c) => {
   try {
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
     const [
-      totalUnitsResult,
-      totalCandidatesResult,
-      totalActiveInternshipsResult,
-      totalCoursesResult,
-      totalHiredCandidatesResult,
+      unitsResult,
+      candidatesResult,
+      internshipsResult,
+      coursesResult,
+      hiredCandidatesResult,
     ] = await Promise.all([
-      db.select({ count: count() }).from(units),
-      db.select({ count: count() }).from(candidates),
+      // Total units and new units this month
       db
-        .select({ count: count() })
+        .select({
+          total: count(),
+          thisMonth: sql<number>`COUNT(*) FILTER (WHERE ${units.createdAt} >= ${startOfMonth})`,
+        })
+        .from(units),
+
+      // Total candidates and new candidates this month
+      db
+        .select({
+          total: count(),
+          thisMonth: sql<number>`COUNT(*) FILTER (WHERE ${candidates.createdAt} >= ${startOfMonth})`,
+        })
+        .from(candidates),
+
+      // Total active internships and new active internships this month
+      db
+        .select({
+          total: count(),
+          thisMonth: sql<number>`COUNT(*) FILTER (WHERE ${internships.createdAt} >= ${startOfMonth})`,
+        })
         .from(internships)
         .where(eq(internships.status, "active")),
-      db.select({ count: count() }).from(courses),
+
+      // Total courses and new courses this month
       db
-        .select({ count: count() })
+        .select({
+          total: count(),
+          thisMonth: sql<number>`COUNT(*) FILTER (WHERE ${courses.createdAt} >= ${startOfMonth})`,
+        })
+        .from(courses),
+
+      // Total hired candidates and new hires this month
+      db
+        .select({
+          total: count(),
+          thisMonth: sql<number>`COUNT(*) FILTER (WHERE ${applications.updatedAt} >= ${startOfMonth})`,
+        })
         .from(applications)
         .where(eq(applications.status, "hired")),
     ]);
@@ -59,11 +98,16 @@ export const getOverallStats: AppRouteHandler<GetOverallStats> = async (c) => {
         status_code: OK,
         message: "Overall statistics retrieved successfully",
         data: {
-          totalUnits: totalUnitsResult[0]?.count || 0,
-          totalCandidates: totalCandidatesResult[0]?.count || 0,
-          totalActiveInternships: totalActiveInternshipsResult[0]?.count || 0,
-          totalCourses: totalCoursesResult[0]?.count || 0,
-          totalHiredCandidates: totalHiredCandidatesResult[0]?.count || 0,
+          totalUnits: unitsResult[0]?.total || 0,
+          newUnitsThisMonth: unitsResult[0]?.thisMonth || 0,
+          totalCandidates: candidatesResult[0]?.total || 0,
+          newCandidatesThisMonth: candidatesResult[0]?.thisMonth || 0,
+          totalActiveInternships: internshipsResult[0]?.total || 0,
+          newInternshipsThisMonth: internshipsResult[0]?.thisMonth || 0,
+          totalCourses: coursesResult[0]?.total || 0,
+          newCoursesThisMonth: coursesResult[0]?.thisMonth || 0,
+          totalHiredCandidates: hiredCandidatesResult[0]?.total || 0,
+          newHiresThisMonth: hiredCandidatesResult[0]?.thisMonth || 0,
           healthPercentage: 97,
         },
       },
@@ -261,6 +305,91 @@ export const deactivateUnit: AppRouteHandler<DeactivateUnit> = async (c) => {
     );
   }
 };
+//15. PATCH /admin/units/:id/activate - Activate Unit by Admin
+export const activateUnit: AppRouteHandler<ActivateUnit> = async (c) => {
+  const { id } = c.req.valid("param");
+
+  try {
+    // Check if unit exists
+    const existingUnit = await db
+      .select({ userId: units.userId })
+      .from(units)
+      .where(eq(units.userId, id))
+      .limit(1);
+
+    if (existingUnit.length === 0) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Unit not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    // Check if user exists
+    const existingUser = await db
+      .select({
+        id: userTable.id,
+        role: userTable.role,
+        accountDisabled: userTable.accountDisabled,
+      })
+      .from(userTable)
+      .where(eq(userTable.id, id))
+      .limit(1);
+
+    if (existingUser.length === 0) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "User not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    if (existingUser[0].role !== "unit") {
+      return c.json(
+        {
+          status_code: BAD_REQUEST,
+          message: "User is not a unit account",
+        },
+        BAD_REQUEST,
+      );
+    }
+
+    // Deactivate the user account
+    await db
+      .update(userTable)
+      .set({
+        accountDisabled: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(userTable.id, id));
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Unit activated successfully",
+        data: {
+          userId: id,
+          accountDisabled: false,
+          message: "Unit account has been activated",
+        },
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error activating unit:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
 
 // 2-3. GET /admin/candidates - Get Candidates with Filters
 export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
@@ -374,14 +503,12 @@ export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
           {
             status_code: OK,
             message: "Applied candidates retrieved successfully",
-            data: {
-              data: appliedCandidates,
-              pagination: {
-                currentPage: page,
-                totalPages,
-                totalItems,
-                itemsPerPage: limit,
-              },
+            data: appliedCandidates,
+            pagination: {
+              currentPage: page,
+              totalPages,
+              totalItems,
+              itemsPerPage: limit,
             },
           },
           OK,
@@ -435,14 +562,12 @@ export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
           {
             status_code: OK,
             message: "Hired candidates retrieved successfully",
-            data: {
-              data: hiredCandidates,
-              pagination: {
-                currentPage: page,
-                totalPages,
-                totalItems,
-                itemsPerPage: limit,
-              },
+            data: hiredCandidates,
+            pagination: {
+              currentPage: page,
+              totalPages,
+              totalItems,
+              itemsPerPage: limit,
             },
           },
           OK,
@@ -489,14 +614,12 @@ export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
           {
             status_code: OK,
             message: "Shortlisted candidates retrieved successfully",
-            data: {
-              data: shortlistedCandidates,
-              pagination: {
-                currentPage: page,
-                totalPages,
-                totalItems,
-                itemsPerPage: limit,
-              },
+            data: shortlistedCandidates,
+            pagination: {
+              currentPage: page,
+              totalPages,
+              totalItems,
+              itemsPerPage: limit,
             },
           },
           OK,
@@ -524,15 +647,21 @@ export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
   }
 };
 
-// GET /admin/candidates/:id - Get Candidate Details by ID
+// GET /admin/candidates/:applicationId - Get Candidate Details by Application ID
 export const getCandidateById: AppRouteHandler<GetCandidateById> = async (
   c,
 ) => {
-  const { id } = c.req.valid("param");
+  const { id: applicationId } = c.req.valid("param");
 
   try {
     const candidateData = await db
       .select({
+        applicationId: applications.id,
+        applicationStatus: applications.status,
+        applicationCreatedAt: applications.createdAt,
+        applicationUpdatedAt: applications.updatedAt,
+        internshipName: internships.title,
+        internshipId: internships.id,
         userId: candidates.userId,
         email: userTable.email,
         name: userTable.name,
@@ -560,14 +689,19 @@ export const getCandidateById: AppRouteHandler<GetCandidateById> = async (
         projects: candidates.projects,
         socialLinks: candidates.socialLinks,
       })
-      .from(candidates)
+      .from(applications)
+      .innerJoin(candidates, eq(applications.userId, candidates.userId))
       .leftJoin(userTable, eq(candidates.userId, userTable.id))
-      .where(eq(candidates.userId, id))
+      .innerJoin(internships, eq(applications.internshipId, internships.id))
+      .where(eq(applications.id, applicationId))
       .limit(1);
 
     if (!candidateData || candidateData.length === 0) {
       return c.json(
-        { status_code: NOT_FOUND, message: "Candidate not found" },
+        {
+          status_code: NOT_FOUND,
+          message: "Candidate or application not found",
+        },
         NOT_FOUND,
       );
     }
@@ -594,7 +728,7 @@ export const getCandidateById: AppRouteHandler<GetCandidateById> = async (
 
 // 4-5-7. GET /admin/units - Get Units with Filters
 export const getUnits: AppRouteHandler<GetUnits> = async (c) => {
-  const { filter = "active", page = 1, limit = 10 } = c.req.valid("query");
+  const { filter = "all", page = 1, limit = 10 } = c.req.valid("query");
 
   try {
     switch (filter) {
@@ -621,7 +755,7 @@ export const getUnits: AppRouteHandler<GetUnits> = async (c) => {
         );
       }
 
-      case "active": {
+      case "all": {
         // Get active units with stats (paginated or limited to 10)
         const offset = page > 1 ? (page - 1) * limit : 0;
         const actualLimit = page > 1 ? limit : 10;
@@ -633,6 +767,7 @@ export const getUnits: AppRouteHandler<GetUnits> = async (c) => {
               name: units.name,
               email: userTable.email,
               avatarUrl: units.avatarUrl,
+              accountStatus: userTable.accountDisabled,
               totalApplications: sql<number>`COUNT(DISTINCT ${applications.id})`,
               totalActiveInternships: sql<number>`COUNT(DISTINCT CASE WHEN ${internships.status} = 'active' THEN ${internships.id} END)`,
               internshipCreatedAt: sql<Date>`MAX(${internships.createdAt})`,
@@ -660,26 +795,33 @@ export const getUnits: AppRouteHandler<GetUnits> = async (c) => {
             {
               status_code: OK,
               message: "Active units retrieved successfully",
-              data: {
-                data: activeUnits,
-                pagination: {
-                  currentPage: page,
-                  totalPages,
-                  totalItems,
-                  itemsPerPage: limit,
-                },
+              data: activeUnits,
+              pagination: {
+                currentPage: page,
+                totalPages,
+                totalItems,
+                itemsPerPage: limit,
               },
             },
             OK,
           );
         }
 
-        // Otherwise return simple array of 10
+        // Otherwise return simple array of 10 with pagination
+        const totalItems = totalCountResult[0]?.count || 0;
+        const totalPages = Math.ceil(totalItems / 10);
+
         return c.json(
           {
             status_code: OK,
             message: "Active units retrieved successfully",
             data: activeUnits,
+            pagination: {
+              currentPage: 1,
+              totalPages,
+              totalItems,
+              itemsPerPage: 10,
+            },
           },
           OK,
         );
@@ -789,14 +931,12 @@ export const getApplications: AppRouteHandler<GetApplications> = async (c) => {
           {
             status_code: OK,
             message: "Interview scheduled candidates retrieved successfully",
-            data: {
-              data: interviewData,
-              pagination: {
-                currentPage: page,
-                totalPages,
-                totalItems,
-                itemsPerPage: limit,
-              },
+            data: interviewData,
+            pagination: {
+              currentPage: page,
+              totalPages,
+              totalItems,
+              itemsPerPage: limit,
             },
           },
           OK,
@@ -861,6 +1001,241 @@ export const getUnitStats: AppRouteHandler<GetUnitStats> = async (c) => {
     );
   } catch (err) {
     console.error("Error fetching unit stats:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// 15. GET /admin/all - Get All Candidates and Units Data for Admin (combined array)
+export const getAllCandidatesAndUnits: AppRouteHandler<
+  GetAllCandidatesAndUnits
+> = async (c) => {
+  try {
+    // Fetch candidates
+    const candidatesData = await db
+      .select({
+        id: candidates.userId,
+        name: userTable.name,
+        createdAt: candidates.createdAt,
+      })
+      .from(candidates)
+      .leftJoin(userTable, eq(candidates.userId, userTable.id))
+      .then(
+        (rows) => rows.map((row) => ({ ...row, type: "candidate" })), // Add type
+      );
+
+    // Fetch units
+    const unitsData = await db
+      .select({
+        id: units.userId,
+        name: units.name,
+        createdAt: units.createdAt,
+      })
+      .from(units)
+      .then(
+        (rows) => rows.map((row) => ({ ...row, type: "unit" })), // Add type
+      );
+
+    // Combine both arrays
+    const allData = [...candidatesData, ...unitsData];
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "All candidates and units data retrieved successfully",
+        data: allData,
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error fetching all candidates and units data:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// 16. PATCH /admin/internships/:id/disable - Disable Internship by Admin
+export const disableInternship: AppRouteHandler<DisableInternship> = async (
+  c,
+) => {
+  const { id } = c.req.valid("param");
+
+  try {
+    // Check if internship exists
+    const existingInternship = await db
+      .select({ id: internships.id, status: internships.status })
+      .from(internships)
+      .where(eq(internships.id, id))
+      .limit(1);
+
+    if (existingInternship.length === 0) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Internship not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    // Update internship status to closed
+    await db
+      .update(internships)
+      .set({
+        status: "closed",
+        updatedAt: new Date(),
+      })
+      .where(eq(internships.id, id));
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Internship disabled successfully",
+        data: {
+          internshipId: id,
+          status: "closed",
+          message: "Internship posting has been closed",
+        },
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error disabling internship:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// 17. PATCH /admin/internships/:id/enable - Enable Internship by Admin
+export const enableInternship: AppRouteHandler<EnableInternship> = async (
+  c,
+) => {
+  const { id } = c.req.valid("param");
+
+  try {
+    // Check if internship exists
+    const existingInternship = await db
+      .select({ id: internships.id, status: internships.status })
+      .from(internships)
+      .where(eq(internships.id, id))
+      .limit(1);
+
+    if (existingInternship.length === 0) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Internship not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    // Update internship status to active
+    await db
+      .update(internships)
+      .set({
+        status: "active",
+        updatedAt: new Date(),
+      })
+      .where(eq(internships.id, id));
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Internship enabled successfully",
+        data: {
+          internshipId: id,
+          status: "active",
+          message: "Internship posting has been reactivated",
+        },
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error enabling internship:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// 18. GET /admin/internships - Get All Internships with Pagination
+export const getAllInternships: AppRouteHandler<GetAllInternships> = async (
+  c,
+) => {
+  const { page = 1, limit = 10 } = c.req.valid("query");
+
+  try {
+    const offset = (page - 1) * limit;
+
+    const [internshipsList, totalCountResult] = await Promise.all([
+      db
+        .select({
+          internshipId: internships.id,
+          name: internships.title,
+          createdById: internships.createdBy,
+          createdByName: units.name,
+          totalApplications: count(applications.id),
+          duration: internships.duration,
+          createdAt: internships.createdAt,
+          status: internships.status,
+        })
+        .from(internships)
+        .leftJoin(units, eq(internships.createdBy, units.userId))
+        .leftJoin(applications, eq(applications.internshipId, internships.id))
+        .groupBy(
+          internships.id,
+          internships.title,
+          internships.createdBy,
+          units.name,
+          internships.duration,
+          internships.createdAt,
+          internships.status,
+        )
+        .orderBy(desc(internships.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db.select({ count: count() }).from(internships),
+    ]);
+
+    const totalItems = totalCountResult[0]?.count || 0;
+    const totalPages = Math.ceil(totalItems / limit);
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "All internships retrieved successfully",
+        data: internshipsList,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalItems,
+          itemsPerPage: limit,
+        },
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error fetching internships:", err);
     return c.json(
       {
         status_code: INTERNAL_SERVER_ERROR,
