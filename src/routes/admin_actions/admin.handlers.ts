@@ -35,6 +35,7 @@ import type {
   EnableInternship,
   GetAllInternships,
 } from "./admin.routes";
+import app from "@/app";
 
 // 1. GET /admin/stats/overview - Overall Statistics
 export const getOverallStats: AppRouteHandler<GetOverallStats> = async (c) => {
@@ -475,6 +476,8 @@ export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
               name: userTable.name,
               internshipName: internships.title,
               applicationStatus: applications.status,
+              applicationId: applications.id,
+              applicationCreatedAt: applications.createdAt,
               skills: candidates.skills,
               interests: candidates.interests,
               profileSummary: candidates.profileSummary,
@@ -532,6 +535,7 @@ export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
               internshipDuration: internships.duration,
               internshipJobType: internships.jobType,
               applicationId: applications.id,
+              applicationCreatedAt: applications.createdAt,
               hasTask: sql<boolean>`EXISTS(
                 SELECT 1 FROM ${tasks}
                 WHERE ${tasks.applicationId} = ${applications.id}
@@ -586,6 +590,8 @@ export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
               name: userTable.name,
               internshipName: internships.title,
               applicationStatus: applications.status,
+              applicationId: applications.id,
+              applicationCreatedAt: applications.createdAt,
               skills: candidates.skills,
               interests: candidates.interests,
               profileSummary: candidates.profileSummary,
@@ -866,9 +872,9 @@ export const getApplications: AppRouteHandler<GetApplications> = async (c) => {
           .select({
             applicationId: applications.id,
             candidateId: candidates.userId,
-            candidateName: userTable.name,
-            candidateAvatar: candidates.avatarUrl,
-            internshipTitle: internships.title,
+            Name: userTable.name,
+            avatarUrl: candidates.avatarUrl,
+            internshipName: internships.title,
             applicationStatus: applications.status,
             appliedAt: applications.createdAt,
             unitName: units.name,
