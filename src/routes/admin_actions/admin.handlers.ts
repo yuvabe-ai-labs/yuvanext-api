@@ -779,7 +779,13 @@ export const getUnits: AppRouteHandler<GetUnits> = async (c) => {
               applications,
               eq(internships.id, applications.internshipId),
             )
-            .groupBy(units.userId, units.name, userTable.email)
+            .groupBy(
+              units.userId,
+              units.name,
+              userTable.email,
+              units.avatarUrl,
+              userTable.accountDisabled,
+            )
             .orderBy(desc(units.createdAt))
             .limit(actualLimit)
             .offset(offset),
