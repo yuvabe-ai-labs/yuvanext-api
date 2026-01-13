@@ -261,7 +261,7 @@ export const disableInternship = createRoute({
   description: "Admin can disable/close an internship posting",
   request: {
     params: z.object({
-      id: z.string().uuid("Invalid internship ID"),
+      id: z.uuid("Invalid internship ID"),
     }),
   },
   responses: {

@@ -872,7 +872,7 @@ export const getApplications: AppRouteHandler<GetApplications> = async (c) => {
           .select({
             applicationId: applications.id,
             candidateId: candidates.userId,
-            Name: userTable.name,
+            name: userTable.name,
             avatarUrl: candidates.avatarUrl,
             internshipName: internships.title,
             applicationStatus: applications.status,
