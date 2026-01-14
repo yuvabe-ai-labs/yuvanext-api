@@ -1,10 +1,11 @@
-// chatbot.service.ts - Enhanced with Unit field detection
+// chatbot.service.ts - Enhanced with streaming support
 
 import type { Readable } from "node:stream";
 
 import {
   BedrockRuntimeClient,
   InvokeModelCommand,
+  InvokeModelWithResponseStreamCommand,
 } from "@aws-sdk/client-bedrock-runtime";
 import { Buffer } from "node:buffer";
 
@@ -13,8 +14,10 @@ import env from "@/config/env";
 const AWS_REGION = env.AWS_REGION;
 const DEFAULT_MODEL = env.BEDROCK_MODEL_ID;
 
+const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+
 const maybeCredentials =
-  env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
+  !isLambda && env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
     ? {
         accessKeyId: env.AWS_ACCESS_KEY_ID,
         secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
@@ -35,6 +38,73 @@ async function streamToString(stream: Readable | Uint8Array): Promise<string> {
   return Buffer.concat(chunks).toString("utf-8");
 }
 
+// NEW: Streaming generator function - EXPORTED
+export async function* generateTextStreamFromModel(
+  prompt: string,
+  systemPrompt: string,
+  conversationHistory?: Array<{ role: string; content: string }>,
+): AsyncGenerator<string, void, unknown> {
+  const messages: Array<{ role: string; content: string }> = [
+    { role: "system", content: systemPrompt },
+  ];
+
+  if (Array.isArray(conversationHistory) && conversationHistory.length > 0) {
+    for (const m of conversationHistory) {
+      if (m && m.role && typeof m.content === "string") messages.push(m);
+    }
+  }
+
+  messages.push({ role: "user", content: prompt });
+
+  const payload = {
+    messages,
+    max_tokens: 1000,
+    temperature: 0.7,
+  };
+
+  const command = new InvokeModelWithResponseStreamCommand({
+    modelId: DEFAULT_MODEL,
+    body: JSON.stringify(payload),
+  });
+
+  try {
+    const response = await client.send(command);
+
+    if (!response.body) {
+      throw new Error("No response body from streaming model");
+    }
+
+    for await (const event of response.body) {
+      if (event.chunk?.bytes) {
+        try {
+          const chunk = JSON.parse(
+            Buffer.from(event.chunk.bytes).toString("utf-8"),
+          );
+          const text = chunk?.choices?.[0]?.delta?.content || "";
+
+          if (text) {
+            // Remove reasoning tags in real-time
+            const cleanedText = text.replace(
+              /<reasoning>[\s\S]*?<\/reasoning>/gi,
+              "",
+            );
+            if (cleanedText) {
+              yield cleanedText;
+            }
+          }
+        } catch (parseErr) {
+          console.error("Failed to parse streaming chunk:", parseErr);
+          // Continue to next chunk
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Streaming error:", error);
+    throw error;
+  }
+}
+
+// KEEP: Non-streaming version for field detection and validation
 export async function generateTextFromModel(
   prompt: string,
   systemPrompt: string,
@@ -214,7 +284,7 @@ export async function validateAndExtractData(
   const fieldValidationRules: Record<string, string> = {
     // Candidate fields
     phone: "Valid phone number (10 digits, may include country code)",
-    gender: "Must be one of: male, female, g, prefer not to say",
+    gender: "Must be one of: male, female, other, prefer not to say",
     grade: "School grade (9th, 10th, 11th, 12th, or other)",
     experience_level: "Experience level or grade",
     skills: "Comma-separated list of skills (minimum 1)",

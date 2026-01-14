@@ -7,12 +7,12 @@ const router = createRouter();
 
 // Register routes
 router
+  .openapi(routes.getUnitStats, handlers.getUnitStats)
   .openapi(routes.getInternships, handlers.getInternships)
   .openapi(routes.getRecommendedInternships, handlers.getRecommendedInternships)
   .openapi(routes.createInternship, handlers.createInternship)
   .openapi(routes.getInternshipById, handlers.getInternshipById)
   .openapi(routes.updateInternship, handlers.updateInternship)
-  .openapi(routes.deleteInternship, handlers.deleteInternship)
-  .openapi(routes.getUnitStats, handlers.getUnitStats);
+  .openapi(routes.deleteInternship, handlers.deleteInternship);
 
 export default router;

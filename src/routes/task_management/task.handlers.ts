@@ -1,11 +1,8 @@
-import { and, eq, inArray } from "drizzle-orm";
-
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { AppRouteHandler } from "@/types/app.types";
-
 import db from "@/db";
 import { applications } from "@/db/schema/application.schema";
 import { user as userTable } from "@/db/schema/auth.schema";
-import { candidates } from "@/db/schema/candidate.schema";
 import { internships } from "@/db/schema/internship.schema";
 import { tasks } from "@/db/schema/task.management.schema";
 import { units } from "@/db/schema/unit.schema";
@@ -20,9 +17,11 @@ import type {
   CreateTask,
   DeleteTask,
   GetAllTasks,
+  GetTasksByApplicationId,
   ReviewTask,
   UpdateTask,
 } from "./task.routers";
+import { candidates } from "@/db/schema/candidate.schema";
 
 // ============================================================================
 // CANDIDATE HANDLERS
@@ -98,50 +97,247 @@ export const createTask: AppRouteHandler<CreateTask> = async (c) => {
   }
 };
 
-// GET /tasks - Get all tasks with internship details and progress (Both Candidate and Unit)
+// GET /tasks - Get all tasks for hired candidates (grouped by internship)
 export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
   const user = c.get("user");
 
   try {
-    const { applicationId } = c.req.valid("query");
+    /* ============================
+       CANDIDATE ROLE
+    ============================ */
+    if (user.role === "candidate") {
+      const rows = await db
+        .select({
+          taskId: tasks.id,
+          taskStatus: tasks.status,
 
-    let relevantApplicationIds: string[];
+          applicationId: applications.id,
+          applicantId: applications.userId,
+          applicantName: userTable.name,
+
+          internshipId: internships.id,
+          internshipName: internships.title,
+          internshipCreatedAt: sql<string>`${internships.createdAt}::text`,
+          internshipClosingDate: internships.closingDate,
+          internshipDuration: internships.duration,
+          internshipJobType: internships.jobType,
+
+          unitName: units.name,
+          unitAvatarUrl: units.avatarUrl,
+        })
+        .from(applications)
+        .leftJoin(tasks, eq(tasks.applicationId, applications.id))
+        .innerJoin(internships, eq(applications.internshipId, internships.id))
+        .innerJoin(userTable, eq(applications.userId, userTable.id))
+        .leftJoin(units, eq(internships.createdBy, units.userId))
+        .where(
+          and(
+            eq(applications.userId, user.id),
+            eq(applications.status, "hired"),
+          ),
+        );
+
+      const groupedData = rows.reduce<
+        Array<{
+          internshipId: string;
+          internshipName: string | null;
+          internshipCreatedAt: string | null;
+          internshipClosingDate: string | null;
+          internshipDuration: string | null;
+          internshipJobType: string | null;
+          applicationId: string;
+          applicantId: string;
+          applicantName: string | null;
+          unitName: string | null;
+          unitAvatarUrl: string | null;
+          tasks: Array<{
+            taskId: string;
+            taskStatus: "pending" | "submitted" | "redo" | "accepted";
+          }>;
+        }>
+      >((acc, row) => {
+        let existing = acc.find((i) => i.internshipId === row.internshipId);
+
+        if (!existing) {
+          existing = {
+            internshipId: row.internshipId,
+            internshipName: row.internshipName,
+            internshipCreatedAt: row.internshipCreatedAt,
+            internshipClosingDate: row.internshipClosingDate,
+            internshipDuration: row.internshipDuration,
+            internshipJobType: row.internshipJobType,
+            applicationId: row.applicationId,
+            applicantId: row.applicantId,
+            applicantName: row.applicantName,
+            unitName: row.unitName,
+            unitAvatarUrl: row.unitAvatarUrl,
+            tasks: [],
+          };
+          acc.push(existing);
+        }
+
+        if (row.taskId) {
+          existing.tasks.push({
+            taskId: row.taskId,
+            taskStatus: row.taskStatus!,
+          });
+        }
+
+        return acc;
+      }, []);
+
+      return c.json(
+        {
+          status_code: OK,
+          message: "Tasks retrieved successfully",
+          data: groupedData,
+        },
+        OK,
+      );
+    }
+
+    /* ============================
+       UNIT ROLE
+    ============================ */
+    if (user.role === "unit") {
+      const rows = await db
+        .select({
+          taskId: tasks.id,
+          taskStatus: tasks.status,
+
+          applicationId: applications.id,
+          applicantId: applications.userId,
+          applicantName: userTable.name,
+          candidateAvatarUrl: candidates.avatarUrl,
+
+          internshipId: internships.id,
+          internshipName: internships.title,
+          internshipCreatedAt: sql<string>`${internships.createdAt}::text`,
+          internshipClosingDate: internships.closingDate,
+          internshipDuration: internships.duration,
+          internshipJobType: internships.jobType,
+
+          unitName: units.name,
+        })
+        .from(applications)
+        .leftJoin(tasks, eq(tasks.applicationId, applications.id))
+        .innerJoin(internships, eq(applications.internshipId, internships.id))
+        .innerJoin(userTable, eq(applications.userId, userTable.id))
+        .leftJoin(candidates, eq(applications.userId, candidates.userId))
+        .leftJoin(units, eq(internships.createdBy, units.userId))
+        .where(
+          and(
+            eq(internships.createdBy, user.id),
+            eq(applications.status, "hired"),
+          ),
+        );
+
+      const groupedData = rows.reduce<
+        Array<{
+          internshipId: string;
+          internshipName: string | null;
+          internshipCreatedAt: string | null;
+          internshipClosingDate: string | null;
+          internshipDuration: string | null;
+          internshipJobType: string | null;
+          applicationId: string;
+          applicantId: string;
+          applicantName: string | null;
+          unitName: string | null;
+          candidateAvatarUrl: string | null;
+          tasks: Array<{
+            taskId: string;
+            taskStatus: "pending" | "submitted" | "redo" | "accepted";
+          }>;
+        }>
+      >((acc, row) => {
+        const key = `${row.internshipId}-${row.applicantId}`;
+        let existing = acc.find(
+          (i) => `${i.internshipId}-${i.applicantId}` === key,
+        );
+
+        if (!existing) {
+          existing = {
+            internshipId: row.internshipId,
+            internshipName: row.internshipName,
+            internshipCreatedAt: row.internshipCreatedAt,
+            internshipClosingDate: row.internshipClosingDate,
+            internshipDuration: row.internshipDuration,
+            internshipJobType: row.internshipJobType,
+            applicationId: row.applicationId,
+            applicantId: row.applicantId,
+            applicantName: row.applicantName,
+            unitName: row.unitName,
+            candidateAvatarUrl: row.candidateAvatarUrl,
+            tasks: [],
+          };
+          acc.push(existing);
+        }
+
+        if (row.taskId) {
+          existing.tasks.push({
+            taskId: row.taskId,
+            taskStatus: row.taskStatus!,
+          });
+        }
+
+        return acc;
+      }, []);
+
+      return c.json(
+        {
+          status_code: OK,
+          message: "Tasks retrieved successfully",
+          data: groupedData,
+        },
+        OK,
+      );
+    }
+
+    return c.json(
+      {
+        status_code: FORBIDDEN,
+        message: "Access denied",
+      },
+      FORBIDDEN,
+    );
+  } catch (err) {
+    console.error("Error fetching tasks:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// GET /tasks/application/:applicationId - Get all tasks by application ID
+export const getTasksByApplicationId: AppRouteHandler<
+  GetTasksByApplicationId
+> = async (c) => {
+  const user = c.get("user");
+  const { applicationId } = c.req.valid("param");
+
+  try {
+    let whereConditions;
 
     if (user.role === "candidate") {
-      // Get all application IDs for this candidate
-      const apps = await db
-        .select({ id: applications.id })
-        .from(applications)
-        .where(eq(applications.userId, user.id));
-
-      relevantApplicationIds = apps.map((app) => app.id);
+      whereConditions = and(
+        eq(applications.id, applicationId),
+        eq(applications.userId, user.id),
+        eq(applications.status, "hired"),
+      );
     } else if (user.role === "unit") {
-      // Get all internship IDs owned by this unit
-      const unitInternships = await db
-        .select({ id: internships.id })
-        .from(internships)
-        .where(eq(internships.createdBy, user.id));
-
-      const internshipIds = unitInternships.map((int) => int.id);
-
-      if (internshipIds.length === 0) {
-        return c.json(
-          {
-            status_code: OK,
-            message: "Tasks retrieved successfully",
-            data: [],
-          },
-          OK,
-        );
-      }
-
-      // Get all application IDs for these internships in ONE query
-      const apps = await db
-        .select({ id: applications.id })
-        .from(applications)
-        .where(inArray(applications.internshipId, internshipIds));
-
-      relevantApplicationIds = apps.map((app) => app.id);
+      whereConditions = and(
+        eq(applications.id, applicationId),
+        eq(internships.createdBy, user.id),
+        eq(applications.status, "hired"),
+      );
+    } else if (user.role === "admin") {
+      // Admin can access any application
+      whereConditions = eq(applications.id, applicationId);
     } else {
       return c.json(
         {
@@ -152,155 +348,99 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
       );
     }
 
-    if (relevantApplicationIds.length === 0) {
-      return c.json(
-        {
-          status_code: OK,
-          message: "Tasks retrieved successfully",
-          data: [],
-        },
-        OK,
-      );
-    }
-
-    // Filter by applicationId if provided
-    if (applicationId) {
-      if (!relevantApplicationIds.includes(applicationId)) {
-        return c.json(
-          {
-            status_code: FORBIDDEN,
-            message: "You can only view tasks for your own applications",
-          },
-          FORBIDDEN,
-        );
-      }
-      relevantApplicationIds = [applicationId];
-    }
-
-    // Fetch ALL tasks for target applications in ONE query
-    const allTasks = await db
-      .select()
-      .from(tasks)
-      .where(inArray(tasks.applicationId, relevantApplicationIds));
-
-    if (allTasks.length === 0) {
-      return c.json(
-        {
-          status_code: OK,
-          message: "Tasks retrieved successfully",
-          data: [],
-        },
-        OK,
-      );
-    }
-
-    // Get all unique application IDs from tasks
-    const taskApplicationIds = [
-      ...new Set(allTasks.map((t) => t.applicationId)),
-    ];
-
-    // Fetch ALL related data in bulk queries
-    // 1. Get all applications with internships and units in ONE query
-    const applicationsData = await db
+    const applicationTasks = await db
       .select({
+        // ---- Task fields (nullable) ----
+        taskId: tasks.id,
+        taskStatus: tasks.status,
+        taskTitle: tasks.title,
+        taskDescription: tasks.description,
+        taskCreatedAt: sql<string | null>`${tasks.createdAt}::text`,
+        taskEndDate: tasks.endDate,
+        taskStartDate: tasks.startDate,
+        taskStartTime: tasks.startTime,
+        taskEndTime: tasks.endTime,
+        taskColor: tasks.color,
+        taskSubmissionLink: tasks.submissionLink,
+        taskSubmittedAt: sql<string | null>`${tasks.submittedAt}::text`,
+        taskReviewRemarks: tasks.reviewRemarks,
+        taskReviewedAt: sql<string | null>`${tasks.reviewedAt}::text`,
+
+        // ---- Application / applicant ----
         applicationId: applications.id,
-        userId: applications.userId,
-        internshipId: applications.internshipId,
-        internshipTitle: internships.title,
-        internshipCreatedBy: internships.createdBy,
-        unitName: units.name,
+        applicantId: applications.userId,
+        applicantName: userTable.name,
+        applicantEmail: userTable.email,
+        candidateAvatarUrl: candidates.avatarUrl,
+        candidatePhoneNumber: candidates.phone,
+
+        // ---- Internship ----
+        internshipId: internships.id,
+        internshipName: internships.title,
+        internshipCreatedAt: sql<string>`${internships.createdAt}::text`,
+        internshipClosingDate: internships.closingDate,
       })
       .from(applications)
+      .leftJoin(tasks, eq(tasks.applicationId, applications.id))
       .innerJoin(internships, eq(applications.internshipId, internships.id))
-      .leftJoin(units, eq(internships.createdBy, units.userId))
-      .where(inArray(applications.id, taskApplicationIds));
+      .innerJoin(userTable, eq(applications.userId, userTable.id))
+      .innerJoin(candidates, eq(applications.userId, candidates.userId))
+      .where(whereConditions);
 
-    // 2. Get all unique user IDs
-    const userIds = [...new Set(applicationsData.map((a) => a.userId))];
-
-    // 3. Get all candidates for these users in ONE query
-    const candidatesData = await db
-      .select()
-      .from(candidates)
-      .where(inArray(candidates.userId, userIds));
-
-    // 4. Get all user details in ONE query
-    const usersData = await db
-      .select()
-      .from(userTable)
-      .where(inArray(userTable.id, userIds));
-
-    // 5. Calculate progress for each application (group tasks by applicationId)
-    const tasksByApplication = allTasks.reduce(
-      (acc, task) => {
-        if (!acc[task.applicationId]) {
-          acc[task.applicationId] = [];
-        }
-        acc[task.applicationId].push(task);
-        return acc;
-      },
-      {} as Record<string, typeof allTasks>,
-    );
-
-    const progressByApplication: Record<string, number> = {};
-    for (const [appId, appTasks] of Object.entries(tasksByApplication)) {
-      const totalTasks = appTasks.length;
-      const completedTasks = appTasks.filter(
-        (t) => t.status === "accepted",
-      ).length;
-      progressByApplication[appId] =
-        totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+    if (applicationTasks.length === 0) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Application not found",
+        },
+        NOT_FOUND,
+      );
     }
 
-    // Create lookup maps for O(1) access
-    const applicationMap = new Map(
-      applicationsData.map((a) => [a.applicationId, a]),
-    );
-    const candidateMap = new Map(candidatesData.map((c) => [c.userId, c]));
-    const userMap = new Map(usersData.map((u) => [u.id, u]));
+    // Transform the flat result into nested structure
+    const firstRow = applicationTasks[0];
 
-    // Enrich tasks with all related data (no more DB queries!)
-    const enrichedTasks = allTasks.map((task) => {
-      const application = applicationMap.get(task.applicationId);
-
-      if (!application) {
-        return {
-          ...task,
-          applicantName: null,
-          applicantPhone: null,
-          applicantEmail: null,
-          internshipTitle: null,
-          unitName: null,
-          unitId: null,
-          progress: 0,
-        };
-      }
-
-      const candidate = candidateMap.get(application.userId);
-      const userInfo = userMap.get(application.userId);
-
-      return {
-        ...task,
-        applicantName: userInfo?.name || null,
-        applicantPhone: candidate?.phone || null,
-        applicantEmail: userInfo?.email || null,
-        internshipTitle: application.internshipTitle,
-        unitName: application.unitName,
-        unitId: application.internshipCreatedBy,
-        progress: progressByApplication[task.applicationId] || 0,
-      };
-    });
+    const response = {
+      applicationId: firstRow.applicationId,
+      applicantId: firstRow.applicantId,
+      applicantName: firstRow.applicantName,
+      applicantEmail: firstRow.applicantEmail,
+      candidateAvatarUrl: firstRow.candidateAvatarUrl,
+      candidatePhoneNumber: firstRow.candidatePhoneNumber,
+      internshipId: firstRow.internshipId,
+      internshipName: firstRow.internshipName,
+      internshipCreatedAt: firstRow.internshipCreatedAt,
+      internshipClosingDate: firstRow.internshipClosingDate,
+      tasks: applicationTasks
+        .filter((row) => row.taskId !== null) // Filter out rows with no task
+        .map((row) => ({
+          taskId: row.taskId,
+          taskStatus: row.taskStatus,
+          taskTitle: row.taskTitle,
+          taskDescription: row.taskDescription,
+          taskCreatedAt: row.taskCreatedAt,
+          taskEndDate: row.taskEndDate,
+          taskStartDate: row.taskStartDate,
+          taskStartTime: row.taskStartTime,
+          taskEndTime: row.taskEndTime,
+          taskColor: row.taskColor,
+          taskSubmissionLink: row.taskSubmissionLink,
+          taskSubmittedAt: row.taskSubmittedAt,
+          taskReviewRemarks: row.taskReviewRemarks,
+          taskReviewedAt: row.taskReviewedAt,
+        })),
+    };
 
     return c.json(
       {
         status_code: OK,
         message: "Tasks retrieved successfully",
-        data: enrichedTasks,
+        data: response,
       },
       OK,
     );
   } catch (err) {
-    console.error("Error fetching tasks:", err);
+    console.error("Error fetching tasks by application ID:", err);
     return c.json(
       {
         status_code: INTERNAL_SERVER_ERROR,

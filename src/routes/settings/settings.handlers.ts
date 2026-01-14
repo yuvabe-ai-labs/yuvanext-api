@@ -16,6 +16,7 @@ import type {
   UpdateNotifications,
   SetDisability,
   DeactivateAccount,
+  getNotificationSettings,
 } from "./settings.routes";
 
 export const changePhone: AppRouteHandler<ChangePhone> = async (c) => {
@@ -183,6 +184,53 @@ export const deactivateAccount: AppRouteHandler<DeactivateAccount> = async (
     );
   } catch (err) {
     console.error("Error deactivating account:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+export const getNotificationSettingsHandler: AppRouteHandler<
+  typeof getNotificationSettings
+> = async (c) => {
+  const currentUser = c.get("user");
+
+  try {
+    const settings = await db
+      .select()
+      .from(userSettings)
+      .where(eq(userSettings.userId, currentUser.id))
+      .limit(1);
+
+    if (settings.length === 0) {
+      return c.json(
+        {
+          status_code: OK,
+          data: {
+            emailNotificationsEnabled: true,
+            inAppNotificationsEnabled: true,
+          },
+        },
+        OK,
+      );
+    }
+
+    return c.json(
+      {
+        status_code: OK,
+        data: {
+          emailNotificationsEnabled: settings[0].emailNotificationsEnabled,
+          inAppNotificationsEnabled: settings[0].inAppNotificationsEnabled,
+        },
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error fetching notification settings:", err);
     return c.json(
       {
         status_code: INTERNAL_SERVER_ERROR,

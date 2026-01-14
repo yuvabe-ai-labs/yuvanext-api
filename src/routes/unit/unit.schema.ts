@@ -5,6 +5,26 @@ export const unitIdParamSchema = z.object({
   id: z.uuid(),
 });
 
+// Internship schema for nested response
+export const internshipSchema = z.object({
+  id: z.uuid(),
+  title: z.string(),
+  description: z.string().nullable(),
+  duration: z.string().nullable(),
+  payment: z.string().nullable(),
+  status: z.enum(["active", "closed", "draft"]),
+  closingDate: z.string().nullable(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+  isPaid: z.boolean().nullable(),
+  minAgeRequired: z.string().nullable(),
+  jobType: z.enum(["part_time", "full_time", "both"]).nullable(),
+  benefits: z.array(z.string()).nullable(),
+  skillsRequired: z.array(z.string()).nullable(),
+  responsibilities: z.array(z.string()).nullable(),
+  language: z.array(z.string()).nullable(),
+});
+
 // Response Schemas
 export const unitResponseSchema = z.object({
   userId: z.string(),
@@ -32,5 +52,10 @@ export const unitResponseSchema = z.object({
   socialLinks: z.record(z.string(), z.string()).nullable(),
   // User info
   email: z.email().nullable(),
-  userImage: z.string().nullable(),
+  userAccountStatus: z.boolean().nullable(),
+});
+
+// Extended response schema with internships for getUnitById
+export const unitWithInternshipsResponseSchema = unitResponseSchema.extend({
+  internships: z.array(internshipSchema),
 });

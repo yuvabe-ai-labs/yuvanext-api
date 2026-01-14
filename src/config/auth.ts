@@ -10,10 +10,11 @@ import {
   updateUserRoleOnEmailVerification,
   enableUserByEmailBeforeSignin,
   sendChangeEmailConfirmation,
-} from "@/routes/auth/auth.services";
+} from "@/routes/auth/auth.service";
 
 import db from "../db/index";
 import { ac, admin, candidate, unit } from "./auth-permission";
+import { ALLOWED_ORIGINS } from "@/lib/create-app";
 
 export const auth = betterAuth({
   appName: "Yuvanext API",
@@ -47,7 +48,7 @@ export const auth = betterAuth({
       }
     },
   },
-  trustedOrigins: ["*"],
+  trustedOrigins: ALLOWED_ORIGINS,
   user: {
     additionalFields: {
       metadata: {
@@ -94,7 +95,12 @@ export const auth = betterAuth({
     },
     onEmailVerification: async (user: Record<string, any>) => {
       if (user.metadata?.role) {
-        await updateUserRoleOnEmailVerification(user.id, user.metadata.role);
+        await updateUserRoleOnEmailVerification(
+          user.id,
+          user.metadata.role,
+          user.metadata.website_url,
+          user.metadata, // Pass the full metadata object
+        );
       }
     },
   },
@@ -126,5 +132,13 @@ export const auth = betterAuth({
       generateId: (_options) => crypto.randomUUID(),
     },
     disableOriginCheck: true,
+    crossSubDomainCookies: {
+      enabled: true,
+    },
+    defaultCookieAttributes: {
+      sameSite: "none",
+      secure: true,
+      partitioned: true, // New browser standards will mandate this for foreign cookies
+    },
   },
 });

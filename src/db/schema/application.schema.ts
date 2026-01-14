@@ -16,13 +16,19 @@ import { interviews } from "./interview.schema";
 export const applicationStatusEnum = pgEnum("application_status", [
   "applied",
   "shortlisted",
-  "rejected",
+  "not_shortlisted",
   "interviewed",
   "hired",
 ]);
 
 export const candidateOfferDecisionEnum = pgEnum("candidate_offer_decision", [
   "accept",
+  "reject",
+  "pending",
+]);
+
+export const unitofferDecisionEnum = pgEnum("unit_offer_decision", [
+  "selected",
   "reject",
   "pending",
 ]);
@@ -50,6 +56,9 @@ export const applications = pgTable(
     candidateOfferDecision: candidateOfferDecisionEnum(
       "candidate_offer_decision",
     ).default("pending"),
+    unitOfferDecision: unitofferDecisionEnum("unit_offer_decision").default(
+      "pending",
+    ),
   },
   (table) => ({
     userIdIdx: index("applications_user_id_index").on(table.userId),
