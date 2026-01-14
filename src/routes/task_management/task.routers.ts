@@ -87,7 +87,7 @@ export const getTasksByApplicationId = createRoute({
   method: "get" as const,
   path: "/tasks/application/{applicationId}",
   tags: ["Tasks - Unit and Candidate"],
-  middleware: requireRole({ allowedRoles: ["unit", "candidate"] }),
+  middleware: requireRole({ allowedRoles: ["unit", "candidate", "admin"] }),
   summary: "Get all tasks by application ID",
   description:
     "Get all tasks for a hired application in this unit's internships (Unit and Candidate)",
