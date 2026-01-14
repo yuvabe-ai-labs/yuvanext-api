@@ -52,7 +52,7 @@ export const unitResponseSchema = z.object({
   socialLinks: z.record(z.string(), z.string()).nullable(),
   // User info
   email: z.email().nullable(),
-  accountStatus: z.boolean().nullable(),
+  userAccountStatus: z.boolean().nullable(),
 });
 
 // Extended response schema with internships for getUnitById

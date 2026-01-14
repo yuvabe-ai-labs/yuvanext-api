@@ -691,6 +691,7 @@ export const getCandidateById: AppRouteHandler<GetCandidateById> = async (
         internship: candidates.internship,
         projects: candidates.projects,
         socialLinks: candidates.socialLinks,
+        userAccountStatus: userTable.accountDisabled,
       })
       .from(applications)
       .innerJoin(candidates, eq(applications.userId, candidates.userId))
