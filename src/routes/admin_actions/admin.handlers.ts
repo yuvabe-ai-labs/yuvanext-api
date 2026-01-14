@@ -664,6 +664,7 @@ export const getCandidateById: AppRouteHandler<GetCandidateById> = async (
         applicationUpdatedAt: applications.updatedAt,
         internshipName: internships.title,
         internshipId: internships.id,
+        internshipsStatus: internships.status,
         userId: candidates.userId,
         email: userTable.email,
         name: userTable.name,
@@ -690,6 +691,7 @@ export const getCandidateById: AppRouteHandler<GetCandidateById> = async (
         internship: candidates.internship,
         projects: candidates.projects,
         socialLinks: candidates.socialLinks,
+        userAccountStatus: userTable.accountDisabled,
       })
       .from(applications)
       .innerJoin(candidates, eq(applications.userId, candidates.userId))

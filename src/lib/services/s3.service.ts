@@ -8,13 +8,19 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from "crypto";
 import env from "@/config/env";
 
+const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+
+const maybecredentials = !isLambda
+  ? {
+      accessKeyId: env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+    }
+  : undefined;
+
 // Initialize S3 Client
 const s3Client = new S3Client({
   region: env.AWS_REGION,
-  credentials: {
-    accessKeyId: env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-  },
+  ...(maybecredentials ? { credentials: maybecredentials } : {}),
 });
 // Get bucket name based on environment
 function getBucketName(): string {

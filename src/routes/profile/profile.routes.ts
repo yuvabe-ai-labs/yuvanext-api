@@ -76,7 +76,7 @@ export const uploadAvatar = createRoute({
         "multipart/form-data": {
           schema: z.object({
             file: imageFileSchema.describe(
-              "Avatar image file (PNG, JPG, max 5MB)",
+              "Avatar image file (PNG, JPG, JPEG, WEBP, max 5MB)",
             ),
           }),
         },
@@ -128,7 +128,7 @@ export const uploadBanner = createRoute({
         "multipart/form-data": {
           schema: z.object({
             file: imageFileSchema.describe(
-              "Banner image file (PNG, JPG max 50MB)",
+              "Banner image file (PNG, JPG, JPEG, WEBP, max 50MB)",
             ),
           }),
         },

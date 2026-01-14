@@ -105,6 +105,7 @@ export const getUnitById: AppRouteHandler<GetUnitById> = async (c) => {
         // User info
         email: userTable.email,
         userImage: userTable.image,
+        userAccountStatus: userTable.accountDisabled,
       })
       .from(units)
       .leftJoin(userTable, eq(units.userId, userTable.id))
