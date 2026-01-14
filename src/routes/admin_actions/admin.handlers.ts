@@ -664,6 +664,7 @@ export const getCandidateById: AppRouteHandler<GetCandidateById> = async (
         applicationUpdatedAt: applications.updatedAt,
         internshipName: internships.title,
         internshipId: internships.id,
+        internshipsStatus: internships.status,
         userId: candidates.userId,
         email: userTable.email,
         name: userTable.name,

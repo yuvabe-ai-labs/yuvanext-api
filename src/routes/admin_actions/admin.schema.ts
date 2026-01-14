@@ -255,6 +255,15 @@ export const candidateFullResponseSchema = z.object({
   internship: z.array(z.any()).nullable(),
   projects: z.array(z.any()).nullable(),
   socialLinks: z.record(z.string(), z.string()).nullable(),
+  applicationId: z.string().nullable(),
+  applicationStatus: z
+    .enum(["applied", "shortlisted", "not_shortlisted", "interviewed", "hired"])
+    .nullable(),
+  applicationCreatedAt: z.date().nullable(),
+  applicationUpdatedAt: z.date().nullable(),
+  internshipId: z.string().nullable(),
+  internshipName: z.string().nullable(),
+  internshipStatus: z.enum(["active", "closed", "draft"]).nullable(),
 });
 
 // get candidate and unit full response schema for admin only id name and created at
