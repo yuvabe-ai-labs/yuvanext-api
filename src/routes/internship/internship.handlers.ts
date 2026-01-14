@@ -555,11 +555,15 @@ export const createInternship: AppRouteHandler<CreateInternship> = async (
   const body = c.req.valid("json");
 
   try {
+    // Admins can specify the createdBy ID (for units), otherwise use the current user's ID
+    const createdById =
+      user.role === "admin" && body.createdBy ? body.createdBy : user.id;
+
     const [newInternship] = await db
       .insert(internships)
       .values({
         ...body,
-        createdBy: user.id,
+        createdBy: createdById,
       })
       .returning();
 

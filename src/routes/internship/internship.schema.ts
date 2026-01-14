@@ -19,6 +19,7 @@ export const createInternshipSchema = z.object({
   skillsRequired: z.array(z.string()).optional(),
   responsibilities: z.array(z.string()).optional(),
   language: z.array(z.string()).optional(),
+  createdBy: z.uuid().optional(),
 });
 
 export const updateInternshipSchema = z
