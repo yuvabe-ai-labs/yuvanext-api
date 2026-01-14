@@ -6,7 +6,12 @@ import { z } from "zod";
 const MAX_FILE_SIZE_IMAGE = 5 * 1024 * 1024; // 5MB
 const MAX_FILE_SIZE_VIDEO = 50 * 1024 * 1024; // 50MB
 
-export const ALLOWED_IMAGE_TYPES = ["image/jpg", "image/png"];
+export const ALLOWED_IMAGE_TYPES = [
+  "image/jpg",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+];
 
 export const ALLOWED_VIDEO_TYPES = ["video/mp4"];
 
@@ -23,7 +28,7 @@ export const imageFileSchema = z
       return ALLOWED_IMAGE_TYPES.includes(file.type);
     },
     {
-      message: "Invalid image format. Allowed formats: PNG, JPG",
+      message: "Invalid image format. Allowed formats: PNG, JPG, JPEG, WEBP",
     },
   )
   .refine(
@@ -38,7 +43,7 @@ export const imageFileSchema = z
   .openapi({
     type: "string",
     format: "binary",
-    description: "Image file (PNG, JPG) - max 5MB",
+    description: "Image file (PNG, JPG, JPEG, WEBP) - max 5MB",
   });
 
 /**
