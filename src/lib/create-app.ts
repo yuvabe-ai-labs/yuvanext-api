@@ -21,6 +21,9 @@ export const ALLOWED_ORIGINS = [
   "https://app.yuvanext.com",
   "https://app-stg.yuvanext.com",
   "https://app-dev.yuvanext.com",
+  "https://admin-dev.yuvanext.com",
+  "https://admin.yuvanext.com",
+  "https://admin-stg.yuvanext.com",
 ];
 
 export default function createApp() {
