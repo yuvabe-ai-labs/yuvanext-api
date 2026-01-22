@@ -223,29 +223,12 @@ export const deactivateUnit: AppRouteHandler<DeactivateUnit> = async (c) => {
   const { id } = c.req.valid("param");
 
   try {
-    // Check if unit exists
-    const existingUnit = await db
-      .select({ userId: units.userId })
-      .from(units)
-      .where(eq(units.userId, id))
-      .limit(1);
-
-    if (existingUnit.length === 0) {
-      return c.json(
-        {
-          status_code: NOT_FOUND,
-          message: "Unit not found",
-        },
-        NOT_FOUND,
-      );
-    }
-
-    // Check if user exists
+    // Check if user exists and is a unit
     const existingUser = await db
       .select({
         id: userTable.id,
         role: userTable.role,
-        accountDisabled: userTable.accountDisabled,
+        banned: userTable.banned,
       })
       .from(userTable)
       .where(eq(userTable.id, id))
@@ -261,21 +244,11 @@ export const deactivateUnit: AppRouteHandler<DeactivateUnit> = async (c) => {
       );
     }
 
-    if (existingUser[0].role !== "unit") {
-      return c.json(
-        {
-          status_code: BAD_REQUEST,
-          message: "User is not a unit account",
-        },
-        BAD_REQUEST,
-      );
-    }
-
     // Deactivate the user account
     await db
       .update(userTable)
       .set({
-        accountDisabled: true,
+        banned: true,
         updatedAt: new Date(),
       })
       .where(eq(userTable.id, id));
@@ -289,7 +262,7 @@ export const deactivateUnit: AppRouteHandler<DeactivateUnit> = async (c) => {
         message: "Unit deactivated successfully",
         data: {
           userId: id,
-          accountDisabled: true,
+          banned: true,
           message: "Unit account has been deactivated and all sessions removed",
         },
       },
@@ -306,34 +279,18 @@ export const deactivateUnit: AppRouteHandler<DeactivateUnit> = async (c) => {
     );
   }
 };
+
 //15. PATCH /admin/units/:id/activate - Activate Unit by Admin
 export const activateUnit: AppRouteHandler<ActivateUnit> = async (c) => {
   const { id } = c.req.valid("param");
 
   try {
-    // Check if unit exists
-    const existingUnit = await db
-      .select({ userId: units.userId })
-      .from(units)
-      .where(eq(units.userId, id))
-      .limit(1);
-
-    if (existingUnit.length === 0) {
-      return c.json(
-        {
-          status_code: NOT_FOUND,
-          message: "Unit not found",
-        },
-        NOT_FOUND,
-      );
-    }
-
     // Check if user exists
     const existingUser = await db
       .select({
         id: userTable.id,
         role: userTable.role,
-        accountDisabled: userTable.accountDisabled,
+        banned: userTable.banned,
       })
       .from(userTable)
       .where(eq(userTable.id, id))
@@ -349,21 +306,11 @@ export const activateUnit: AppRouteHandler<ActivateUnit> = async (c) => {
       );
     }
 
-    if (existingUser[0].role !== "unit") {
-      return c.json(
-        {
-          status_code: BAD_REQUEST,
-          message: "User is not a unit account",
-        },
-        BAD_REQUEST,
-      );
-    }
-
-    // Deactivate the user account
+    // Activate the user account
     await db
       .update(userTable)
       .set({
-        accountDisabled: false,
+        banned: false,
         updatedAt: new Date(),
       })
       .where(eq(userTable.id, id));
@@ -374,7 +321,7 @@ export const activateUnit: AppRouteHandler<ActivateUnit> = async (c) => {
         message: "Unit activated successfully",
         data: {
           userId: id,
-          accountDisabled: false,
+          banned: false,
           message: "Unit account has been activated",
         },
       },

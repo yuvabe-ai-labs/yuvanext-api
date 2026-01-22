@@ -33,16 +33,28 @@ export const getUserNotifications: AppRouteHandler<
       .where(eq(userSettings.userId, user.id))
       .limit(1);
 
-    // If in-app notifications are disabled, return empty array
+    // If in-app notifications are disabled, return read notifications only
     if (settings && !settings.inAppNotificationsEnabled) {
+      // Get read notifications for the user, ordered by creation date (newest first)
+      const readNotifications = await db
+        .select()
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.userId, user.id),
+            eq(notifications.isRead, true),
+          ),
+        )
+        .orderBy(desc(notifications.createdAt));
+
       return c.json(
         {
           status_code: OK,
           message: "Notifications retrieved successfully",
           data: {
-            notifications: [],
-            total: 0,
-            unreadCount: 0,
+            notifications: readNotifications,
+            total: readNotifications.length,
+            readCount: readNotifications.length,
           },
         },
         OK,

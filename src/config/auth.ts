@@ -15,6 +15,7 @@ import {
 import db from "../db/index";
 import { ac, admin, candidate, unit } from "./auth-permission";
 import { ALLOWED_ORIGINS } from "@/lib/create-app";
+import env from "./env";
 
 export const auth = betterAuth({
   appName: "Yuvanext API",
@@ -85,7 +86,9 @@ export const auth = betterAuth({
     sendOnSignUp: true,
     sendVerificationEmail: async ({ user, url }) => {
       try {
-        await sendVerificationMail(user.email, user.name, url);
+        // Append chatbot redirect to verification URL
+        const verificationUrl = `${url}&redirect=${encodeURIComponent(`${env.FRONTEND_URL}/chatbot`)}`;
+        await sendVerificationMail(user.email, user.name, verificationUrl);
       } catch (error) {
         console.error(
           `Error sending verification link to ${user.email}: ${error}`,
