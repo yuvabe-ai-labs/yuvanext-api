@@ -33,7 +33,6 @@ export const chat = async (c: Context) => {
     SYSTEM_PROMPT = UNIT_SYSTEM_PROMPT;
   }
 
-  // Helper functions remain the same...
   const ensureProfileExists = async (
     userId: string,
     role: "candidate" | "unit",
