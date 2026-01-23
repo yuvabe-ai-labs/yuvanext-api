@@ -888,7 +888,19 @@ export const uploadGalleryImage: AppRouteHandler<UploadGalleryImage> = async (
       const unit = await tx.query.units.findFirst({
         where: eq(units.userId, user.id),
       });
-      const currentGalleryImages = unit?.galleryImages || [];
+      let currentGalleryImages = unit?.galleryImages || [];
+
+      // Ensure it's an array (handle case where it's stored as JSON string)
+      if (typeof currentGalleryImages === "string") {
+        try {
+          currentGalleryImages = JSON.parse(currentGalleryImages);
+        } catch {
+          currentGalleryImages = [];
+        }
+      }
+      if (!Array.isArray(currentGalleryImages)) {
+        currentGalleryImages = [];
+      }
 
       // Add new image to array
       updatedGalleryImages = [...currentGalleryImages, galleryImageUrl];
@@ -939,7 +951,19 @@ export const deleteGalleryImage: AppRouteHandler<DeleteGalleryImage> = async (
       const unit = await tx.query.units.findFirst({
         where: eq(units.userId, user.id),
       });
-      const currentGalleryImages = unit?.galleryImages || [];
+      let currentGalleryImages = unit?.galleryImages || [];
+
+      // Ensure it's an array (handle case where it's stored as JSON string)
+      if (typeof currentGalleryImages === "string") {
+        try {
+          currentGalleryImages = JSON.parse(currentGalleryImages);
+        } catch {
+          currentGalleryImages = [];
+        }
+      }
+      if (!Array.isArray(currentGalleryImages)) {
+        currentGalleryImages = [];
+      }
 
       if (!currentGalleryImages.includes(imageUrl)) {
         throw new Error("Image not found in gallery");
@@ -1027,7 +1051,19 @@ export const uploadTestimonialVideo: AppRouteHandler<
       const unit = await tx.query.units.findFirst({
         where: eq(units.userId, user.id),
       });
-      const currentVideos = unit?.galleryVideos || [];
+      let currentVideos = unit?.galleryVideos || [];
+
+      // Ensure it's an array (handle case where it's stored as JSON string)
+      if (typeof currentVideos === "string") {
+        try {
+          currentVideos = JSON.parse(currentVideos);
+        } catch {
+          currentVideos = [];
+        }
+      }
+      if (!Array.isArray(currentVideos)) {
+        currentVideos = [];
+      }
 
       // Add new video to array
       updatedVideos = [...currentVideos, videoUrl];
@@ -1078,7 +1114,19 @@ export const deleteTestimonialVideo: AppRouteHandler<
       const unit = await tx.query.units.findFirst({
         where: eq(units.userId, user.id),
       });
-      const currentVideos = unit?.galleryVideos || [];
+      let currentVideos = unit?.galleryVideos || [];
+
+      // Ensure it's an array (handle case where it's stored as JSON string)
+      if (typeof currentVideos === "string") {
+        try {
+          currentVideos = JSON.parse(currentVideos);
+        } catch {
+          currentVideos = [];
+        }
+      }
+      if (!Array.isArray(currentVideos)) {
+        currentVideos = [];
+      }
 
       if (!currentVideos.includes(videoUrl)) {
         throw new Error("Video not found in gallery");
