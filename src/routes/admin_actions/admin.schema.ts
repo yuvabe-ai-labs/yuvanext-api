@@ -178,7 +178,7 @@ export const unitRegistrationStatsSchema = z.object({
 
 export const addCompanyRequestSchema = z.object({
   companyName: z.string().min(1, "Company name is required"),
-  companyEmail: z.string().email("Valid email is required"),
+  companyEmail: z.email("Valid email is required"),
   contactNumber: z.string().min(6, "Valid contact number is required"),
   companyType: z.enum(["auroville_unit", "non_auroville_unit"]),
   industryType: z.string().min(1, "Industry type is required"),
@@ -186,12 +186,11 @@ export const addCompanyRequestSchema = z.object({
   aboutCompany: z.string().min(1, "About the company is required"),
   serviceOffered: z.string().min(1, "Service offered is required"),
   achievements: z.string().optional(),
-  password: z.string().min(4, "Password must be at least 4 characters"),
 });
 
 export const addCompanyResponseSchema = z.object({
-  userId: z.string().uuid(),
-  email: z.string().email(),
+  userId: z.uuid(),
+  email: z.email(),
   name: z.string(),
   message: z.string(),
 });

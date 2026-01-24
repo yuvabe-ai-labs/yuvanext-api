@@ -1,13 +1,14 @@
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import type { AppRouteHandler } from "@/types/app.types";
-
+import crypto from "crypto";
 import db from "@/db";
 import { applications } from "@/db/schema/application.schema";
-import { user as userTable, account, session } from "@/db/schema/auth.schema";
+import { user as userTable, session } from "@/db/schema/auth.schema";
 import { candidates } from "@/db/schema/candidate.schema";
 import { courses } from "@/db/schema/course.schema";
 import { internships } from "@/db/schema/internship.schema";
 import { interviews } from "@/db/schema/interview.schema";
+import { invitations } from "@/db/schema/invitation.schema";
 import { tasks } from "@/db/schema/task.management.schema";
 import { units } from "@/db/schema/unit.schema";
 import {
@@ -18,7 +19,7 @@ import {
   CONFLICT,
   BAD_REQUEST,
 } from "@/lib/openapi/http-status-codes";
-import { auth } from "@/config/auth";
+import { sendInvitationEmail } from "@/routes/auth/auth.service";
 
 import type {
   GetOverallStats,
@@ -35,7 +36,6 @@ import type {
   EnableInternship,
   GetAllInternships,
 } from "./admin.routes";
-import app from "@/app";
 
 // 1. GET /admin/stats/overview - Overall Statistics
 export const getOverallStats: AppRouteHandler<GetOverallStats> = async (c) => {
@@ -126,12 +126,14 @@ export const getOverallStats: AppRouteHandler<GetOverallStats> = async (c) => {
   }
 };
 
-// 13. POST /admin/units/add-company - Add Company/Unit by Admin
+// 13. POST /admin/units/add-company - Add Company/Unit by Admin (Create Invitation)
 export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
   const body = c.req.valid("json");
+  // get the FRONTEND_URL from env
+  const FRONTEND_URL = process.env.FRONTEND_URL;
 
   try {
-    // Check if email already exists
+    // Check if email already exists in users or invitations
     const existingUser = await db
       .select({ id: userTable.id })
       .from(userTable)
@@ -148,65 +150,101 @@ export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
       );
     }
 
-    // Use Better Auth's signup method
-    const signUpResult = await auth.api.signUpEmail({
-      body: {
-        email: body.companyEmail,
-        password: body.password,
-        name: body.companyName,
-        // Store unit-specific data in metadata for later processing
-        metadata: {
-          role: "unit",
-          companyType: body.companyType,
-          contactNumber: body.contactNumber,
-          industryType: body.industryType,
-          address: body.address,
-          aboutCompany: body.aboutCompany,
-          serviceOffered: body.serviceOffered,
-          achievements: body.achievements || "",
-        },
-      },
-    });
+    // Check if invitation already exists and is pending
+    const existingInvitation = await db
+      .select({ id: invitations.id })
+      .from(invitations)
+      .where(
+        and(
+          eq(invitations.email, body.companyEmail),
+          eq(invitations.status, "pending"),
+        ),
+      )
+      .limit(1);
 
-    if (!signUpResult) {
+    if (existingInvitation.length > 0) {
+      return c.json(
+        {
+          status_code: CONFLICT,
+          message: "Invitation already exists for this email",
+        },
+        CONFLICT,
+      );
+    }
+
+    // Generate unique invitation token
+    const invitationToken = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
+
+    // Build invitation URL
+    const invitationUrl = `${FRONTEND_URL}/auth/accept-invitation?token=${invitationToken}`;
+
+    // Create invitation record
+    const newInvitation = await db
+      .insert(invitations)
+      .values({
+        email: body.companyEmail,
+        invitationToken,
+        invitationUrl,
+        role: "unit",
+        companyName: body.companyName,
+        companyType: body.companyType,
+        contactNumber: body.contactNumber,
+        industryType: body.industryType,
+        address: body.address,
+        aboutCompany: body.aboutCompany,
+        serviceOffered: body.serviceOffered,
+        achievements: body.achievements || "",
+        expiresAt,
+        status: "pending",
+      })
+      .returning({ id: invitations.id });
+
+    if (!newInvitation || newInvitation.length === 0) {
       return c.json(
         {
           status_code: BAD_REQUEST,
-          message: "Failed to create user account",
+          message: "Failed to create invitation",
         },
         BAD_REQUEST,
       );
     }
 
-    // Extract user data from Better Auth response
-    const userData = signUpResult.user;
+    // Send invitation email
+    try {
+      await sendInvitationEmail(
+        body.companyEmail,
+        body.companyName,
+        invitationUrl,
+        {
+          companyName: body.companyName,
+          companyType: body.companyType,
+          industryType: body.industryType,
+        },
+      );
+    } catch (emailErr) {
+      console.error("Error sending invitation email:", emailErr);
+      // Log but don't fail - invitation is still created
+    }
 
     return c.json(
       {
         status_code: CREATED,
-        message: "Company created successfully. Verification email sent.",
+        message:
+          "Invitation created successfully. Invitation email has been sent.",
         data: {
-          userId: userData.id,
-          email: userData.email,
-          name: userData.name,
-          message: "Please verify email to activate the account",
+          invitationId: newInvitation[0].id,
+          email: body.companyEmail,
+          companyName: body.companyName,
+          invitationExpiresAt: expiresAt,
+          message: "Company admin should check their email for invitation link",
         },
       },
       CREATED,
     );
   } catch (err: any) {
-    console.error("Error adding company:", err);
-
-    // Handle specific Better Auth errors
-    if (err.message?.includes("already exists")) {
-      return c.json(
-        {
-          status_code: CONFLICT,
-          message: "Email already exists",
-        },
-        CONFLICT,
-      );
-    }
+    console.error("Error creating company invitation:", err);
 
     return c.json(
       {
