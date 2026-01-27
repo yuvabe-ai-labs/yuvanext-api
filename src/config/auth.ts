@@ -86,13 +86,7 @@ export const auth = betterAuth({
     autoSignInAfterVerification: true,
     sendOnSignUp: true,
     sendVerificationEmail: async ({ user, url }) => {
-      const userWithMetadata = user as typeof user & {
-        metadata?: {
-          invitedByAdmin?: boolean;
-          role?: string;
-          website_url?: string;
-        };
-      };
+      const userWithMetadata = user as Record<string, any>;
 
       // Check if user was invited by admin - skip verification email
       if (userWithMetadata.metadata?.invitedByAdmin) {

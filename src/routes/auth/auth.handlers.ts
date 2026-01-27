@@ -19,6 +19,18 @@ interface AcceptInvitationRequest {
   password: string;
 }
 
+interface InvitationMetadata {
+  companyName?: string;
+  companyType?: string;
+  contactNumber?: string;
+  industryType?: string;
+  address?: string;
+  aboutCompany?: string;
+  serviceOffered?: string;
+  achievements?: string;
+  [key: string]: any;
+}
+
 // POST /auth/accept-invitation - Accept invitation and create account with password
 export const acceptInvitation = async (c: any): Promise<Response> => {
   try {
@@ -53,37 +65,17 @@ export const acceptInvitation = async (c: any): Promise<Response> => {
     }
 
     const inv = invitation[0];
-
-    // Check if invitation is expired
-    if (new Date() > inv.expiresAt) {
-      return c.json(
-        {
-          status_code: UNAUTHORIZED,
-          message: "Invitation has expired",
-        },
-        UNAUTHORIZED,
-      );
-    }
-
-    // Check if invitation is already accepted
-    if (inv.status !== "pending") {
-      return c.json(
-        {
-          status_code: BAD_REQUEST,
-          message: "Invitation has already been used",
-        },
-        BAD_REQUEST,
-      );
-    }
+    const metadata = (inv.metadata as InvitationMetadata) || {};
 
     let newUser: any;
+
     try {
       // Create user account using Better Auth with email from invitation
       const signUpResult = await auth.api.signUpEmail({
         body: {
           email: inv.email, // Email comes from invitation, not user input
           password: password,
-          name: inv.companyName || inv.email.split("@")[0],
+          name: metadata.companyName || inv.email.split("@")[0],
           metadata: {
             role: "unit",
             invitedByAdmin: true,
@@ -92,15 +84,6 @@ export const acceptInvitation = async (c: any): Promise<Response> => {
       });
 
       newUser = signUpResult.user;
-
-      // Set email as verified and assign unit role
-      await db
-        .update(userTable)
-        .set({
-          emailVerified: true, // Bypass email verification for admin invites
-          role: "unit", // Assign unit role
-        })
-        .where(eq(userTable.id, newUser.id));
     } catch (signUpErr: any) {
       console.error("Error signing up user:", signUpErr);
       return c.json(
@@ -112,25 +95,57 @@ export const acceptInvitation = async (c: any): Promise<Response> => {
       );
     }
 
-    // Create the unit profile
+    // Use transaction to update user, create unit profile, and update invitation
     try {
-      await db.insert(units).values({
-        userId: newUser.id,
-        name: inv.companyName || "",
-        type: inv.companyType || "",
-        phone: inv.contactNumber || "",
-        address: inv.address || "",
-        description: inv.aboutCompany || "",
-        industry: inv.industryType || "",
-        skillsOffered: inv.serviceOffered ? [inv.serviceOffered] : [],
-        opportunitiesOffered: inv.achievements ? [inv.achievements] : [],
-        galleryImages: [],
-        galleryVideos: [],
-        onboardingCompleted: true, // Mark as completed since admin provided data
+      await db.transaction(async (tx) => {
+        // Set email as verified and assign unit role
+        await tx
+          .update(userTable)
+          .set({
+            emailVerified: true,
+            role: "unit",
+          })
+          .where(eq(userTable.id, newUser.id));
+
+        // Create the unit profile
+        await tx.insert(units).values({
+          userId: newUser.id,
+          name: metadata.companyName || "",
+          type: metadata.companyType || "",
+          phone: metadata.contactNumber || "",
+          address: metadata.address || "",
+          description: metadata.aboutCompany || "",
+          industry: metadata.industryType || "",
+          skillsOffered: metadata.serviceOffered
+            ? [metadata.serviceOffered]
+            : [],
+          opportunitiesOffered: metadata.achievements
+            ? [metadata.achievements]
+            : [],
+          galleryImages: [],
+          galleryVideos: [],
+          onboardingCompleted: true,
+        });
       });
+
+      return c.json(
+        {
+          status_code: CREATED,
+          message: "Account created successfully. You can now sign in.",
+          data: {
+            userId: newUser.id,
+            email: newUser.email,
+            name: newUser.name,
+            role: "unit",
+            companyName: metadata.companyName,
+          },
+        },
+        CREATED,
+      );
     } catch (err) {
-      console.error("Error creating unit profile:", err);
-      // Rollback user creation if unit creation fails
+      console.error("Error in transaction:", err);
+
+      // Rollback user creation if transaction fails
       try {
         await db.delete(userTable).where(eq(userTable.id, newUser.id));
       } catch (deleteErr) {
@@ -140,36 +155,11 @@ export const acceptInvitation = async (c: any): Promise<Response> => {
       return c.json(
         {
           status_code: INTERNAL_SERVER_ERROR,
-          message: "Failed to create unit profile",
+          message: "Failed to complete account setup",
         },
         INTERNAL_SERVER_ERROR,
       );
     }
-
-    // Update invitation status to accepted
-    await db
-      .update(invitations)
-      .set({
-        status: "accepted",
-        acceptedAt: new Date(),
-        id: newUser.id,
-      })
-      .where(eq(invitations.id, inv.id));
-
-    return c.json(
-      {
-        status_code: CREATED,
-        message: "Account created successfully. You can now sign in.",
-        data: {
-          userId: newUser.id,
-          email: newUser.email,
-          name: newUser.name,
-          role: "unit",
-          companyName: inv.companyName,
-        },
-      },
-      CREATED,
-    );
   } catch (err: any) {
     console.error("Error accepting invitation:", err);
 
@@ -216,31 +206,18 @@ export const verifyInvitation = async (c: any): Promise<Response> => {
     }
 
     const inv = invitation[0];
-
-    // Check if expired
-    const isExpired = new Date() > inv.expiresAt;
-
-    // Check if already used
-    const isUsed = inv.status !== "pending";
-
-    // Check if it's a unit invitation
-    const isValidRole = inv.role === "unit";
+    const metadata = (inv.metadata as InvitationMetadata) || {};
 
     return c.json(
       {
         status_code: OK,
         message: "Invitation verification",
         data: {
-          isValid: !isExpired && !isUsed && isValidRole,
-          isExpired,
-          isUsed,
-          isValidRole,
-          email: inv.email, // Email is provided from invitation
-          role: inv.role,
-          companyName: inv.companyName,
-          companyType: inv.companyType,
-          industryType: inv.industryType,
-          expiresAt: inv.expiresAt,
+          invitationId: inv.id,
+          email: inv.email,
+          companyName: metadata.companyName,
+          companyType: metadata.companyType,
+          industryType: metadata.industryType,
         },
       },
       OK,

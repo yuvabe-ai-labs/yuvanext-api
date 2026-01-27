@@ -141,6 +141,13 @@
       "when": 1769490211652,
       "tag": "0019_next_zaladane",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1769493186366,
+      "tag": "0020_military_mister_fear",
+      "breakpoints": true
     }
   ]
 }

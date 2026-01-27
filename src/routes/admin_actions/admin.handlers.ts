@@ -1,6 +1,5 @@
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import type { AppRouteHandler } from "@/types/app.types";
-import crypto from "crypto";
 import db from "@/db";
 import { applications } from "@/db/schema/application.schema";
 import { user as userTable, session } from "@/db/schema/auth.schema";
@@ -155,12 +154,7 @@ export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
     const existingInvitation = await db
       .select({ id: invitations.id })
       .from(invitations)
-      .where(
-        and(
-          eq(invitations.email, body.email),
-          eq(invitations.status, "pending"),
-        ),
-      )
+      .where(and(eq(invitations.email, body.email)))
       .limit(1);
 
     if (existingInvitation.length > 0) {
@@ -173,27 +167,22 @@ export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
       );
     }
 
-    // Generate unique invitation token
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
-
-    // Create invitation record
+    // Create invitation record with metadata
     const newInvitation = await db
       .insert(invitations)
       .values({
         email: body.email,
-        invitationUrl: "", // Will be updated after we get the ID
-        role: "unit",
-        companyName: body.name,
-        companyType: body.companyType,
-        contactNumber: body.contactNumber,
-        industryType: body.industryType,
-        address: body.address,
-        aboutCompany: body.aboutCompany,
-        serviceOffered: body.serviceOffered,
-        achievements: body.achievements || "",
-        expiresAt,
-        status: "pending",
+        metadata: {
+          role: "unit",
+          companyName: body.name,
+          companyType: body.companyType,
+          contactNumber: body.contactNumber,
+          industryType: body.industryType,
+          address: body.address,
+          aboutCompany: body.aboutCompany,
+          serviceOffered: body.serviceOffered,
+          achievements: body.achievements || "",
+        },
       })
       .returning({ id: invitations.id });
 
@@ -209,12 +198,6 @@ export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
 
     // Build invitation URL using invitation ID
     const invitationUrl = `${FRONTEND_URL}/auth/accept-invitation?id=${newInvitation[0].id}`;
-
-    // Update the invitation with the URL
-    await db
-      .update(invitations)
-      .set({ invitationUrl })
-      .where(eq(invitations.id, newInvitation[0].id));
 
     // Send invitation email
     try {
@@ -237,7 +220,6 @@ export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
           invitationId: newInvitation[0].id,
           email: body.email,
           companyName: body.name,
-          invitationExpiresAt: expiresAt,
           message: "Company admin should check their email for invitation link",
         },
       },

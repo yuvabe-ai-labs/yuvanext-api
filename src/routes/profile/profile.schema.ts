@@ -25,7 +25,17 @@ export const updateProfileSchema = z
     dateOfBirth: z.string().optional(),
     onboardingCompleted: z.boolean().optional(),
     education: z.array(z.any()).optional(),
-    language: z.array(z.string()).optional(),
+    language: z.array(
+      z.union([
+        z.string(),
+        z.object({
+          name: z.string(),
+          read: z.boolean(),
+          speak: z.boolean(),
+          write: z.boolean(),
+        }),
+      ]),
+    ),
     course: z.array(z.any()).optional(),
     internship: z.array(z.any()).optional(),
     projects: z.array(z.any()).optional(),
