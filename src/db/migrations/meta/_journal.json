@@ -127,6 +127,27 @@
       "when": 1767336344251,
       "tag": "0017_ambiguous_next_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1769168916383,
+      "tag": "0018_broken_speedball",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1769490211652,
+      "tag": "0019_next_zaladane",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1769493186366,
+      "tag": "0020_military_mister_fear",
+      "breakpoints": true
     }
   ]
 }

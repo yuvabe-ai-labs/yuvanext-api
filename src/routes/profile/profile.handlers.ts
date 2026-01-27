@@ -888,7 +888,7 @@ export const uploadGalleryImage: AppRouteHandler<UploadGalleryImage> = async (
       const unit = await tx.query.units.findFirst({
         where: eq(units.userId, user.id),
       });
-      const currentGalleryImages = unit?.galleryImages || [];
+      let currentGalleryImages = unit?.galleryImages || [];
 
       // Add new image to array
       updatedGalleryImages = [...currentGalleryImages, galleryImageUrl];
@@ -939,7 +939,7 @@ export const deleteGalleryImage: AppRouteHandler<DeleteGalleryImage> = async (
       const unit = await tx.query.units.findFirst({
         where: eq(units.userId, user.id),
       });
-      const currentGalleryImages = unit?.galleryImages || [];
+      let currentGalleryImages = unit?.galleryImages || [];
 
       if (!currentGalleryImages.includes(imageUrl)) {
         throw new Error("Image not found in gallery");
@@ -1027,7 +1027,7 @@ export const uploadTestimonialVideo: AppRouteHandler<
       const unit = await tx.query.units.findFirst({
         where: eq(units.userId, user.id),
       });
-      const currentVideos = unit?.galleryVideos || [];
+      let currentVideos = unit?.galleryVideos || [];
 
       // Add new video to array
       updatedVideos = [...currentVideos, videoUrl];
@@ -1078,7 +1078,7 @@ export const deleteTestimonialVideo: AppRouteHandler<
       const unit = await tx.query.units.findFirst({
         where: eq(units.userId, user.id),
       });
-      const currentVideos = unit?.galleryVideos || [];
+      let currentVideos = unit?.galleryVideos || [];
 
       if (!currentVideos.includes(videoUrl)) {
         throw new Error("Video not found in gallery");

@@ -230,12 +230,48 @@ export async function updateUserRoleOnEmailVerification(
   }
 }
 
+export async function sendInvitationEmail(
+  recipient: string,
+  name: string,
+  invitationUrl: string,
+  invitationData?: {
+    companyName?: string;
+    companyType?: string;
+    industryType?: string;
+  },
+) {
+  try {
+    const html = await loadTemplate("invitation.html", {
+      name,
+      email: recipient,
+      invitationUrl,
+      companyName: invitationData?.companyName || "",
+      companyType: invitationData?.companyType || "",
+      industryType: invitationData?.industryType || "",
+      showCompanyInfo: invitationData ? "true" : "",
+    });
+
+    await transporter.sendMail({
+      from: env.SMTP_USER,
+      to: recipient,
+      subject: "Welcome to YuvaNext - Complete Your Registration",
+      html,
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error sending invitation email:", error);
+    throw error;
+  }
+}
+
 // Pre-load templates on module initialization (optional but recommended)
 async function preloadTemplates() {
   const templates = [
     "verify-email.html",
     "reset-password.html",
     "change-email-verification.html",
+    "invitation.html",
   ];
   await Promise.allSettled(
     templates.map((template) => loadTemplate(template, {})),

@@ -1,3 +1,5 @@
+// config/auth.ts
+
 import bcrypt from "bcrypt";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -84,6 +86,15 @@ export const auth = betterAuth({
     autoSignInAfterVerification: true,
     sendOnSignUp: true,
     sendVerificationEmail: async ({ user, url }) => {
+      // Check if user was invited by admin - skip verification email
+      if (user.metadata?.invitedByAdmin) {
+        console.log(
+          "Skipping verification email for admin-invited user:",
+          user.email,
+        );
+        return;
+      }
+      // Send verification email for normal sign-ups
       try {
         await sendVerificationMail(user.email, user.name, url);
       } catch (error) {
@@ -99,7 +110,7 @@ export const auth = betterAuth({
           user.id,
           user.metadata.role,
           user.metadata.website_url,
-          user.metadata, // Pass the full metadata object
+          user.metadata,
         );
       }
     },
