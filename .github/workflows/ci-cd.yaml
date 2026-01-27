@@ -45,6 +45,7 @@ jobs:
             echo "IMAGE_TAG=prod" >> $GITHUB_ENV
             echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_PROD }}" >> $GITHUB_ENV
             echo "S3_BUCKET_NAME=${{secrets.BUCKET_NAME_PROD}}" >> $GITHUB_ENV
+            echo "FRONTEND_URL=${{ secrets.FRONTEND_URL_PROD }}" >> $GITHUB_ENV
           elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
             echo "NODE_ENV=staging" >> $GITHUB_ENV
             echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_STAGING }}" >> $GITHUB_ENV
@@ -52,6 +53,7 @@ jobs:
             echo "IMAGE_TAG=stag" >> $GITHUB_ENV
             echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_STAGING }}" >> $GITHUB_ENV
             echo "S3_BUCKET_NAME=${{ secrets.BUCKET_NAME_STAGING }}" >> $GITHUB_ENV
+            echo "FRONTEND_URL=${{ secrets.FRONTEND_URL_STAGING }}" >> $GITHUB_ENV
           else
             echo "NODE_ENV=development" >> $GITHUB_ENV
             echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_DEV }}" >> $GITHUB_ENV
@@ -59,6 +61,7 @@ jobs:
             echo "IMAGE_TAG=dev" >> $GITHUB_ENV
             echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_DEV }}" >> $GITHUB_ENV
             echo "S3_BUCKET_NAME=${{ secrets.BUCKET_NAME_DEV }}" >> $GITHUB_ENV
+            echo "FRONTEND_URL=${{ secrets.FRONTEND_URL_DEV }}" >> $GITHUB_ENV
           fi
       - uses: actions/checkout@v4
       # --------------------
@@ -128,6 +131,7 @@ jobs:
           NODE_ENV: ${{ env.NODE_ENV }}
           S3_BUCKET_NAME: ${{ env.S3_BUCKET_NAME }}
           IMAGE_URI: ${{ env.IMAGE_URI }}
+          FRONTEND_URL: ${{ env.FRONTEND_URL }}
         run: |
           set +e
           aws lambda get-function --function-name $FUNCTION_NAME > /dev/null 2>&1
@@ -149,6 +153,7 @@ jobs:
             --arg ZOOM_CLIENT_ID "$ZOOM_CLIENT_ID" \
             --arg ZOOM_CLIENT_SECRET "$ZOOM_CLIENT_SECRET" \
             --arg S3_BUCKET_NAME "$S3_BUCKET_NAME" \
+            --arg FRONTEND_URL "$FRONTEND_URL" \
             '{Variables: {
               NODE_ENV: $NODE_ENV,
               DATABASE_URL: $DATABASE_URL,
@@ -162,7 +167,8 @@ jobs:
               ZOOM_ACCOUNT_ID: $ZOOM_ACCOUNT_ID,
               ZOOM_CLIENT_ID: $ZOOM_CLIENT_ID,
               ZOOM_CLIENT_SECRET: $ZOOM_CLIENT_SECRET,
-              S3_BUCKET_NAME: $S3_BUCKET_NAME
+              S3_BUCKET_NAME: $S3_BUCKET_NAME,
+              FRONTEND_URL: $FRONTEND_URL
             }}')
 
           if [ $EXISTS -ne 0 ]; then
