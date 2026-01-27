@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+export const genderEnum = z.enum(["male", "female", "other"]);
+
+export const maritalStatusEnum = z.enum([
+  "married",
+  "single",
+  "prefer not to say",
+]);
+
 export const updateProfileSchema = z
   .object({
     // user fields
@@ -15,13 +23,13 @@ export const updateProfileSchema = z
     // candidate-specific complex fields (allow loose types to keep flexibility)
     type: z.string().optional(),
     experienceLevel: z.string().optional(),
-    maritalStatus: z.string().optional(),
+    maritalStatus: maritalStatusEnum.optional(),
     isDifferentlyAbled: z.boolean().optional(),
     hasCareerBreak: z.boolean().optional(),
     skills: z.array(z.string()).optional(),
     interests: z.array(z.string()).optional(),
     lookingFor: z.array(z.string()).optional(),
-    gender: z.string().optional(),
+    gender: genderEnum.optional(),
     dateOfBirth: z.string().optional(),
     onboardingCompleted: z.boolean().optional(),
     education: z.array(z.any()).optional(),
@@ -61,7 +69,7 @@ export const updateProfileSchema = z
 const baseUserSchema = z.object({
   id: z.string(),
   name: z.string(),
-  email: z.string().email(),
+  email: z.email(),
   image: z.string().nullable(),
   role: z.enum(["candidate", "unit", "admin"]),
   createdAt: z.date(),
@@ -75,7 +83,7 @@ const candidateFieldsSchema = z.object({
   experienceLevel: z.string().nullable(),
   profileSummary: z.string().nullable(),
   location: z.string().nullable(),
-  maritalStatus: z.string().nullable(),
+  maritalStatus: maritalStatusEnum.nullable(),
   isDifferentlyAbled: z.boolean().nullable(),
   hasCareerBreak: z.boolean().nullable(),
   skills: z.array(z.string()).nullable(),
@@ -83,11 +91,23 @@ const candidateFieldsSchema = z.object({
   lookingFor: z.array(z.string()).nullable(),
   avatarUrl: z.string().nullable(),
   phone: z.string().nullable(),
-  gender: z.string().nullable(),
+  gender: genderEnum.nullable(),
   dateOfBirth: z.date().nullable(),
   onboardingCompleted: z.boolean().nullable(),
   education: z.array(z.any()).nullable(),
-  language: z.array(z.string()).nullable(),
+  language: z
+    .array(
+      z.union([
+        z.string(),
+        z.object({
+          name: z.string(),
+          read: z.boolean(),
+          speak: z.boolean(),
+          write: z.boolean(),
+        }),
+      ]),
+    )
+    .nullable(),
   course: z.array(z.any()).nullable(),
   internship: z.array(z.any()).nullable(),
   projects: z.array(z.any()).nullable(),
