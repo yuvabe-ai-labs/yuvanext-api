@@ -87,11 +87,8 @@ export const auth = betterAuth({
     sendOnSignUp: true,
     sendVerificationEmail: async ({ user, url }) => {
       // Check if user was invited by admin - skip verification email
-      if (user.metadata?.invitedByAdmin) {
-        console.log(
-          "Skipping verification email for admin-invited user:",
-          user.email,
-        );
+      const newUserMetadata = user as Record<string, any>;
+      if (newUserMetadata.metadata?.invitedByAdmin) {
         return;
       }
       // Send verification email for normal sign-ups
