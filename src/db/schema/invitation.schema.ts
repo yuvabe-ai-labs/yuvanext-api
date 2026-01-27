@@ -18,7 +18,6 @@ export const invitations = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     email: text("email").notNull(),
-    invitationToken: text("invitation_token").notNull().unique(),
     invitationUrl: text("invitation_url"),
     role: text("role").notNull().default("candidate"), // "candidate" or "unit"
     companyName: text("company_name"),
@@ -43,7 +42,6 @@ export const invitations = pgTable(
   },
   (table) => ({
     emailIdx: index("invitations_email_idx").on(table.email),
-    tokenIdx: index("invitations_token_idx").on(table.invitationToken),
     statusIdx: index("invitations_status_idx").on(table.status),
   }),
 );

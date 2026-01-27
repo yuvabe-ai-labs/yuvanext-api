@@ -86,7 +86,13 @@ export const auth = betterAuth({
     autoSignInAfterVerification: true,
     sendOnSignUp: true,
     sendVerificationEmail: async ({ user, url }) => {
-      const userWithMetadata = user as any;
+      const userWithMetadata = user as typeof user & {
+        metadata?: {
+          invitedByAdmin?: boolean;
+          role?: string;
+          website_url?: string;
+        };
+      };
 
       // Check if user was invited by admin - skip verification email
       if (userWithMetadata.metadata?.invitedByAdmin) {
@@ -94,9 +100,8 @@ export const auth = betterAuth({
           "Skipping verification email for admin-invited user:",
           user.email,
         );
-        return; // Don't send email for admin invitations
+        return;
       }
-
       // Send verification email for normal sign-ups
       try {
         await sendVerificationMail(user.email, user.name, url);

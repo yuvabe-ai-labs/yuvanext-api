@@ -134,6 +134,13 @@
       "when": 1769168916383,
       "tag": "0018_broken_speedball",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1769490211652,
+      "tag": "0019_next_zaladane",
+      "breakpoints": true
     }
   ]
 }

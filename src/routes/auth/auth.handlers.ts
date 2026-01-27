@@ -15,7 +15,7 @@ import { auth } from "@/config/auth";
 
 // Type definitions for the request/response
 interface AcceptInvitationRequest {
-  token: string;
+  invitationId: string;
   password: string;
 }
 
@@ -23,30 +23,30 @@ interface AcceptInvitationRequest {
 export const acceptInvitation = async (c: any): Promise<Response> => {
   try {
     const body = (await c.req.json()) as AcceptInvitationRequest;
-    const { token, password } = body;
+    const { invitationId, password } = body;
 
-    if (!token || !password) {
+    if (!invitationId || !password) {
       return c.json(
         {
           status_code: BAD_REQUEST,
-          message: "Token and password are required",
+          message: "Invitation ID and password are required",
         },
         BAD_REQUEST,
       );
     }
 
-    // Verify invitation token exists and is valid
+    // Verify invitation ID exists and is valid
     const invitation = await db
       .select()
       .from(invitations)
-      .where(eq(invitations.invitationToken, token))
+      .where(eq(invitations.id, invitationId))
       .limit(1);
 
     if (!invitation || invitation.length === 0) {
       return c.json(
         {
           status_code: NOT_FOUND,
-          message: "Invalid invitation token",
+          message: "Invalid invitation ID",
         },
         NOT_FOUND,
       );
@@ -78,10 +78,10 @@ export const acceptInvitation = async (c: any): Promise<Response> => {
 
     let newUser: any;
     try {
-      // Create user account using Better Auth
+      // Create user account using Better Auth with email from invitation
       const signUpResult = await auth.api.signUpEmail({
         body: {
-          email: inv.email,
+          email: inv.email, // Email comes from invitation, not user input
           password: password,
           name: inv.companyName || inv.email.split("@")[0],
           metadata: {
@@ -183,33 +183,33 @@ export const acceptInvitation = async (c: any): Promise<Response> => {
   }
 };
 
-// GET /auth/verify-invitation?token=xxx - Verify invitation is valid
+// GET /auth/verify-invitation?id=xxx - Verify invitation is valid and return invitation details
 export const verifyInvitation = async (c: any): Promise<Response> => {
   try {
-    const token = c.req.query("token");
+    const invitationId = c.req.query("id");
 
-    if (!token) {
+    if (!invitationId) {
       return c.json(
         {
           status_code: BAD_REQUEST,
-          message: "Token is required",
+          message: "Invitation ID is required",
         },
         BAD_REQUEST,
       );
     }
 
-    // Find invitation
+    // Find invitation by ID
     const invitation = await db
       .select()
       .from(invitations)
-      .where(eq(invitations.invitationToken, token))
+      .where(eq(invitations.id, invitationId))
       .limit(1);
 
     if (!invitation || invitation.length === 0) {
       return c.json(
         {
           status_code: NOT_FOUND,
-          message: "Invalid invitation token",
+          message: "Invalid invitation ID",
         },
         NOT_FOUND,
       );
@@ -235,9 +235,11 @@ export const verifyInvitation = async (c: any): Promise<Response> => {
           isExpired,
           isUsed,
           isValidRole,
-          email: inv.email,
+          email: inv.email, // Email is provided from invitation
           role: inv.role,
-          ...(inv.companyName && { companyName: inv.companyName }),
+          companyName: inv.companyName,
+          companyType: inv.companyType,
+          industryType: inv.industryType,
           expiresAt: inv.expiresAt,
         },
       },

@@ -177,8 +177,8 @@ export const unitRegistrationStatsSchema = z.object({
 // =====================================================
 
 export const addCompanyRequestSchema = z.object({
-  companyName: z.string().min(1, "Company name is required"),
-  companyEmail: z.email("Valid email is required"),
+  name: z.string().min(1, "Company name is required"),
+  email: z.email("Valid email is required"),
   contactNumber: z.string().min(6, "Valid contact number is required"),
   companyType: z.enum(["auroville_unit", "non_auroville_unit"]),
   industryType: z.string().min(1, "Industry type is required"),

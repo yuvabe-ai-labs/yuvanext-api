@@ -138,7 +138,7 @@ export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
     const existingUser = await db
       .select({ id: userTable.id })
       .from(userTable)
-      .where(eq(userTable.email, body.companyEmail))
+      .where(eq(userTable.email, body.email))
       .limit(1);
 
     if (existingUser.length > 0) {
@@ -157,7 +157,7 @@ export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
       .from(invitations)
       .where(
         and(
-          eq(invitations.email, body.companyEmail),
+          eq(invitations.email, body.email),
           eq(invitations.status, "pending"),
         ),
       )
@@ -174,22 +174,17 @@ export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
     }
 
     // Generate unique invitation token
-    const invitationToken = crypto.randomBytes(32).toString("hex");
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
-
-    // Build invitation URL
-    const invitationUrl = `${FRONTEND_URL}/auth/accept-invitation?token=${invitationToken}`;
 
     // Create invitation record
     const newInvitation = await db
       .insert(invitations)
       .values({
-        email: body.companyEmail,
-        invitationToken,
-        invitationUrl,
+        email: body.email,
+        invitationUrl: "", // Will be updated after we get the ID
         role: "unit",
-        companyName: body.companyName,
+        companyName: body.name,
         companyType: body.companyType,
         contactNumber: body.contactNumber,
         industryType: body.industryType,
@@ -212,18 +207,22 @@ export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
       );
     }
 
+    // Build invitation URL using invitation ID
+    const invitationUrl = `${FRONTEND_URL}/auth/accept-invitation?id=${newInvitation[0].id}`;
+
+    // Update the invitation with the URL
+    await db
+      .update(invitations)
+      .set({ invitationUrl })
+      .where(eq(invitations.id, newInvitation[0].id));
+
     // Send invitation email
     try {
-      await sendInvitationEmail(
-        body.companyEmail,
-        body.companyName,
-        invitationUrl,
-        {
-          companyName: body.companyName,
-          companyType: body.companyType,
-          industryType: body.industryType,
-        },
-      );
+      await sendInvitationEmail(body.email, body.name, invitationUrl, {
+        companyName: body.name,
+        companyType: body.companyType,
+        industryType: body.industryType,
+      });
     } catch (emailErr) {
       console.error("Error sending invitation email:", emailErr);
       // Log but don't fail - invitation is still created
@@ -236,8 +235,8 @@ export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
           "Invitation created successfully. Invitation email has been sent.",
         data: {
           invitationId: newInvitation[0].id,
-          email: body.companyEmail,
-          companyName: body.companyName,
+          email: body.email,
+          companyName: body.name,
           invitationExpiresAt: expiresAt,
           message: "Company admin should check their email for invitation link",
         },
