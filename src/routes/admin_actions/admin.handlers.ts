@@ -36,6 +36,7 @@ import type {
   EnableInternship,
   GetAllInternships,
 } from "./admin.routes";
+import env from "@/config/env";
 
 // 1. GET /admin/stats/overview - Overall Statistics
 export const getOverallStats: AppRouteHandler<GetOverallStats> = async (c) => {
@@ -130,7 +131,7 @@ export const getOverallStats: AppRouteHandler<GetOverallStats> = async (c) => {
 export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
   const body = c.req.valid("json");
   // get the FRONTEND_URL from env
-  const FRONTEND_URL = process.env.FRONTEND_URL;
+  const FRONTEND_URL = env.FRONTEND_URL;
 
   try {
     // Check if email already exists in users or invitations
