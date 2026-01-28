@@ -8,6 +8,12 @@ export const maritalStatusEnum = z.enum([
   "prefer not to say",
 ]);
 
+const socialLinkSchema = z.object({
+  id: z.string().optional(),
+  platform: z.string(),
+  url: z.url(),
+});
+
 export const updateProfileSchema = z
   .object({
     // user fields
@@ -47,7 +53,7 @@ export const updateProfileSchema = z
     course: z.array(z.any()).optional(),
     internship: z.array(z.any()).optional(),
     projects: z.array(z.any()).optional(),
-    socialLinks: z.record(z.string(), z.string()).optional(),
+    socialLinks: z.array(socialLinkSchema).optional(),
     // unit-specific fields
     websiteUrl: z.url().optional(),
     mission: z.string().optional(),
@@ -111,7 +117,7 @@ const candidateFieldsSchema = z.object({
   course: z.array(z.any()).nullable(),
   internship: z.array(z.any()).nullable(),
   projects: z.array(z.any()).nullable(),
-  socialLinks: z.record(z.string(), z.string()).nullable(),
+  socialLinks: z.array(socialLinkSchema).nullable(),
 });
 
 // Unit-specific fields
@@ -137,7 +143,7 @@ const unitFieldsSchema = z.object({
   skillsOffered: z.array(z.string()).nullable(),
   opportunitiesOffered: z.array(z.any()).nullable(),
   projects: z.array(z.any()).nullable(),
-  socialLinks: z.record(z.string(), z.string()).nullable(),
+  socialLinks: z.array(socialLinkSchema).nullable(),
 });
 
 // Profile score field (always included in GET /profile response)
