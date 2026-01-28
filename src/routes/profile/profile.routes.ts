@@ -210,9 +210,15 @@ export const deleteGalleryImage = createRoute({
   summary: "Delete gallery image (Units only)",
   description: "Delete specific gallery image from S3 and remove from array",
   request: {
-    query: z.object({
-      imageUrl: z.url(),
-    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            imageUrl: z.url(),
+          }),
+        },
+      },
+    },
   },
   responses: {
     [OK]: createResponse(
@@ -273,9 +279,15 @@ export const deleteTestimonialVideo = createRoute({
   description:
     "Delete specific testimonial video from S3 and remove from array",
   request: {
-    query: z.object({
-      videoUrl: z.url(),
-    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            videoUrl: z.url(),
+          }),
+        },
+      },
+    },
   },
   responses: {
     [OK]: createResponse(

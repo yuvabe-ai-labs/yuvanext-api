@@ -1,4 +1,4 @@
-// chatbot.service.ts - Enhanced with streaming support
+// chatbot.service.ts - Structured output only
 
 import type { Readable } from "node:stream";
 
@@ -38,14 +38,75 @@ async function streamToString(stream: Readable | Uint8Array): Promise<string> {
   return Buffer.concat(chunks).toString("utf-8");
 }
 
-// NEW: Streaming generator function - EXPORTED
-export async function* generateTextStreamFromModel(
+// Type for structured bot response
+export interface StructuredBotResponse {
+  message: string;
+  question?: string | null;
+  options?: string[] | null;
+  fieldType?: "text" | "select" | "multiselect" | null;
+  isComplete?: boolean;
+}
+
+// Streaming generator with structured output
+export async function* generateStructuredStreamFromModel(
   prompt: string,
   systemPrompt: string,
   conversationHistory?: Array<{ role: string; content: string }>,
-): AsyncGenerator<string, void, unknown> {
+): AsyncGenerator<StructuredBotResponse, void, unknown> {
+  const enhancedSystemPrompt = `${systemPrompt}
+
+CRITICAL: You must ALWAYS respond with valid JSON in this exact format:
+{
+  "message": "Your conversational message here",
+  "question": "The specific question you're asking (if any)",
+  "options": ["Option 1", "Option 2", "Option 3"],
+  "fieldType": "text" | "select" | "multiselect",
+  "isComplete": false
+}
+
+Rules:
+- "message": Always include a friendly conversational message
+- "question": Extract ONLY the question part (e.g., "What's your phone number?" not "Great! What's your phone number?")
+- "options": Include if you're presenting choices (array of strings), otherwise null
+- "fieldType": 
+  * "text" for open-ended questions
+  * "select" for single choice questions
+  * "multiselect" for multiple choice questions
+- "isComplete": Set to true ONLY when saying the final completion message
+
+Examples:
+
+For greeting:
+{
+  "message": "Hi! I'm here to help you get started with YuvaNext. Let's begin with some basic details.",
+  "question": "What's the best number to reach you on?",
+  "options": null,
+  "fieldType": "text",
+  "isComplete": false
+}
+
+For multiple choice:
+{
+  "message": "Great! Now let me know about your education status.",
+  "question": "Are you still in school?",
+  "options": ["Yes, I'm still in school", "No, I've completed school"],
+  "fieldType": "select",
+  "isComplete": false
+}
+
+For completion:
+{
+  "message": "Perfect! You're all set! Let me process your profile and find the best matches for you.",
+  "question": null,
+  "options": null,
+  "fieldType": null,
+  "isComplete": true
+}
+
+IMPORTANT: Return ONLY the JSON object, no other text.`;
+
   const messages: Array<{ role: string; content: string }> = [
-    { role: "system", content: systemPrompt },
+    { role: "system", content: enhancedSystemPrompt },
   ];
 
   if (Array.isArray(conversationHistory) && conversationHistory.length > 0) {
@@ -74,6 +135,8 @@ export async function* generateTextStreamFromModel(
       throw new Error("No response body from streaming model");
     }
 
+    let accumulatedText = "";
+
     for await (const event of response.body) {
       if (event.chunk?.bytes) {
         try {
@@ -83,20 +146,34 @@ export async function* generateTextStreamFromModel(
           const text = chunk?.choices?.[0]?.delta?.content || "";
 
           if (text) {
-            // Remove reasoning tags in real-time
-            const cleanedText = text.replace(
-              /<reasoning>[\s\S]*?<\/reasoning>/gi,
-              "",
-            );
-            if (cleanedText) {
-              yield cleanedText;
-            }
+            accumulatedText += text;
           }
         } catch (parseErr) {
           console.error("Failed to parse streaming chunk:", parseErr);
-          // Continue to next chunk
         }
       }
+    }
+
+    // Parse accumulated JSON response
+    const cleanedText = accumulatedText
+      .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "")
+      .replace(/```json\n?/g, "")
+      .replace(/```\n?/g, "")
+      .trim();
+
+    try {
+      const structuredResponse: StructuredBotResponse = JSON.parse(cleanedText);
+      yield structuredResponse;
+    } catch (jsonErr) {
+      console.error("Failed to parse structured response:", cleanedText);
+      // Fallback to unstructured response
+      yield {
+        message: accumulatedText,
+        question: null,
+        options: null,
+        fieldType: "text",
+        isComplete: false,
+      };
     }
   } catch (error) {
     console.error("Streaming error:", error);
@@ -104,53 +181,7 @@ export async function* generateTextStreamFromModel(
   }
 }
 
-// KEEP: Non-streaming version for field detection and validation
-export async function generateTextFromModel(
-  prompt: string,
-  systemPrompt: string,
-  conversationHistory?: Array<{ role: string; content: string }>,
-) {
-  const messages: Array<{ role: string; content: string }> = [
-    { role: "system", content: systemPrompt },
-  ];
-
-  if (Array.isArray(conversationHistory) && conversationHistory.length > 0) {
-    for (const m of conversationHistory) {
-      if (m && m.role && typeof m.content === "string") messages.push(m);
-    }
-  }
-
-  messages.push({ role: "user", content: prompt });
-
-  const payload = {
-    messages,
-    max_tokens: 1000,
-    temperature: 0.7,
-  };
-
-  const command = new InvokeModelCommand({
-    modelId: DEFAULT_MODEL,
-    body: JSON.stringify(payload),
-  });
-
-  const response = await client.send(command);
-  const decodedBody = await streamToString(response.body as any);
-
-  let json;
-  try {
-    json = JSON.parse(decodedBody);
-  } catch {
-    console.error("Failed to parse Bedrock response:", decodedBody);
-    throw new Error("Invalid JSON from model");
-  }
-
-  const rawText = json?.choices?.[0]?.message?.content || "";
-  const text = rawText.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "").trim();
-
-  return { text };
-}
-
-// Enhanced: Auto-detect fields from conversation context (supports both candidate and unit)
+// Field detection for auto-save
 export async function detectAndExtractFields(
   userMessage: string,
   lastBotQuestion: string,
@@ -163,7 +194,6 @@ export async function detectAndExtractFields(
     confidence: number;
   }>;
 }> {
-  // Define fields based on role
   const candidateFields = `
 - phone: Phone number
 - gender: Gender (male, female, other, prefer not to say)
@@ -270,7 +300,7 @@ Rules:
   }
 }
 
-// Enhanced validator with support for unit fields
+// Validation and extraction
 export async function validateAndExtractData(
   userInput: string,
   question: string,
@@ -282,7 +312,6 @@ export async function validateAndExtractData(
   validationMessage: string;
 }> {
   const fieldValidationRules: Record<string, string> = {
-    // Candidate fields
     phone: "Valid phone number (10 digits, may include country code)",
     gender: "Must be one of: male, female, other, prefer not to say",
     grade: "School grade (9th, 10th, 11th, 12th, or other)",
@@ -290,10 +319,8 @@ export async function validateAndExtractData(
     skills: "Comma-separated list of skills (minimum 1)",
     interests: "Comma-separated list of interests (minimum 1)",
     looking_for:
-      "One or more of: courses, internships, job opportunities, just exploring (accept semantic matches like 'want to explore', 'need to check out', etc.)",
+      "One or more of: courses, internships, job opportunities, just exploring",
     location: "Valid city or location name",
-
-    // Unit fields
     name: "Valid organization or unit name (non-empty string)",
     focus_areas: "Comma-separated list of focus areas (minimum 1)",
     skills_offered: "Comma-separated list of skills offered (minimum 1)",
@@ -302,15 +329,13 @@ export async function validateAndExtractData(
     opportunities_offered: "Comma-separated list of opportunities (minimum 1)",
   };
 
-  // Determine validation rule for this field, accounting for role-specific cases
   let validationRule = fieldValidationRules[expectedField] || "Valid input";
 
   if (expectedField === "type") {
     if (role === "candidate") {
       validationRule = "Must be one of: student, fresher, working, graduate";
     } else if (role === "unit") {
-      validationRule =
-        "Non-empty string describing unit type (e.g., NGO, Company, School, Service)";
+      validationRule = "Non-empty string describing unit type";
     }
   }
 
@@ -322,38 +347,6 @@ Expected field: "${expectedField}"
 Validation rule: ${validationRule}
 User's answer: "${userInput}"
 
-Your task:
-1. Validate if the answer matches the expected field and rules
-2. Extract the exact value to store in database
-3. Provide clear feedback if invalid
-
-**IMPORTANT SEMANTIC MATCHING RULES:**
-
-For "looking_for" field specifically:
-- Allowed database values: ["courses", "internships", "job opportunities", "just exploring"]
-- Accept semantic variations and map them to the closest allowed value:
-  * "explore", "want to explore", "need to explore", "exploring" → "just exploring"
-  * "course", "learning", "training" → "courses"
-  * "internship", "intern" → "internships"
-  * "job", "work", "employment", "career" → "job opportunities"
-- User can provide multiple values (comma-separated or conversational)
-- If unclear, default to "just exploring"
-
-For arrays (skills, interests, lookingFor, focus_areas, skills_offered, opportunities_offered):
-- Split by commas if user provides comma-separated values
-- Return as JSON array
-- Require at least 1 item
-- For lookingFor specifically, map semantic variations to allowed enum values
-
-For enums (gender, type):
-- Convert to lowercase
-- Check against allowed values
-- Return error if not in allowed list
-
-For booleans (is_aurovillian):
-- Accept: yes/no, true/false, aurovillian/non-aurovillian
-- Convert to "yes" or "no"
-
 Return ONLY valid JSON in this exact format:
 {
   "isValid": true/false,
@@ -361,11 +354,10 @@ Return ONLY valid JSON in this exact format:
   "validationMessage": "<error message if invalid, empty string if valid>"
 }
 
-Examples for "looking_for":
-- Input: "need to explore" → extractedValue: ["just exploring"], isValid: true
-- Input: "internships and courses" → extractedValue: ["internships", "courses"], isValid: true
-- Input: "want to find a job" → extractedValue: ["job opportunities"], isValid: true
-- Input: "just checking things out" → extractedValue: ["just exploring"], isValid: true
+Rules for "looking_for":
+- Allowed values: ["courses", "internships", "job opportunities", "just exploring"]
+- Accept semantic matches: "explore" → "just exploring", "job" → "job opportunities"
+- Return as array of matched values
 `;
 
   const messages = [{ role: "user", content: validationPrompt }];
@@ -395,78 +387,31 @@ Examples for "looking_for":
   const rawText = json?.choices?.[0]?.message?.content || "{}";
 
   try {
-    // Clean known wrappers/tags the model may include
     let cleaned = rawText.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "");
     cleaned = cleaned.replace(/```/g, "").trim();
 
     const firstBrace = cleaned.indexOf("{");
     const lastBrace = cleaned.lastIndexOf("}");
     if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-      console.error("No JSON found in validation result:", rawText);
       return {
         isValid: false,
-        validationMessage: "Failed to validate response: no JSON found",
+        validationMessage: "Failed to validate response",
       };
     }
 
     const jsonStr = cleaned.slice(firstBrace, lastBrace + 1);
     const validationResult = JSON.parse(jsonStr);
-    const isValid = !!validationResult.isValid;
-    let extractedValue = validationResult.extractedValue;
-    const validationMessage = validationResult.validationMessage || "";
-
-    // Post-processing: Ensure looking_for values are valid enums
-    if (isValid && expectedField === "looking_for") {
-      const allowedValues = [
-        "courses",
-        "internships",
-        "job opportunities",
-        "just exploring",
-      ];
-
-      if (Array.isArray(extractedValue)) {
-        // Filter out any invalid values and convert to lowercase
-        extractedValue = extractedValue
-          .map((v) => String(v).toLowerCase().trim())
-          .filter((v) => allowedValues.includes(v));
-
-        // If all values were filtered out, default to "just exploring"
-        if (extractedValue.length === 0) {
-          extractedValue = ["just exploring"];
-        }
-      } else if (typeof extractedValue === "string") {
-        const normalized = extractedValue.toLowerCase().trim();
-        extractedValue = allowedValues.includes(normalized)
-          ? [normalized]
-          : ["just exploring"];
-      }
-    }
-
-    // Fallback: accept any non-empty location if the model rejected it
-    if (!isValid && expectedField === "location") {
-      const trimmed = (userInput || "").trim();
-      if (trimmed.length > 0) {
-        console.warn(
-          `Validation model rejected location "${userInput}"; accepting fallback value.`,
-        );
-        return {
-          isValid: true,
-          extractedValue: trimmed,
-          validationMessage: "",
-        };
-      }
-    }
 
     return {
-      isValid,
-      extractedValue,
-      validationMessage,
+      isValid: !!validationResult.isValid,
+      extractedValue: validationResult.extractedValue,
+      validationMessage: validationResult.validationMessage || "",
     };
   } catch (_err) {
     console.error("Failed to parse validation result:", rawText, _err);
     return {
       isValid: false,
-      validationMessage: "Failed to validate response: parsing error",
+      validationMessage: "Failed to validate response",
     };
   }
 }
@@ -501,7 +446,6 @@ export function clearConversation(key: string) {
   conversationStore.delete(key);
 }
 
-// Helper to get last bot message
 export function getLastBotQuestion(key: string): string {
   const convo = getConversation(key);
   for (let i = convo.length - 1; i >= 0; i--) {

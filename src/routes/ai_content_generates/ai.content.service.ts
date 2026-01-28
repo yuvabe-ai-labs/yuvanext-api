@@ -81,55 +81,56 @@ function parseAIResponse(
   requestedSections: ContentSection[],
 ): GeneratedContent | null {
   try {
-    // Clean the response - remove markdown code blocks if present
     let cleanedText = text.trim();
 
-    // Remove markdown JSON code blocks
-    if (cleanedText.startsWith("```json")) {
-      cleanedText = cleanedText
-        .replace(/^```json\s*/, "")
-        .replace(/```\s*$/, "");
-    } else if (cleanedText.startsWith("```")) {
-      cleanedText = cleanedText.replace(/^```\s*/, "").replace(/```\s*$/, "");
-    }
+    // STEP 1: Remove reasoning tags first
+    cleanedText = cleanedText.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "");
+    cleanedText = cleanedText.trim();
 
-    // Find JSON object in the text (in case there's extra text before/after)
-    const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      cleanedText = jsonMatch[0];
-    }
+    // STEP 2: Extract JSON object (find first { to last })
+    const firstBrace = cleanedText.indexOf("{");
+    const lastBrace = cleanedText.lastIndexOf("}");
 
-    const parsed = JSON.parse(cleanedText) as GeneratedContent;
+    const jsonString = cleanedText.substring(firstBrace, lastBrace + 1);
 
-    // Validate that requested sections are present
+    // STEP 3: Parse JSON
+    const parsed = JSON.parse(jsonString) as GeneratedContent;
+
+    // STEP 4: Extract and validate requested sections
     const result: GeneratedContent = {};
 
-    if (requestedSections.includes("about") && parsed.about) {
+    if (
+      requestedSections.includes("about") &&
+      typeof parsed.about === "string"
+    ) {
       result.about = parsed.about;
     }
 
     if (
       requestedSections.includes("key_responsibilities") &&
-      parsed.key_responsibilities
+      Array.isArray(parsed.key_responsibilities) &&
+      parsed.key_responsibilities.every((item) => typeof item === "string")
     ) {
       result.key_responsibilities = parsed.key_responsibilities;
     }
 
     if (
       requestedSections.includes("what_you_will_get") &&
-      parsed.what_you_will_get
+      Array.isArray(parsed.what_you_will_get) &&
+      parsed.what_you_will_get.every((item) => typeof item === "string")
     ) {
       result.what_you_will_get = parsed.what_you_will_get;
     }
 
     if (
       requestedSections.includes("skills_required") &&
-      parsed.skills_required
+      Array.isArray(parsed.skills_required) &&
+      parsed.skills_required.every((item) => typeof item === "string")
     ) {
       result.skills_required = parsed.skills_required;
     }
 
-    return result;
+    return Object.keys(result).length > 0 ? result : null;
   } catch (err) {
     console.error("Error parsing AI response:", err);
     console.error("Raw response:", text);
@@ -145,13 +146,6 @@ export async function generateInternshipContent(
   sections: ContentSection[],
 ): Promise<GeneratedContent | null> {
   try {
-    console.log(
-      "🔍 Generating content - Model:",
-      DEFAULT_MODEL,
-      "Region:",
-      AWS_REGION,
-    );
-
     const prompt = buildPrompt(title, sections);
 
     // OpenAI GPT format
@@ -160,7 +154,12 @@ export async function generateInternshipContent(
         {
           role: "system",
           content:
-            "You are an expert HR professional and internship coordinator. Generate professional, engaging content for internship postings. Always respond with valid JSON only, no additional text.",
+            "You are an expert HR professional and internship coordinator. " +
+            "Generate professional, engaging content for internship postings. " +
+            "CRITICAL: Respond with ONLY valid JSON. " +
+            "Do NOT include reasoning, explanations, markdown formatting, or any text outside the JSON object. " +
+            "Your entire response must be parseable by JSON.parse(). " +
+            "Do NOT wrap the JSON in code blocks or quotes. remove reasoning tags ",
         },
         {
           role: "user",
@@ -177,7 +176,6 @@ export async function generateInternshipContent(
       body: JSON.stringify(payload),
     });
 
-    console.log("🔍 Sending command to Bedrock...");
     const response = await client.send(command);
 
     if (!response.body) {
@@ -186,7 +184,6 @@ export async function generateInternshipContent(
     }
 
     const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-    console.log("🔍 Response received, parsing...");
 
     // Handle OpenAI response format
     let generatedText: string | undefined;
@@ -205,7 +202,6 @@ export async function generateInternshipContent(
     const parsedContent = parseAIResponse(generatedText, sections);
 
     if (parsedContent) {
-      console.log("✅ Content generated successfully");
     } else {
       console.error("❌ Failed to parse content");
     }
@@ -225,8 +221,6 @@ export async function enhanceProfileDescription(
   description: string,
 ): Promise<string | null> {
   try {
-    console.log("🔍 Enhancing profile - Model:", DEFAULT_MODEL);
-
     const prompt = description;
 
     // OpenAI GPT format
@@ -252,7 +246,6 @@ export async function enhanceProfileDescription(
       body: JSON.stringify(payload),
     });
 
-    console.log("🔍 Sending enhancement request to Bedrock...");
     const response = await client.send(command);
 
     if (!response.body) {
@@ -277,7 +270,6 @@ export async function enhanceProfileDescription(
 
     // Clean up the response
     const cleaned = cleanEnhancedText(enhancedText);
-    console.log("✅ Profile enhanced successfully");
     return cleaned;
   } catch (err) {
     console.error("Error enhancing profile description:", err);

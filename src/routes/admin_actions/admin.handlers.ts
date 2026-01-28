@@ -1,13 +1,13 @@
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import type { AppRouteHandler } from "@/types/app.types";
-
 import db from "@/db";
 import { applications } from "@/db/schema/application.schema";
-import { user as userTable, account, session } from "@/db/schema/auth.schema";
+import { user as userTable, session } from "@/db/schema/auth.schema";
 import { candidates } from "@/db/schema/candidate.schema";
 import { courses } from "@/db/schema/course.schema";
 import { internships } from "@/db/schema/internship.schema";
 import { interviews } from "@/db/schema/interview.schema";
+import { invitations } from "@/db/schema/invitation.schema";
 import { tasks } from "@/db/schema/task.management.schema";
 import { units } from "@/db/schema/unit.schema";
 import {
@@ -18,7 +18,7 @@ import {
   CONFLICT,
   BAD_REQUEST,
 } from "@/lib/openapi/http-status-codes";
-import { auth } from "@/config/auth";
+import { sendInvitationEmail } from "@/routes/auth/auth.service";
 
 import type {
   GetOverallStats,
@@ -35,7 +35,7 @@ import type {
   EnableInternship,
   GetAllInternships,
 } from "./admin.routes";
-import app from "@/app";
+import env from "@/config/env";
 
 // 1. GET /admin/stats/overview - Overall Statistics
 export const getOverallStats: AppRouteHandler<GetOverallStats> = async (c) => {
@@ -126,16 +126,18 @@ export const getOverallStats: AppRouteHandler<GetOverallStats> = async (c) => {
   }
 };
 
-// 13. POST /admin/units/add-company - Add Company/Unit by Admin
+// 13. POST /admin/units/add-company - Add Company/Unit by Admin (Create Invitation)
 export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
   const body = c.req.valid("json");
+  // get the FRONTEND_URL from env
+  const FRONTEND_URL = env.FRONTEND_URL;
 
   try {
-    // Check if email already exists
+    // Check if email already exists in users or invitations
     const existingUser = await db
       .select({ id: userTable.id })
       .from(userTable)
-      .where(eq(userTable.email, body.companyEmail))
+      .where(eq(userTable.email, body.email))
       .limit(1);
 
     if (existingUser.length > 0) {
@@ -148,15 +150,31 @@ export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
       );
     }
 
-    // Use Better Auth's signup method
-    const signUpResult = await auth.api.signUpEmail({
-      body: {
-        email: body.companyEmail,
-        password: body.password,
-        name: body.companyName,
-        // Store unit-specific data in metadata for later processing
+    // Check if invitation already exists and is pending
+    const existingInvitation = await db
+      .select({ id: invitations.id })
+      .from(invitations)
+      .where(and(eq(invitations.email, body.email)))
+      .limit(1);
+
+    if (existingInvitation.length > 0) {
+      return c.json(
+        {
+          status_code: CONFLICT,
+          message: "Invitation already exists for this email",
+        },
+        CONFLICT,
+      );
+    }
+
+    // Create invitation record with metadata
+    const newInvitation = await db
+      .insert(invitations)
+      .values({
+        email: body.email,
         metadata: {
           role: "unit",
+          companyName: body.name,
           companyType: body.companyType,
           contactNumber: body.contactNumber,
           industryType: body.industryType,
@@ -165,48 +183,50 @@ export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
           serviceOffered: body.serviceOffered,
           achievements: body.achievements || "",
         },
-      },
-    });
+      })
+      .returning({ id: invitations.id });
 
-    if (!signUpResult) {
+    if (!newInvitation || newInvitation.length === 0) {
       return c.json(
         {
           status_code: BAD_REQUEST,
-          message: "Failed to create user account",
+          message: "Failed to create invitation",
         },
         BAD_REQUEST,
       );
     }
 
-    // Extract user data from Better Auth response
-    const userData = signUpResult.user;
+    // Build invitation URL using invitation ID
+    const invitationUrl = `${FRONTEND_URL}/auth/accept-invitation/${newInvitation[0].id}`;
+
+    // Send invitation email
+    try {
+      await sendInvitationEmail(body.email, body.name, invitationUrl, {
+        companyName: body.name,
+        companyType: body.companyType,
+        industryType: body.industryType,
+      });
+    } catch (emailErr) {
+      console.error("Error sending invitation email:", emailErr);
+      // Log but don't fail - invitation is still created
+    }
 
     return c.json(
       {
         status_code: CREATED,
-        message: "Company created successfully. Verification email sent.",
+        message:
+          "Invitation created successfully. Invitation email has been sent.",
         data: {
-          userId: userData.id,
-          email: userData.email,
-          name: userData.name,
-          message: "Please verify email to activate the account",
+          invitationId: newInvitation[0].id,
+          email: body.email,
+          companyName: body.name,
+          message: "Company admin should check their email for invitation link",
         },
       },
       CREATED,
     );
   } catch (err: any) {
-    console.error("Error adding company:", err);
-
-    // Handle specific Better Auth errors
-    if (err.message?.includes("already exists")) {
-      return c.json(
-        {
-          status_code: CONFLICT,
-          message: "Email already exists",
-        },
-        CONFLICT,
-      );
-    }
+    console.error("Error creating company invitation:", err);
 
     return c.json(
       {
@@ -223,29 +243,12 @@ export const deactivateUnit: AppRouteHandler<DeactivateUnit> = async (c) => {
   const { id } = c.req.valid("param");
 
   try {
-    // Check if unit exists
-    const existingUnit = await db
-      .select({ userId: units.userId })
-      .from(units)
-      .where(eq(units.userId, id))
-      .limit(1);
-
-    if (existingUnit.length === 0) {
-      return c.json(
-        {
-          status_code: NOT_FOUND,
-          message: "Unit not found",
-        },
-        NOT_FOUND,
-      );
-    }
-
-    // Check if user exists
+    // Check if user exists and is a unit
     const existingUser = await db
       .select({
         id: userTable.id,
         role: userTable.role,
-        accountDisabled: userTable.accountDisabled,
+        banned: userTable.banned,
       })
       .from(userTable)
       .where(eq(userTable.id, id))
@@ -261,21 +264,11 @@ export const deactivateUnit: AppRouteHandler<DeactivateUnit> = async (c) => {
       );
     }
 
-    if (existingUser[0].role !== "unit") {
-      return c.json(
-        {
-          status_code: BAD_REQUEST,
-          message: "User is not a unit account",
-        },
-        BAD_REQUEST,
-      );
-    }
-
     // Deactivate the user account
     await db
       .update(userTable)
       .set({
-        accountDisabled: true,
+        banned: true,
         updatedAt: new Date(),
       })
       .where(eq(userTable.id, id));
@@ -289,7 +282,7 @@ export const deactivateUnit: AppRouteHandler<DeactivateUnit> = async (c) => {
         message: "Unit deactivated successfully",
         data: {
           userId: id,
-          accountDisabled: true,
+          banned: true,
           message: "Unit account has been deactivated and all sessions removed",
         },
       },
@@ -306,34 +299,18 @@ export const deactivateUnit: AppRouteHandler<DeactivateUnit> = async (c) => {
     );
   }
 };
+
 //15. PATCH /admin/units/:id/activate - Activate Unit by Admin
 export const activateUnit: AppRouteHandler<ActivateUnit> = async (c) => {
   const { id } = c.req.valid("param");
 
   try {
-    // Check if unit exists
-    const existingUnit = await db
-      .select({ userId: units.userId })
-      .from(units)
-      .where(eq(units.userId, id))
-      .limit(1);
-
-    if (existingUnit.length === 0) {
-      return c.json(
-        {
-          status_code: NOT_FOUND,
-          message: "Unit not found",
-        },
-        NOT_FOUND,
-      );
-    }
-
     // Check if user exists
     const existingUser = await db
       .select({
         id: userTable.id,
         role: userTable.role,
-        accountDisabled: userTable.accountDisabled,
+        banned: userTable.banned,
       })
       .from(userTable)
       .where(eq(userTable.id, id))
@@ -349,21 +326,11 @@ export const activateUnit: AppRouteHandler<ActivateUnit> = async (c) => {
       );
     }
 
-    if (existingUser[0].role !== "unit") {
-      return c.json(
-        {
-          status_code: BAD_REQUEST,
-          message: "User is not a unit account",
-        },
-        BAD_REQUEST,
-      );
-    }
-
-    // Deactivate the user account
+    // Activate the user account
     await db
       .update(userTable)
       .set({
-        accountDisabled: false,
+        banned: false,
         updatedAt: new Date(),
       })
       .where(eq(userTable.id, id));
@@ -374,7 +341,7 @@ export const activateUnit: AppRouteHandler<ActivateUnit> = async (c) => {
         message: "Unit activated successfully",
         data: {
           userId: id,
-          accountDisabled: false,
+          banned: false,
           message: "Unit account has been activated",
         },
       },
