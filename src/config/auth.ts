@@ -17,6 +17,7 @@ import {
 import db from "../db/index";
 import { ac, admin, candidate, unit } from "./auth-permission";
 import { ALLOWED_ORIGINS } from "@/lib/create-app";
+import { BetterAuthUser } from "@/types/app.types";
 
 export const auth = betterAuth({
   appName: "Yuvanext API",
@@ -85,10 +86,15 @@ export const auth = betterAuth({
   emailVerification: {
     autoSignInAfterVerification: true,
     sendOnSignUp: true,
-    sendVerificationEmail: async ({ user, url }) => {
+    sendVerificationEmail: async ({
+      user,
+      url,
+    }: {
+      user: BetterAuthUser;
+      url: string;
+    }) => {
       // Check if user was invited by admin - skip verification email
-      const newUserMetadata = user as Record<string, any>;
-      if (newUserMetadata.metadata?.invitedByAdmin) {
+      if (user.metadata?.invitedByAdmin) {
         return;
       }
       // Send verification email for normal sign-ups
@@ -101,7 +107,7 @@ export const auth = betterAuth({
         throw error;
       }
     },
-    onEmailVerification: async (user: Record<string, any>) => {
+    onEmailVerification: async (user: BetterAuthUser) => {
       if (user.metadata?.role) {
         await updateUserRoleOnEmailVerification(
           user.id,

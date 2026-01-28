@@ -929,7 +929,7 @@ export const deleteGalleryImage: AppRouteHandler<DeleteGalleryImage> = async (
   const user = c.get("user");
 
   try {
-    const { imageUrl } = c.req.valid("query");
+    const { imageUrl } = c.req.valid("json");
 
     let updatedGalleryImages: string[] = [];
 
@@ -1068,7 +1068,7 @@ export const deleteTestimonialVideo: AppRouteHandler<
   const user = c.get("user");
 
   try {
-    const { videoUrl } = c.req.valid("query");
+    const { videoUrl } = c.req.valid("json");
 
     let updatedVideos: string[] = [];
 

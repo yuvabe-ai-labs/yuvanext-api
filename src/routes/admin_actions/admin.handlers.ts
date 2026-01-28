@@ -197,7 +197,7 @@ export const addCompany: AppRouteHandler<AddCompany> = async (c) => {
     }
 
     // Build invitation URL using invitation ID
-    const invitationUrl = `${FRONTEND_URL}/auth/accept-invitation?id=${newInvitation[0].id}`;
+    const invitationUrl = `${FRONTEND_URL}/auth/accept-invitation/${newInvitation[0].id}`;
 
     // Send invitation email
     try {
