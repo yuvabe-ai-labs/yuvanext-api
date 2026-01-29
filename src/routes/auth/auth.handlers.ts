@@ -176,7 +176,7 @@ export const acceptInvitation = async (c: any): Promise<Response> => {
 // GET /auth/verify-invitation?id=xxx - Verify invitation is valid and return invitation details
 export const verifyInvitation = async (c: any): Promise<Response> => {
   try {
-    const invitationId = c.req.query("id");
+    const invitationId = c.req.param("id");
 
     if (!invitationId) {
       return c.json(

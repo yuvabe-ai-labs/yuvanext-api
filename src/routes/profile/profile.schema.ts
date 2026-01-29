@@ -14,6 +14,17 @@ const socialLinkSchema = z.object({
   url: z.url(),
 });
 
+const languageSchema = z.union([
+  z.string(),
+  z.object({
+    id: z.string().optional(),
+    name: z.string(),
+    read: z.boolean(),
+    speak: z.boolean(),
+    write: z.boolean(),
+  }),
+]);
+
 export const updateProfileSchema = z
   .object({
     // user fields
@@ -39,17 +50,7 @@ export const updateProfileSchema = z
     dateOfBirth: z.string().optional(),
     onboardingCompleted: z.boolean().optional(),
     education: z.array(z.any()).optional(),
-    language: z.array(
-      z.union([
-        z.string(),
-        z.object({
-          name: z.string(),
-          read: z.boolean(),
-          speak: z.boolean(),
-          write: z.boolean(),
-        }),
-      ]),
-    ),
+    language: z.array(languageSchema).optional(),
     course: z.array(z.any()).optional(),
     internship: z.array(z.any()).optional(),
     projects: z.array(z.any()).optional(),
@@ -101,19 +102,7 @@ const candidateFieldsSchema = z.object({
   dateOfBirth: z.date().nullable(),
   onboardingCompleted: z.boolean().nullable(),
   education: z.array(z.any()).nullable(),
-  language: z
-    .array(
-      z.union([
-        z.string(),
-        z.object({
-          name: z.string(),
-          read: z.boolean(),
-          speak: z.boolean(),
-          write: z.boolean(),
-        }),
-      ]),
-    )
-    .nullable(),
+  language: z.array(languageSchema).nullable(),
   course: z.array(z.any()).nullable(),
   internship: z.array(z.any()).nullable(),
   projects: z.array(z.any()).nullable(),

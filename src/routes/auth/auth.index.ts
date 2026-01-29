@@ -5,7 +5,7 @@ import { acceptInvitation, verifyInvitation } from "./auth.handlers";
 const auth = createRouter()
   // Custom invitation endpoints
   .post("/auth/accept-invitation", acceptInvitation)
-  .get("/auth/verify-invitation", verifyInvitation)
+  .get("/auth/verify-invitation/:id", verifyInvitation)
   // Better Auth routes
   .on(["GET", "POST"], "/auth/*", (c) => {
     return betterAuth.handler(c.req.raw);
