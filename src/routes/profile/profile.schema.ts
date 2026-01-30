@@ -56,7 +56,8 @@ export const updateProfileSchema = z
     projects: z.array(z.any()).optional(),
     socialLinks: z.array(socialLinkSchema).optional(),
     // unit-specific fields
-    websiteUrl: z.url().optional(),
+    // Accept plain strings for website (some clients submit non-URL values)
+    websiteUrl: z.string().optional(),
     mission: z.string().optional(),
     values: z.string().optional(),
     description: z.string().optional(),

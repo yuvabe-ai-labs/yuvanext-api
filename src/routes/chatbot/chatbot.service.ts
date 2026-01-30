@@ -3,31 +3,15 @@
 import type { Readable } from "node:stream";
 
 import {
-  BedrockRuntimeClient,
   InvokeModelCommand,
   InvokeModelWithResponseStreamCommand,
 } from "@aws-sdk/client-bedrock-runtime";
 import { Buffer } from "node:buffer";
 
-import env from "@/config/env";
-
-const AWS_REGION = env.AWS_REGION;
-const DEFAULT_MODEL = env.BEDROCK_MODEL_ID;
-
-const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
-
-const maybeCredentials =
-  !isLambda && env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
-    ? {
-        accessKeyId: env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-      }
-    : undefined;
-
-const client = new BedrockRuntimeClient({
-  region: AWS_REGION,
-  ...(maybeCredentials ? { credentials: maybeCredentials } : {}),
-});
+import {
+  bedrockClient as client,
+  DEFAULT_MODEL,
+} from "@/lib/services/bedrock.service";
 
 async function streamToString(stream: Readable | Uint8Array): Promise<string> {
   if (stream instanceof Uint8Array)
@@ -319,7 +303,9 @@ export async function validateAndExtractData(
     skills: "Comma-separated list of skills (minimum 1)",
     interests: "Comma-separated list of interests (minimum 1)",
     looking_for:
-      "One or more of: courses, internships, job opportunities, just exploring",
+      "One or more of: courses, internships, job opportunities, just exploring, " +
+      "help me discover my strengths, learn new digital skills, " +
+      "find community projects or internships, meet mentors or role models",
     location: "Valid city or location name",
     name: "Valid organization or unit name (non-empty string)",
     focus_areas: "Comma-separated list of focus areas (minimum 1)",
@@ -355,9 +341,16 @@ Return ONLY valid JSON in this exact format:
 }
 
 Rules for "looking_for":
-- Allowed values: ["courses", "internships", "job opportunities", "just exploring"]
-- Accept semantic matches: "explore" → "just exploring", "job" → "job opportunities"
-- Return as array of matched values
+- Allowed values: ["courses", "internships", "job opportunities", "just exploring", "help me discover my strengths", "learn new digital skills", "find community projects or internships", "meet mentors or role models"]
+- Accept semantic matches (case-insensitive):
+  - "explore" → "just exploring"
+  - "job" → "job opportunities"
+  - "mentor"/"mentorship"/"mentors" → "meet mentors or role models"
+  - "discover strengths"/"discover my strengths" → "help me discover my strengths"
+  - "digital skill"/"digital skills" → "learn new digital skills"
+  - "community project"/"community projects" → "find community projects or internships"
+- Trim punctuation and whitespace; return normalized values as an array of strings matching the allowed values
+- If no matches, set isValid=false and include a helpful validationMessage
 `;
 
   const messages = [{ role: "user", content: validationPrompt }];
