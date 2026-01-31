@@ -345,6 +345,9 @@ export const getUnitStats: AppRouteHandler<GetUnitStats> = async (c) => {
       totalApplicationsResult,
       totalInterviewsResult,
       hiredThisMonthResult,
+      totalHiredResult,
+      totalActiveInternshipsResult,
+      totalHiredCandidatesResult,
     ] = await Promise.all([
       // Total internships created by this unit
       db
@@ -367,7 +370,7 @@ export const getUnitStats: AppRouteHandler<GetUnitStats> = async (c) => {
         .innerJoin(internships, eq(applications.internshipId, internships.id))
         .where(eq(internships.createdBy, user.id)),
 
-      // Hired this month
+      // Hired this month (for unit)
       db
         .select({ count: count() })
         .from(applications)
@@ -379,6 +382,30 @@ export const getUnitStats: AppRouteHandler<GetUnitStats> = async (c) => {
             gte(applications.updatedAt, startOfMonth),
           ),
         ),
+
+      // Total hired (for unit overall)
+      db
+        .select({ count: count() })
+        .from(applications)
+        .innerJoin(internships, eq(applications.internshipId, internships.id))
+        .where(
+          and(
+            eq(internships.createdBy, user.id),
+            eq(applications.status, "hired"),
+          ),
+        ),
+
+      // Total active internships (overall)
+      db
+        .select({ count: count() })
+        .from(internships)
+        .where(eq(internships.status, "active")),
+
+      // Total hired candidates (overall)
+      db
+        .select({ count: count() })
+        .from(applications)
+        .where(eq(applications.status, "hired")),
     ]);
 
     const now = new Date();
@@ -392,6 +419,10 @@ export const getUnitStats: AppRouteHandler<GetUnitStats> = async (c) => {
           totalApplications: totalApplicationsResult[0]?.count || 0,
           totalInterviews: totalInterviewsResult[0]?.count || 0,
           hiredThisMonth: hiredThisMonthResult[0]?.count || 0,
+          totalHired: totalHiredResult[0]?.count || 0,
+          // Overall totals
+          totalActiveInternships: totalActiveInternshipsResult[0]?.count || 0,
+          totalHiredCandidates: totalHiredCandidatesResult[0]?.count || 0,
           period: {
             month: now.toLocaleString("default", { month: "long" }),
             year: now.getFullYear(),

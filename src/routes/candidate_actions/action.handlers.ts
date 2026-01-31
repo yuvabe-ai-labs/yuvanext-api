@@ -714,22 +714,6 @@ export const acceptOffer: AppRouteHandler<AcceptOffer> = async (c) => {
       );
     }
 
-    if (application.unitOfferDecision !== "selected") {
-      return c.json(
-        {
-          status_code: CONFLICT,
-          message:
-            "Cannot respond to offer - unit has not selected you or offer has already been responded to",
-          code: "OFFER_NOT_AVAILABLE",
-          resource: {
-            applicationId,
-            unitOfferDecision: application.unitOfferDecision,
-          },
-        },
-        CONFLICT,
-      );
-    }
-
     const [updated] = await db
       .update(applications)
       .set({

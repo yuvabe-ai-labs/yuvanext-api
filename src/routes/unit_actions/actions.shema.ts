@@ -1,4 +1,3 @@
-import { candidate } from "@/config/auth-permission";
 import { z } from "zod";
 
 // Enums

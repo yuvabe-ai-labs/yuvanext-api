@@ -1,34 +1,10 @@
+import { InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import {
-  BedrockRuntimeClient,
-  InvokeModelCommand,
-} from "@aws-sdk/client-bedrock-runtime";
+  bedrockClient as client,
+  DEFAULT_MODEL,
+} from "@/lib/services/bedrock.service";
 
-import env from "@/config/env";
 import type { ContentSection, GeneratedContent } from "./ai.content.schema";
-
-const AWS_REGION = env.AWS_REGION;
-const DEFAULT_MODEL = env.BEDROCK_MODEL_ID;
-
-const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
-
-const maybeCredentials =
-  !isLambda && env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
-    ? {
-        accessKeyId: env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-      }
-    : undefined;
-
-const client = new BedrockRuntimeClient({
-  region: AWS_REGION,
-  ...(maybeCredentials ? { credentials: maybeCredentials } : {}),
-});
-
-interface BedrockResponse {
-  content: Array<{
-    text?: string;
-  }>;
-}
 
 /**
  * Build the prompt for content generation
