@@ -97,7 +97,7 @@ export const unitStatsResponseSchema = z.object({
   totalInterviews: z.number(),
   hiredThisMonth: z.number(),
   totalActiveInternships: z.number(),
-  totalHiredCandidates: z.number(),
+  totalHired: z.number(),
   period: z.object({
     month: z.string(),
     year: z.number(),
