@@ -34,7 +34,7 @@ export const updateTaskSchema = z.object({
 
 export const reviewTaskSchema = z.object({
   status: z.enum(["redo", "accepted"]),
-  reviewRemarks: z.string().min(1),
+  reviewRemarks: z.string().min(1).optional(),
 });
 
 export const taskIdParamSchema = z.object({

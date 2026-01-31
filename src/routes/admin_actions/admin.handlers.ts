@@ -270,6 +270,7 @@ export const deactivateUnit: AppRouteHandler<DeactivateUnit> = async (c) => {
       .set({
         banned: true,
         updatedAt: new Date(),
+        accountDisabled: true,
       })
       .where(eq(userTable.id, id));
 
@@ -332,6 +333,7 @@ export const activateUnit: AppRouteHandler<ActivateUnit> = async (c) => {
       .set({
         banned: false,
         updatedAt: new Date(),
+        accountDisabled: false,
       })
       .where(eq(userTable.id, id));
 
@@ -341,7 +343,8 @@ export const activateUnit: AppRouteHandler<ActivateUnit> = async (c) => {
         message: "Unit activated successfully",
         data: {
           userId: id,
-          banned: false,
+          accountDisabled: false,
+
           message: "Unit account has been activated",
         },
       },
