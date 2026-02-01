@@ -515,14 +515,24 @@ export const getCandidates: AppRouteHandler<GetCandidates> = async (c) => {
               eq(applications.internshipId, internships.id),
             )
             .leftJoin(units, eq(internships.createdBy, units.userId))
-            .where(eq(applications.status, "hired"))
+            .where(
+              and(
+                eq(applications.status, "hired"),
+                sql`${applications.candidateOfferDecision} != 'reject'`,
+              ),
+            )
             .orderBy(desc(applications.updatedAt))
             .limit(limit)
             .offset(offset),
           db
             .select({ count: count() })
             .from(applications)
-            .where(eq(applications.status, "hired")),
+            .where(
+              and(
+                eq(applications.status, "hired"),
+                sql`${applications.candidateOfferDecision} != 'reject'`,
+              ),
+            ),
         ]);
 
         const totalItems = totalCountResult[0]?.count || 0;

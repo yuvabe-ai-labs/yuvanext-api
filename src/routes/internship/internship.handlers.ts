@@ -347,7 +347,6 @@ export const getUnitStats: AppRouteHandler<GetUnitStats> = async (c) => {
       hiredThisMonthResult,
       totalHiredResult,
       totalActiveInternshipsResult,
-      totalHiredCandidatesResult,
     ] = await Promise.all([
       // Total internships created by this unit
       db
@@ -400,12 +399,6 @@ export const getUnitStats: AppRouteHandler<GetUnitStats> = async (c) => {
         .select({ count: count() })
         .from(internships)
         .where(eq(internships.status, "active")),
-
-      // Total hired candidates (overall)
-      db
-        .select({ count: count() })
-        .from(applications)
-        .where(eq(applications.status, "hired")),
     ]);
 
     const now = new Date();
@@ -420,9 +413,7 @@ export const getUnitStats: AppRouteHandler<GetUnitStats> = async (c) => {
           totalInterviews: totalInterviewsResult[0]?.count || 0,
           hiredThisMonth: hiredThisMonthResult[0]?.count || 0,
           totalHired: totalHiredResult[0]?.count || 0,
-          // Overall totals
           totalActiveInternships: totalActiveInternshipsResult[0]?.count || 0,
-          totalHiredCandidates: totalHiredCandidatesResult[0]?.count || 0,
           period: {
             month: now.toLocaleString("default", { month: "long" }),
             year: now.getFullYear(),
