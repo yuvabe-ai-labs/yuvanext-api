@@ -37,8 +37,27 @@ export async function* generateStructuredStreamFromModel(
   systemPrompt: string,
   conversationHistory?: Array<{ role: string; content: string }>,
 ): AsyncGenerator<StructuredBotResponse, void, unknown> {
-  const enhancedSystemPrompt = `${systemPrompt}
+  // ✅ FIX: Extract previously asked questions to avoid repetition
+  const askedQuestions: string[] = [];
+  if (conversationHistory && conversationHistory.length > 0) {
+    for (const msg of conversationHistory) {
+      if (msg.role === "assistant") {
+        // Extract questions (sentences ending with ?)
+        const questions = msg.content.match(/[^.!?]*\?/g);
+        if (questions) {
+          askedQuestions.push(...questions.map((q) => q.trim()));
+        }
+      }
+    }
+  }
 
+  const questionHistory =
+    askedQuestions.length > 0
+      ? `\n\nIMPORTANT - Questions already asked in this conversation:\n${askedQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\nDO NOT repeat any of these questions. Move to the NEXT question in the sequence.\n`
+      : "";
+
+  const enhancedSystemPrompt = `${systemPrompt}
+${questionHistory}
 CRITICAL: You must ALWAYS respond with valid JSON in this exact format:
 {
   "message": "Your conversational message here",
@@ -95,7 +114,10 @@ IMPORTANT: Return ONLY the JSON object, no other text.`;
 
   if (Array.isArray(conversationHistory) && conversationHistory.length > 0) {
     for (const m of conversationHistory) {
-      if (m && m.role && typeof m.content === "string") messages.push(m);
+      // ✅ FIX: Skip system messages to reduce noise
+      if (m && m.role && typeof m.content === "string" && m.role !== "system") {
+        messages.push(m);
+      }
     }
   }
 
