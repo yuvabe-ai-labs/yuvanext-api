@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte } from "drizzle-orm";
+import { and, count, desc, eq, gte, or, sql } from "drizzle-orm";
 import Fuse from "fuse.js";
 
 import type { AppRouteHandler } from "@/types/app.types";
@@ -362,12 +362,21 @@ export const getUnitStats: AppRouteHandler<GetUnitStats> = async (c) => {
         .where(eq(internships.createdBy, user.id)),
 
       // Total interviews scheduled for unit's internships
+      // Count distinct applications that either have an interview record OR are marked 'interviewed'
       db
-        .select({ count: count() })
-        .from(interviews)
-        .innerJoin(applications, eq(interviews.applicationId, applications.id))
+        .select({ count: sql<number>`COUNT(DISTINCT ${applications.id})` })
+        .from(applications)
+        .leftJoin(interviews, eq(interviews.applicationId, applications.id))
         .innerJoin(internships, eq(applications.internshipId, internships.id))
-        .where(eq(internships.createdBy, user.id)),
+        .where(
+          and(
+            eq(internships.createdBy, user.id),
+            or(
+              sql`${interviews.id} IS NOT NULL`,
+              eq(applications.status, "interviewed"),
+            ),
+          ),
+        ),
 
       // Hired this month (for unit)
       db
@@ -398,7 +407,12 @@ export const getUnitStats: AppRouteHandler<GetUnitStats> = async (c) => {
       db
         .select({ count: count() })
         .from(internships)
-        .where(eq(internships.status, "active")),
+        .where(
+          and(
+            eq(internships.status, "active"),
+            eq(internships.createdBy, user.id),
+          ),
+        ),
     ]);
 
     const now = new Date();
