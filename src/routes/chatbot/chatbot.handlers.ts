@@ -311,6 +311,9 @@ export const chat = async (c: Context) => {
       );
     }
 
+    // ✅ FIX: Add user message BEFORE getting history
+    addToConversation(convoKey, { role: "user", content: message });
+
     const storedHistory = getConversation(convoKey);
     const lastBotQuestion = getLastBotQuestion(convoKey);
 
@@ -406,12 +409,12 @@ export const chat = async (c: Context) => {
           await markOnboardingComplete(userId, role);
         }
 
-        // Persist conversation
+        // Persist conversation (user message already added above)
         try {
-          addToConversation(convoKey, { role: "user", content: message });
+          // ✅ FIX: Store only the message text, not full JSON
           addToConversation(convoKey, {
             role: "assistant",
-            content: JSON.stringify(structuredResponse),
+            content: structuredResponse.message,
           });
         } catch (err) {
           console.warn("Failed to persist conversation:", err);
