@@ -23,7 +23,11 @@ router
   .openapi(routes.deleteGalleryImage, handlers.deleteGalleryImage)
 
   // Testimonial videos (units only)
-  .openapi(routes.uploadTestimonialVideo, handlers.uploadTestimonialVideo)
+  .openapi(
+    routes.generateTestimonialUploadUrl,
+    handlers.generateTestimonialUploadUrl,
+  )
+  .openapi(routes.completeTestimonialUpload, handlers.completeTestimonialUpload)
   .openapi(routes.deleteTestimonialVideo, handlers.deleteTestimonialVideo);
 
 export default router;
