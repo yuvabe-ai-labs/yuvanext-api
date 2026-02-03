@@ -1121,24 +1121,43 @@ export const deleteTestimonialVideo: AppRouteHandler<
   const user = c.get("user");
 
   try {
-    const { videoUrl } = c.req.valid("json");
+    let videoUrl: string | undefined;
+    try {
+      const body = c.req.valid("json");
+      videoUrl = body.videoUrl;
+    } catch (e) {
+      // No JSON body provided or validation failed -> treat as no videoUrl provided
+      videoUrl = undefined;
+    }
 
     let updatedVideos: string[] = [];
+    let previousVideosToDelete: string[] = [];
 
-    // Transaction: get URL, update DB
+    // Transaction: get URL(s), update DB
     await db.transaction(async (tx) => {
       // Get current videos
       const unit = await tx.query.units.findFirst({
         where: eq(units.userId, user.id),
       });
-      let currentVideos = unit?.galleryVideos || [];
+      const currentVideos = unit?.galleryVideos || [];
 
-      if (!currentVideos.includes(videoUrl)) {
-        throw new Error("Video not found in gallery");
+      if (videoUrl) {
+        if (!currentVideos.includes(videoUrl)) {
+          throw new Error("Video not found in gallery");
+        }
+
+        // Remove specified URL
+        updatedVideos = currentVideos.filter((url) => url !== videoUrl);
+        previousVideosToDelete = [videoUrl];
+      } else {
+        // No URL provided -> delete ALL existing testimonial videos (replace with empty)
+        if (currentVideos.length === 0) {
+          throw new Error("No testimonial found");
+        }
+
+        previousVideosToDelete = currentVideos.slice();
+        updatedVideos = [];
       }
-
-      // Remove from array
-      updatedVideos = currentVideos.filter((url) => url !== videoUrl);
 
       // Update database within transaction
       await tx
@@ -1150,10 +1169,12 @@ export const deleteTestimonialVideo: AppRouteHandler<
     // Fire-and-forget: delete from S3 after successful transaction commit
     void (async () => {
       try {
-        await deleteFileFromS3(videoUrl);
+        if (previousVideosToDelete.length > 0) {
+          await cleanupOldFiles(previousVideosToDelete);
+        }
       } catch (err) {
         console.error(
-          "Error deleting testimonial video from S3 (background):",
+          "Error deleting testimonial video(s) from S3 (background):",
           err,
         );
       }
@@ -1162,7 +1183,9 @@ export const deleteTestimonialVideo: AppRouteHandler<
     return c.json(
       {
         status_code: OK,
-        message: "Testimonial video deleted successfully",
+        message: videoUrl
+          ? "Testimonial video deleted successfully"
+          : "All testimonial video(s) deleted successfully",
         data: { galleryVideos: updatedVideos },
       },
       OK,
@@ -1171,6 +1194,12 @@ export const deleteTestimonialVideo: AppRouteHandler<
     if ((_err as Error).message === "Video not found in gallery") {
       return c.json(
         { status_code: NOT_FOUND, message: "Video not found in gallery" },
+        NOT_FOUND,
+      );
+    }
+    if ((_err as Error).message === "No testimonial found") {
+      return c.json(
+        { status_code: NOT_FOUND, message: "No testimonial found" },
         NOT_FOUND,
       );
     }

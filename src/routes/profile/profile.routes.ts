@@ -313,13 +313,13 @@ export const deleteTestimonialVideo = createRoute({
   middleware: requireRole({ allowedRoles: ["unit"] }),
   summary: "Delete testimonial video (Units only)",
   description:
-    "Delete specific testimonial video from S3 and remove from array",
+    "Delete specific testimonial video from S3 and remove from array. If no videoUrl is provided, deletes existing testimonial(s) for the unit.",
   request: {
     body: {
       content: {
         "application/json": {
           schema: z.object({
-            videoUrl: z.url(),
+            videoUrl: z.string().url().optional(),
           }),
         },
       },
