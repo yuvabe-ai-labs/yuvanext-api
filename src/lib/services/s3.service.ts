@@ -3,6 +3,7 @@ import {
   DeleteObjectsCommand,
   PutObjectCommand,
   S3Client,
+  HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from "crypto";
@@ -227,6 +228,36 @@ export async function generatePresignedUploadUrl(
   } catch (error) {
     console.error("Error generating presigned URL:", error);
     throw new Error("Failed to generate presigned URL");
+  }
+}
+
+/**
+ * Get public URL for a given S3 key
+ */
+export function getPublicUrlFromKey(key: string): string {
+  const bucket = getBucketName();
+  return `https://${bucket}.s3.${env.AWS_REGION}.amazonaws.com/${key}`;
+}
+
+/**
+ * Check if an object exists in S3
+ */
+export async function doesObjectExist(key: string): Promise<boolean> {
+  try {
+    const bucket = getBucketName();
+    const command = new HeadObjectCommand({ Bucket: bucket, Key: key });
+    await s3Client.send(command);
+    return true;
+  } catch (err: any) {
+    // If not found, return false. Re-throw unexpected errors.
+    if (
+      err &&
+      (err.name === "NotFound" || err.$metadata?.httpStatusCode === 404)
+    ) {
+      return false;
+    }
+    console.error("Error checking object existence:", err);
+    throw err;
   }
 }
 

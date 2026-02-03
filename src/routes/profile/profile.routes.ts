@@ -232,23 +232,23 @@ export const deleteGalleryImage = createRoute({
 });
 
 /**
- * POST /profile/upload-testimonial - Upload testimonial video (Units only)
+ * POST /profile/testimonial/presign - Generate presigned URL for testimonial upload (Units only)
  */
-export const uploadTestimonialVideo = createRoute({
+export const generateTestimonialUploadUrl = createRoute({
   method: "post" as const,
-  path: "/profile/testimonial",
+  path: "/profile/testimonial/presign",
   tags: ["Profile", "File Upload"],
   middleware: requireRole({ allowedRoles: ["unit"] }),
-  summary: "Upload testimonial video (Units only)",
-  description: "Upload a testimonial video to S3 and add to videos array",
+  summary: "Generate presigned URL for testimonial video upload (Units only)",
+  description:
+    "Generate a presigned S3 URL for client to upload testimonial video directly to S3.",
   request: {
     body: {
       content: {
-        "multipart/form-data": {
+        "application/json": {
           schema: z.object({
-            file: videoFileSchema.describe(
-              "Testimonial video file (MP4, WebM, MOV, max 5MB)",
-            ),
+            fileName: z.string().min(1),
+            expiresIn: z.number().optional(),
           }),
         },
       },
@@ -258,11 +258,47 @@ export const uploadTestimonialVideo = createRoute({
     [OK]: createResponse(
       OK,
       z.object({
-        videoUrl: z.url(),
-        galleryVideos: z.array(z.url()),
+        uploadUrl: z.string().url(),
+        key: z.string(),
+        fileUrl: z.string().url(),
+        expiresIn: z.number().optional(),
       }),
     ),
     ...commonErrorResponses,
+    [BAD_REQUEST]: createResponse(BAD_REQUEST),
+  },
+});
+
+/**
+ * POST /profile/testimonial/complete - Finalize testimonial upload (Units only)
+ */
+export const completeTestimonialUpload = createRoute({
+  method: "post" as const,
+  path: "/profile/testimonial/complete",
+  tags: ["Profile", "File Upload"],
+  middleware: requireRole({ allowedRoles: ["unit"] }),
+  summary: "Finalize testimonial upload (Units only)",
+  description:
+    "Confirm uploaded testimonial video, replace any existing testimonial video(s) in the unit's galleryVideos, and delete old files from S3.",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            key: z.string(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    [OK]: createResponse(
+      OK,
+      z.object({
+        galleryVideos: z.array(z.string().url()),
+      }),
+    ),
+    ...crudErrorResponses,
     [BAD_REQUEST]: createResponse(BAD_REQUEST),
   },
 });
@@ -308,5 +344,6 @@ export type UploadBanner = typeof uploadBanner;
 export type DeleteBanner = typeof deleteBanner;
 export type UploadGalleryImage = typeof uploadGalleryImage;
 export type DeleteGalleryImage = typeof deleteGalleryImage;
-export type UploadTestimonialVideo = typeof uploadTestimonialVideo;
+export type GenerateTestimonialUploadUrl = typeof generateTestimonialUploadUrl;
+export type CompleteTestimonialUpload = typeof completeTestimonialUpload;
 export type DeleteTestimonialVideo = typeof deleteTestimonialVideo;

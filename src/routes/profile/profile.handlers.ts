@@ -17,6 +17,10 @@ import {
   uploadFileToS3,
   deleteFileFromS3,
   cleanupOldFile,
+  cleanupOldFiles,
+  generatePresignedUploadUrl,
+  getPublicUrlFromKey,
+  doesObjectExist,
 } from "@/lib/services/s3.service";
 
 import type {
@@ -28,7 +32,8 @@ import type {
   DeleteBanner,
   UploadGalleryImage,
   DeleteGalleryImage,
-  UploadTestimonialVideo,
+  GenerateTestimonialUploadUrl,
+  CompleteTestimonialUpload,
   DeleteTestimonialVideo,
 } from "./profile.routes";
 
@@ -995,66 +1000,114 @@ export const deleteGalleryImage: AppRouteHandler<DeleteGalleryImage> = async (
   }
 };
 
-// POST /profile/upload-testimonial - Upload testimonial video (Units only)
-export const uploadTestimonialVideo: AppRouteHandler<
-  UploadTestimonialVideo
+// POST /profile/testimonial/presign - Generate presigned URL for testimonial upload (Units only)
+export const generateTestimonialUploadUrl: AppRouteHandler<
+  GenerateTestimonialUploadUrl
 > = async (c) => {
   const user = c.get("user");
 
   try {
-    const { file } = c.req.valid("form");
+    const { fileName, expiresIn } = c.req.valid("json");
 
-    if (!file) {
+    const { url, key } = await generatePresignedUploadUrl(
+      user.id,
+      "testimonial-videos",
+      fileName,
+      expiresIn,
+    );
+
+    const fileUrl = getPublicUrlFromKey(key);
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Presigned URL generated",
+        data: {
+          uploadUrl: url,
+          key,
+          fileUrl,
+          expiresIn,
+        },
+      },
+      OK,
+    );
+  } catch (_err) {
+    console.error("Error generating presigned URL:", _err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Failed to generate presigned URL",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// POST /profile/testimonial/complete - Finalize testimonial upload (Units only)
+export const completeTestimonialUpload: AppRouteHandler<
+  CompleteTestimonialUpload
+> = async (c) => {
+  const user = c.get("user");
+
+  try {
+    const { key } = c.req.valid("json");
+
+    const exists = await doesObjectExist(key);
+    if (!exists) {
       return c.json(
-        { status_code: BAD_REQUEST, message: "No file provided" },
+        { status_code: BAD_REQUEST, message: "Uploaded object not found" },
         BAD_REQUEST,
       );
     }
 
+    const fileUrl = getPublicUrlFromKey(key);
+
     let updatedVideos: string[] = [];
+    let previousVideosToDelete: string[] = [];
 
-    // Transaction: upload file, update DB
     await db.transaction(async (tx) => {
-      // Upload to S3
-      const videoUrl = await uploadFileToS3(
-        file,
-        user.id,
-        "testimonial-videos",
-        "unit",
-      );
-
-      // Get current videos
       const unit = await tx.query.units.findFirst({
         where: eq(units.userId, user.id),
       });
-      let currentVideos = unit?.galleryVideos || [];
+      const currentVideos = unit?.galleryVideos || [];
 
-      // Add new video to array
-      updatedVideos = [...currentVideos, videoUrl];
+      // Replace existing testimonial videos with the newly uploaded one
+      previousVideosToDelete = currentVideos.slice();
+      updatedVideos = [fileUrl];
 
-      // Update database within transaction
       await tx
         .update(units)
         .set({ galleryVideos: updatedVideos, updatedAt: new Date() })
         .where(eq(units.userId, user.id));
     });
 
+    void (async () => {
+      try {
+        if (previousVideosToDelete.length > 0) {
+          await cleanupOldFiles(previousVideosToDelete);
+        }
+      } catch (err) {
+        console.error(
+          "Error deleting old testimonial videos from S3 (background):",
+          err,
+        );
+      }
+    })();
+
     return c.json(
       {
         status_code: OK,
-        message: "Testimonial video uploaded successfully",
-        data: {
-          galleryVideos: updatedVideos,
-        },
+        message: "Testimonial video finalized and replaced",
+        data: { galleryVideos: updatedVideos },
       },
       OK,
     );
   } catch (_err) {
-    console.error("Error uploading testimonial video:", _err);
+    console.error("Error finalizing testimonial upload:", _err);
     return c.json(
       {
         status_code: INTERNAL_SERVER_ERROR,
-        message: "Failed to upload testimonial video",
+        message: "Failed to finalize testimonial upload",
       },
       INTERNAL_SERVER_ERROR,
     );
