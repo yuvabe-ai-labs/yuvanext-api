@@ -1,4 +1,4 @@
-// chatbot.service.ts - Structured output only
+// chatbot.service.ts - Restructured with array-based conversation management
 
 import type { Readable } from "node:stream";
 
@@ -13,6 +13,9 @@ import {
   DEFAULT_MODEL,
 } from "@/lib/services/bedrock.service";
 
+/**
+ * Convert stream or Uint8Array to string
+ */
 async function streamToString(stream: Readable | Uint8Array): Promise<string> {
   if (stream instanceof Uint8Array)
     return Buffer.from(stream).toString("utf-8");
@@ -22,7 +25,13 @@ async function streamToString(stream: Readable | Uint8Array): Promise<string> {
   return Buffer.concat(chunks).toString("utf-8");
 }
 
-// Type for structured bot response
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+
+/**
+ * Type for structured bot response
+ */
 export interface StructuredBotResponse {
   message: string;
   question?: string | null;
@@ -31,22 +40,229 @@ export interface StructuredBotResponse {
   isComplete?: boolean;
 }
 
-// Streaming generator with structured output
+/**
+ * Type for conversation message
+ */
+export interface ConversationMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  timestamp?: Date;
+}
+
+/**
+ * Type for extracted field data
+ */
+export interface ExtractedFieldData {
+  [key: string]: any;
+}
+
+/**
+ * Conversation session structure
+ */
+interface ConversationSession {
+  messages: ConversationMessage[];
+  extractedData: ExtractedFieldData;
+  createdAt: Date;
+  lastUpdatedAt: Date;
+}
+
+// ============================================================================
+// CONVERSATION STORE - In-Memory Array-Based Storage
+// ============================================================================
+
+const MAX_MESSAGES_PER_CONVO = 50;
+const conversationStore: Map<string, ConversationSession> = new Map();
+
+/**
+ * Initialize a new conversation session
+ */
+export function initializeConversation(userId: string): void {
+  if (!conversationStore.has(userId)) {
+    conversationStore.set(userId, {
+      messages: [],
+      extractedData: {},
+      createdAt: new Date(),
+      lastUpdatedAt: new Date(),
+    });
+    console.log(`[Conversation Initialized] userId: ${userId}`);
+  }
+}
+
+/**
+ * Add a message to conversation history
+ */
+export function addMessage(
+  userId: string,
+  role: "user" | "assistant" | "system",
+  content: string,
+): void {
+  if (!userId) return;
+
+  const session = conversationStore.get(userId);
+  if (!session) {
+    initializeConversation(userId);
+    return addMessage(userId, role, content);
+  }
+
+  const message: ConversationMessage = {
+    role,
+    content,
+    timestamp: new Date(),
+  };
+
+  session.messages.push(message);
+  session.lastUpdatedAt = new Date();
+
+  // Trim old messages if exceeding limit
+  if (session.messages.length > MAX_MESSAGES_PER_CONVO) {
+    session.messages.splice(
+      0,
+      session.messages.length - MAX_MESSAGES_PER_CONVO,
+    );
+  }
+
+  conversationStore.set(userId, session);
+}
+
+/**
+ * Get conversation messages
+ */
+export function getMessages(userId: string): ConversationMessage[] {
+  if (!userId) return [];
+  const session = conversationStore.get(userId);
+  return session ? session.messages : [];
+}
+
+/**
+ * Add extracted field data to session (does NOT save to DB yet)
+ */
+export function addExtractedField(
+  userId: string,
+  field: string,
+  value: any,
+): void {
+  if (!userId) return;
+
+  const session = conversationStore.get(userId);
+  if (!session) {
+    initializeConversation(userId);
+    return addExtractedField(userId, field, value);
+  }
+
+  session.extractedData[field] = value;
+  session.lastUpdatedAt = new Date();
+
+  conversationStore.set(userId, session);
+  console.log(`[Field Extracted] userId: ${userId}, field: ${field}`);
+}
+
+/**
+ * Get all extracted data for a user
+ */
+export function getExtractedData(userId: string): ExtractedFieldData {
+  if (!userId) return {};
+  const session = conversationStore.get(userId);
+  return session ? session.extractedData : {};
+}
+
+/**
+ * Get the last question asked by the bot
+ */
+export function getLastBotQuestion(userId: string): string {
+  const messages = getMessages(userId);
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "assistant") {
+      return messages[i].content;
+    }
+  }
+
+  return "";
+}
+
+/**
+ * Clear conversation and extracted data for a user
+ */
+export function clearConversation(userId: string): void {
+  if (!userId) return;
+  conversationStore.delete(userId);
+  console.log(`[Conversation Cleared] userId: ${userId}`);
+}
+
+/**
+ * Get conversation session info
+ */
+export function getConversationSession(
+  userId: string,
+): ConversationSession | null {
+  return conversationStore.get(userId) || null;
+}
+
+/**
+ * Print conversation history (for debugging)
+ */
+export function printConversation(userId: string): void {
+  const session = conversationStore.get(userId);
+
+  console.log("\n" + "=".repeat(80));
+  console.log(`CONVERSATION SESSION (${userId})`);
+  console.log("=".repeat(80));
+
+  if (!session) {
+    console.log("No conversation session found.");
+    console.log("=".repeat(80) + "\n");
+    return;
+  }
+
+  console.log(`Created: ${session.createdAt.toISOString()}`);
+  console.log(`Last Updated: ${session.lastUpdatedAt.toISOString()}`);
+  console.log(`Total Messages: ${session.messages.length}`);
+  console.log(`Extracted Fields: ${Object.keys(session.extractedData).length}`);
+  console.log("-".repeat(80));
+
+  if (session.messages.length === 0) {
+    console.log("No messages in conversation.");
+  } else {
+    session.messages.forEach((msg, index) => {
+      console.log(
+        `\n[${index + 1}] ${msg.role.toUpperCase()} - ${msg.timestamp?.toISOString() || "N/A"}`,
+      );
+      console.log("-".repeat(80));
+      console.log(msg.content);
+    });
+  }
+
+  if (Object.keys(session.extractedData).length > 0) {
+    console.log("\n" + "=".repeat(80));
+    console.log("EXTRACTED DATA:");
+    console.log("-".repeat(80));
+    console.log(JSON.stringify(session.extractedData, null, 2));
+  }
+
+  console.log("\n" + "=".repeat(80) + "\n");
+}
+
+// ============================================================================
+// AI MODEL FUNCTIONS
+// ============================================================================
+
+/**
+ * Generate structured streaming response from AI model
+ * Now accepts conversation array directly
+ */
 export async function* generateStructuredStreamFromModel(
-  prompt: string,
+  conversationHistory: ConversationMessage[],
   systemPrompt: string,
-  conversationHistory?: Array<{ role: string; content: string }>,
 ): AsyncGenerator<StructuredBotResponse, void, unknown> {
-  // ✅ FIX: Extract previously asked questions to avoid repetition
+  // Extract previously asked questions to avoid repetition
   const askedQuestions: string[] = [];
-  if (conversationHistory && conversationHistory.length > 0) {
-    for (const msg of conversationHistory) {
-      if (msg.role === "assistant") {
-        // Extract questions (sentences ending with ?)
-        const questions = msg.content.match(/[^.!?]*\?/g);
-        if (questions) {
-          askedQuestions.push(...questions.map((q) => q.trim()));
-        }
+
+  for (const msg of conversationHistory) {
+    if (msg.role === "assistant") {
+      // Extract questions (sentences ending with ?)
+      const questions = msg.content.match(/[^.!?]*\?/g);
+      if (questions) {
+        askedQuestions.push(...questions.map((q) => q.trim()));
       }
     }
   }
@@ -108,20 +324,20 @@ For completion:
 
 IMPORTANT: Return ONLY the JSON object, no other text.`;
 
+  // Build message array for LLM
   const messages: Array<{ role: string; content: string }> = [
     { role: "system", content: enhancedSystemPrompt },
   ];
 
-  if (Array.isArray(conversationHistory) && conversationHistory.length > 0) {
-    for (const m of conversationHistory) {
-      // ✅ FIX: Skip system messages to reduce noise
-      if (m && m.role && typeof m.content === "string" && m.role !== "system") {
-        messages.push(m);
-      }
+  // Add conversation history (excluding system messages)
+  for (const msg of conversationHistory) {
+    if (msg.role !== "system") {
+      messages.push({
+        role: msg.role,
+        content: msg.content,
+      });
     }
   }
-
-  messages.push({ role: "user", content: prompt });
 
   const payload = {
     messages,
@@ -143,6 +359,7 @@ IMPORTANT: Return ONLY the JSON object, no other text.`;
 
     let accumulatedText = "";
 
+    // Stream response chunks
     for await (const event of response.body) {
       if (event.chunk?.bytes) {
         try {
@@ -155,7 +372,7 @@ IMPORTANT: Return ONLY the JSON object, no other text.`;
             accumulatedText += text;
           }
         } catch (parseErr) {
-          console.error("Failed to parse streaming chunk:", parseErr);
+          console.error("[Chunk Parse Error]", parseErr);
         }
       }
     }
@@ -171,7 +388,8 @@ IMPORTANT: Return ONLY the JSON object, no other text.`;
       const structuredResponse: StructuredBotResponse = JSON.parse(cleanedText);
       yield structuredResponse;
     } catch (jsonErr) {
-      console.error("Failed to parse structured response:", cleanedText);
+      console.error("[JSON Parse Error] Raw text:", cleanedText);
+
       // Fallback to unstructured response
       yield {
         message: accumulatedText,
@@ -182,16 +400,19 @@ IMPORTANT: Return ONLY the JSON object, no other text.`;
       };
     }
   } catch (error) {
-    console.error("Streaming error:", error);
+    console.error("[Streaming Error]", error);
     throw error;
   }
 }
 
-// Field detection for auto-save
+/**
+ * Detect and extract fields from user message
+ * Uses AI to identify which profile fields the user is answering
+ */
 export async function detectAndExtractFields(
   userMessage: string,
   lastBotQuestion: string,
-  conversationHistory: Array<{ role: string; content: string }>,
+  conversationHistory: ConversationMessage[],
   role: string = "candidate",
 ): Promise<{
   fieldsDetected: Array<{
@@ -200,11 +421,6 @@ export async function detectAndExtractFields(
     confidence: number;
   }>;
 }> {
-  console.log(
-    "conversationHistory in detectAndExtractFields: ",
-    conversationHistory,
-  );
-
   const candidateFields = `
 - phone: Phone number
 - gender: Gender (male, female, other, prefer not to say)
@@ -227,11 +443,17 @@ export async function detectAndExtractFields(
 
   const fieldsDefinition = role === "unit" ? unitFields : candidateFields;
 
+  // Format conversation history for the prompt
+  const historyText = conversationHistory
+    .filter((msg) => msg.role !== "system")
+    .map((m) => `${m.role}: ${m.content}`)
+    .join("\n");
+
   const detectionPrompt = `
 You are an intelligent field extractor for a recruitment chatbot.
 
 Conversation History:
-${conversationHistory.map((m) => `${m.role}: ${m.content}`).join("\n")}
+${historyText}
 
 Last Bot Question: "${lastBotQuestion}"
 User's Answer: "${userMessage}"
@@ -274,41 +496,52 @@ Rules:
     body: JSON.stringify(payload),
   });
 
-  const response = await client.send(command);
-  const decodedBody = await streamToString(response.body as any);
-
-  let json;
   try {
-    json = JSON.parse(decodedBody);
-  } catch {
-    console.error("Failed to parse detection response:", decodedBody);
-    return { fieldsDetected: [] };
-  }
+    const response = await client.send(command);
+    const decodedBody = await streamToString(response.body as any);
 
-  const rawText = json?.choices?.[0]?.message?.content || "{}";
-  try {
-    // Clean common wrapper text the model may include
-    let cleaned = rawText.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "");
-    cleaned = cleaned.replace(/```/g, "").trim();
-
-    const firstBrace = cleaned.indexOf("{");
-    const lastBrace = cleaned.lastIndexOf("}");
-    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+    let json;
+    try {
+      json = JSON.parse(decodedBody);
+    } catch {
+      console.error("[Detection Response Parse Error]", decodedBody);
       return { fieldsDetected: [] };
     }
 
-    const jsonStr = cleaned.slice(firstBrace, lastBrace + 1);
-    const result = JSON.parse(jsonStr);
-    return {
-      fieldsDetected: result.fieldsDetected || [],
-    };
-  } catch (_err) {
-    console.error("Failed to parse field detection result:", rawText, _err);
+    const rawText = json?.choices?.[0]?.message?.content || "{}";
+
+    try {
+      // Clean wrapper text
+      let cleaned = rawText.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "");
+      cleaned = cleaned.replace(/```/g, "").trim();
+
+      const firstBrace = cleaned.indexOf("{");
+      const lastBrace = cleaned.lastIndexOf("}");
+
+      if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+        return { fieldsDetected: [] };
+      }
+
+      const jsonStr = cleaned.slice(firstBrace, lastBrace + 1);
+      const result = JSON.parse(jsonStr);
+
+      return {
+        fieldsDetected: result.fieldsDetected || [],
+      };
+    } catch (err) {
+      console.error("[Field Detection Parse Error]", rawText);
+      return { fieldsDetected: [] };
+    }
+  } catch (error) {
+    console.error("[Field Detection Error]", error);
     return { fieldsDetected: [] };
   }
 }
 
-// Validation and extraction
+/**
+ * Validate and extract data from user input
+ * Ensures data meets field requirements before saving
+ */
 export async function validateAndExtractData(
   userInput: string,
   question: string,
@@ -390,91 +623,54 @@ Rules for "looking_for":
     body: JSON.stringify(payload),
   });
 
-  const response = await client.send(command);
-  const decodedBody = await streamToString(response.body as any);
-
-  let json;
   try {
-    json = JSON.parse(decodedBody);
-  } catch {
-    console.error("Failed to parse validation response:", decodedBody);
-    throw new Error("Invalid JSON from validation model");
-  }
+    const response = await client.send(command);
+    const decodedBody = await streamToString(response.body as any);
 
-  const rawText = json?.choices?.[0]?.message?.content || "{}";
+    let json;
+    try {
+      json = JSON.parse(decodedBody);
+    } catch {
+      console.error("[Validation Response Parse Error]", decodedBody);
+      throw new Error("Invalid JSON from validation model");
+    }
 
-  try {
-    let cleaned = rawText.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "");
-    cleaned = cleaned.replace(/```/g, "").trim();
+    const rawText = json?.choices?.[0]?.message?.content || "{}";
 
-    const firstBrace = cleaned.indexOf("{");
-    const lastBrace = cleaned.lastIndexOf("}");
-    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+    try {
+      let cleaned = rawText.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "");
+      cleaned = cleaned.replace(/```/g, "").trim();
+
+      const firstBrace = cleaned.indexOf("{");
+      const lastBrace = cleaned.lastIndexOf("}");
+
+      if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+        return {
+          isValid: false,
+          validationMessage: "Failed to validate response",
+        };
+      }
+
+      const jsonStr = cleaned.slice(firstBrace, lastBrace + 1);
+      const validationResult = JSON.parse(jsonStr);
+
+      return {
+        isValid: !!validationResult.isValid,
+        extractedValue: validationResult.extractedValue,
+        validationMessage: validationResult.validationMessage || "",
+      };
+    } catch (err) {
+      console.error("[Validation Result Parse Error]", rawText);
       return {
         isValid: false,
         validationMessage: "Failed to validate response",
       };
     }
-
-    const jsonStr = cleaned.slice(firstBrace, lastBrace + 1);
-    const validationResult = JSON.parse(jsonStr);
-
-    return {
-      isValid: !!validationResult.isValid,
-      extractedValue: validationResult.extractedValue,
-      validationMessage: validationResult.validationMessage || "",
-    };
-  } catch (_err) {
-    console.error("Failed to parse validation result:", rawText, _err);
+  } catch (error) {
+    console.error("[Validation Error]", error);
     return {
       isValid: false,
       validationMessage: "Failed to validate response",
     };
   }
-}
-
-// Conversation store
-const MAX_MESSAGES_PER_CONVO = 50;
-const conversationStore: Map<
-  string,
-  Array<{ role: string; content: string }>
-> = new Map();
-
-export function addToConversation(
-  key: string,
-  message: { role: string; content: string },
-) {
-  if (!key) return;
-  const arr = conversationStore.get(key) || [];
-  console.log("debug-conversation : ", conversationStore);
-  console.log("debug-array : ", arr);
-
-  arr.push(message);
-  if (arr.length > MAX_MESSAGES_PER_CONVO) {
-    arr.splice(0, arr.length - MAX_MESSAGES_PER_CONVO);
-    console.log("debug-trimmed-array : ", arr);
-  }
-  conversationStore.set(key, arr);
-  console.log("debug-updated-conversation : ", conversationStore);
-}
-
-export function getConversation(key: string) {
-  if (!key) return [] as Array<{ role: string; content: string }>;
-  console.log("debug-get-conversation : ", conversationStore);
-  return conversationStore.get(key) || [];
-}
-
-export function clearConversation(key: string) {
-  if (!key) return;
-  conversationStore.delete(key);
-}
-
-export function getLastBotQuestion(key: string): string {
-  const convo = getConversation(key);
-  for (let i = convo.length - 1; i >= 0; i--) {
-    if (convo[i].role === "assistant") {
-      return convo[i].content;
-    }
-  }
-  return "";
 }
