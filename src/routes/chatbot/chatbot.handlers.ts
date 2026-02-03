@@ -51,18 +51,11 @@ export const chat = async (c: Context) => {
         if (existing.length > 0) {
           return {
             exists: true,
-            onboardingCompleted: existing[0].onboardingCompleted || false,
+            onboardingCompleted: existing[0].onboardingCompleted,
           };
         }
 
-        await db.insert(candidates).values({
-          userId,
-          onboardingCompleted: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-
-        return { exists: true, onboardingCompleted: false };
+        return { exists: false, onboardingCompleted: false };
       } else {
         const existing = await db
           .select({ onboardingCompleted: units.onboardingCompleted })
@@ -77,14 +70,7 @@ export const chat = async (c: Context) => {
           };
         }
 
-        await db.insert(units).values({
-          userId,
-          onboardingCompleted: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-
-        return { exists: true, onboardingCompleted: false };
+        return { exists: false, onboardingCompleted: false };
       }
     } catch {
       return { exists: false, onboardingCompleted: false };

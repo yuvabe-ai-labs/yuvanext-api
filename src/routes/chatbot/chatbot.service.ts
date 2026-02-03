@@ -200,6 +200,11 @@ export async function detectAndExtractFields(
     confidence: number;
   }>;
 }> {
+  console.log(
+    "conversationHistory in detectAndExtractFields: ",
+    conversationHistory,
+  );
+
   const candidateFields = `
 - phone: Phone number
 - gender: Gender (male, female, other, prefer not to say)
@@ -226,10 +231,7 @@ export async function detectAndExtractFields(
 You are an intelligent field extractor for a recruitment chatbot.
 
 Conversation History:
-${conversationHistory
-  .slice(-6)
-  .map((m) => `${m.role}: ${m.content}`)
-  .join("\n")}
+${conversationHistory.map((m) => `${m.role}: ${m.content}`).join("\n")}
 
 Last Bot Question: "${lastBotQuestion}"
 User's Answer: "${userMessage}"
@@ -444,15 +446,21 @@ export function addToConversation(
 ) {
   if (!key) return;
   const arr = conversationStore.get(key) || [];
+  console.log("debug-conversation : ", conversationStore);
+  console.log("debug-array : ", arr);
+
   arr.push(message);
   if (arr.length > MAX_MESSAGES_PER_CONVO) {
     arr.splice(0, arr.length - MAX_MESSAGES_PER_CONVO);
+    console.log("debug-trimmed-array : ", arr);
   }
   conversationStore.set(key, arr);
+  console.log("debug-updated-conversation : ", conversationStore);
 }
 
 export function getConversation(key: string) {
   if (!key) return [] as Array<{ role: string; content: string }>;
+  console.log("debug-get-conversation : ", conversationStore);
   return conversationStore.get(key) || [];
 }
 
