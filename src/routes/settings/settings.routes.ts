@@ -109,7 +109,22 @@ export const deactivateAccount = createRoute({
   },
 });
 
+// get the setting notifications from db for a user
+export const getNotificationSettings = createRoute({
+  method: "get" as const,
+  path: "/settings/notifications",
+  tags: ["Settings"],
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "admin"] }),
+  summary: "Get notification preferences",
+  description: "Retrieve email and in-app notification settings",
+  responses: {
+    [OK]: createResponse(OK, notificationsRequestSchema),
+    ...restrictedErrorResponses,
+  },
+});
+
 export type ChangePhone = typeof changePhone;
 export type UpdateNotifications = typeof updateNotifications;
 export type SetDisability = typeof setDisability;
 export type DeactivateAccount = typeof deactivateAccount;
+export type GetNotificationSettings = typeof getNotificationSettings;

@@ -14,19 +14,39 @@ export function createRouter() {
     defaultHook,
   });
 }
+
+export const ALLOWED_ORIGINS = [
+  "http://localhost:8080",
+  "http://localhost:5173",
+  "https://app.yuvanext.com",
+  "https://app-stg.yuvanext.com",
+  "https://app-dev.yuvanext.com",
+  "https://admin-dev.yuvanext.com",
+  "https://admin.yuvanext.com",
+  "https://admin-stg.yuvanext.com",
+];
+
 export default function createApp() {
   const app = createRouter();
 
-  app.use(requestId())
-    .use(pinoLogger())
-    .use("*", cors({
-      origin: "*", // replace with your origin
-      allowHeaders: ["Content-Type", "Authorization"],
-      allowMethods: ["POST", "GET", "OPTIONS", "PUT", "DELETE"],
-      exposeHeaders: ["Content-Length"],
+  app.use(
+    "*",
+    cors({
+      origin: ALLOWED_ORIGINS,
+      allowMethods: ["POST", "GET", "OPTIONS", "PUT", "DELETE", "PATCH"],
+      allowHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "X-Better-Auth",
+      ],
+      exposeHeaders: ["Content-Length", "Set-Cookie"],
       maxAge: 600,
       credentials: true,
-    }));
+    }),
+  );
+
+  app.use(requestId()).use(pinoLogger());
 
   app.notFound(notFound);
 

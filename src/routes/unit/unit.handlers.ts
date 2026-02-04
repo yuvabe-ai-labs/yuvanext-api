@@ -1,4 +1,5 @@
 import { desc, eq } from "drizzle-orm";
+import { internships } from "@/db/schema/internship.schema";
 
 import type { AppRouteHandler } from "@/types/app.types";
 
@@ -104,6 +105,7 @@ export const getUnitById: AppRouteHandler<GetUnitById> = async (c) => {
         // User info
         email: userTable.email,
         userImage: userTable.image,
+        userAccountStatus: userTable.accountDisabled,
       })
       .from(units)
       .leftJoin(userTable, eq(units.userId, userTable.id))
@@ -117,11 +119,46 @@ export const getUnitById: AppRouteHandler<GetUnitById> = async (c) => {
       );
     }
 
+    // Fetch only active internships created by this unit
+    const unitInternships = await db
+      .select({
+        id: internships.id,
+        title: internships.title,
+        description: internships.description,
+        duration: internships.duration,
+        payment: internships.payment,
+        status: internships.status,
+        closingDate: internships.closingDate,
+        createdAt: internships.createdAt,
+        updatedAt: internships.updatedAt,
+        isPaid: internships.isPaid,
+        minAgeRequired: internships.minAgeRequired,
+        jobType: internships.jobType,
+        benefits: internships.benefits,
+        skillsRequired: internships.skillsRequired,
+        responsibilities: internships.responsibilities,
+        language: internships.language,
+      })
+      .from(internships)
+      .where(eq(internships.createdBy, id))
+      .orderBy(desc(internships.createdAt));
+
+    // Filter for active internships only and add isOpen field
+    const activeInternships = unitInternships
+      .filter((internship) => internship.status === "active")
+      .map((internship) => ({
+        ...internship,
+        isOpen: true,
+      }));
+
     return c.json(
       {
         status_code: OK,
         message: "Unit details retrieved successfully",
-        data: unitData[0],
+        data: {
+          ...unitData[0],
+          internships: activeInternships,
+        },
       },
       OK,
     );

@@ -1,40 +1,51 @@
-// chatbot.handlers.ts - Refactored with optimized DB calls
+// chatbot.handlers.ts - Restructured handler with batch DB save on completion
 
 import { eq } from "drizzle-orm";
-
-import type { AppRouteHandler } from "@/types/app.types";
+import { streamSSE } from "hono/streaming";
+import type { Context } from "hono";
 
 import db from "@/db";
 import { candidates } from "@/db/schema/candidate.schema";
 import { units } from "@/db/schema/unit.schema";
 
-import type { Chat } from "./chatbot.routes";
-
 import {
-  addToConversation,
+  addMessage,
+  addExtractedField,
+  clearConversation,
   detectAndExtractFields,
-  generateTextFromModel,
-  getConversation,
+  generateStructuredStreamFromModel,
+  getExtractedData,
   getLastBotQuestion,
+  getMessages,
+  initializeConversation,
+  printConversation,
   validateAndExtractData,
+  type ExtractedFieldData,
+  type StructuredBotResponse,
 } from "./chatbot.service";
 import { CANDIDATE_SYSTEM_PROMPT, UNIT_SYSTEM_PROMPT } from "./prompts";
 
-export const chat: AppRouteHandler<Chat> = async (c) => {
-  const { message } = c.req.valid("json");
+/**
+ * Main chat handler for onboarding chatbot
+ * Stores data in-memory during conversation, saves to DB only on completion
+ */
+export const chat = async (c: Context) => {
+  const body = await c.req.json();
+  const { message } = body;
 
   const user = c.get("user");
-
   const userId = user.id as string;
-  const convoKey = userId;
   const role = user.role;
 
+  // Select appropriate system prompt based on role
   let SYSTEM_PROMPT = CANDIDATE_SYSTEM_PROMPT;
   if (role === "unit") {
     SYSTEM_PROMPT = UNIT_SYSTEM_PROMPT;
   }
 
-  // OPTIMIZED: Combined helper function for both candidate and unit
+  /**
+   * Check if profile exists and return onboarding status
+   */
   const ensureProfileExists = async (
     userId: string,
     role: "candidate" | "unit",
@@ -45,9 +56,7 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
     try {
       if (role === "candidate") {
         const existing = await db
-          .select({
-            onboardingCompleted: candidates.onboardingCompleted,
-          })
+          .select({ onboardingCompleted: candidates.onboardingCompleted })
           .from(candidates)
           .where(eq(candidates.userId, userId))
           .limit(1);
@@ -55,27 +64,14 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
         if (existing.length > 0) {
           return {
             exists: true,
-            onboardingCompleted: existing[0].onboardingCompleted || false,
+            onboardingCompleted: existing[0].onboardingCompleted,
           };
         }
 
-        await db.insert(candidates).values({
-          userId,
-          onboardingCompleted: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-
-        return {
-          exists: true,
-          onboardingCompleted: false,
-        };
+        return { exists: false, onboardingCompleted: false };
       } else {
-        // role === "unit"
         const existing = await db
-          .select({
-            onboardingCompleted: units.onboardingCompleted,
-          })
+          .select({ onboardingCompleted: units.onboardingCompleted })
           .from(units)
           .where(eq(units.userId, userId))
           .limit(1);
@@ -87,69 +83,134 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
           };
         }
 
-        await db.insert(units).values({
-          userId,
-          onboardingCompleted: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-
-        return {
-          exists: true,
-          onboardingCompleted: false,
-        };
+        return { exists: false, onboardingCompleted: false };
       }
-    } catch {
+    } catch (error) {
+      console.error(
+        `[Profile Check Error] userId: ${userId}, role: ${role}`,
+        error,
+      );
+      return { exists: false, onboardingCompleted: false };
+    }
+  };
+
+  /**
+   * Helper to convert values to string array
+   */
+  const toArray = (val: any): string[] => {
+    if (Array.isArray(val)) {
+      return val
+        .map(String)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    if (typeof val === "string") {
+      return val
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  /**
+   * Save all extracted data to database (called only on completion)
+   */
+  const saveAllDataToDatabase = async (
+    userId: string,
+    role: "candidate" | "unit",
+    extractedData: ExtractedFieldData,
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      console.log(`[Saving All Data] userId: ${userId}, role: ${role}`);
+      console.log(`[Data to Save]`, extractedData);
+
+      if (role === "candidate") {
+        const updateData: any = {
+          onboardingCompleted: true,
+          updatedAt: new Date(),
+        };
+
+        // Map extracted fields to database columns
+        if (extractedData.phone) updateData.phone = String(extractedData.phone);
+        if (extractedData.gender)
+          updateData.gender = String(extractedData.gender).toLowerCase();
+        if (extractedData.grade) updateData.grade = String(extractedData.grade);
+        if (extractedData.experience_level)
+          updateData.experienceLevel = String(extractedData.experience_level);
+        if (extractedData.skills)
+          updateData.skills = toArray(extractedData.skills);
+        if (extractedData.interests)
+          updateData.interests = toArray(extractedData.interests);
+        if (extractedData.type)
+          updateData.type = String(extractedData.type).toLowerCase();
+        if (extractedData.looking_for)
+          updateData.lookingFor = toArray(extractedData.looking_for).map((s) =>
+            s.toLowerCase(),
+          );
+
+        await db
+          .update(candidates)
+          .set(updateData)
+          .where(eq(candidates.userId, userId));
+
+        console.log(
+          `[Candidate Data Saved] userId: ${userId}, fields: ${Object.keys(updateData).join(", ")}`,
+        );
+      } else {
+        const updateData: any = {
+          onboardingCompleted: true,
+          updatedAt: new Date(),
+        };
+
+        // Map extracted fields to database columns
+        if (extractedData.name) updateData.name = String(extractedData.name);
+        if (extractedData.type) updateData.type = String(extractedData.type);
+        if (extractedData.phone) updateData.phone = String(extractedData.phone);
+        if (extractedData.location)
+          updateData.location = String(extractedData.location);
+        if (extractedData.focus_areas)
+          updateData.focusAreas = toArray(extractedData.focus_areas);
+        if (extractedData.skills_offered)
+          updateData.skillsOffered = toArray(extractedData.skills_offered);
+        if (extractedData.is_aurovillian !== undefined) {
+          updateData.isAurovillian =
+            String(extractedData.is_aurovillian).toLowerCase() === "yes";
+        }
+        if (extractedData.opportunities_offered)
+          updateData.opportunitiesOffered = toArray(
+            extractedData.opportunities_offered,
+          );
+
+        await db.update(units).set(updateData).where(eq(units.userId, userId));
+
+        console.log(
+          `[Unit Data Saved] userId: ${userId}, fields: ${Object.keys(updateData).join(", ")}`,
+        );
+      }
+
+      return { success: true };
+    } catch (err) {
+      console.error(`[Save All Data Error] userId: ${userId}`, err);
       return {
-        exists: false,
-        onboardingCompleted: false,
+        success: false,
+        error: String(err instanceof Error ? err.message : "Database error"),
       };
     }
   };
 
-  // OPTIMIZED: Combined onboarding completion function
-  const markOnboardingComplete = async (
+  /**
+   * Validate and store field in memory (not DB yet)
+   */
+  const validateAndStoreField = async (
     userId: string,
-    role: "candidate" | "unit",
-  ): Promise<boolean> => {
-    try {
-      if (role === "candidate") {
-        await db
-          .update(candidates)
-          .set({
-            onboardingCompleted: true,
-            updatedAt: new Date(),
-          })
-          .where(eq(candidates.userId, userId));
-      } else {
-        await db
-          .update(units)
-          .set({
-            onboardingCompleted: true,
-            updatedAt: new Date(),
-          })
-          .where(eq(units.userId, userId));
-      }
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  // OPTIMIZED: Generic field saving function that handles both candidates and units
-  const saveField = async (
     field: string,
     value: any,
     lastQuestion: string,
     role: "candidate" | "unit",
-  ): Promise<{
-    success: boolean;
-    error?: string;
-    needsRetry?: boolean;
-    retryPrompt?: string;
-    extractedValue?: any;
-  }> => {
+  ): Promise<{ success: boolean; error?: string; extractedValue?: any }> => {
     try {
+      // Validate the field value
       const validationResult = await validateAndExtractData(
         String(value || ""),
         lastQuestion,
@@ -161,174 +222,23 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
         return {
           success: false,
           error: validationResult.validationMessage,
-          needsRetry: true,
-          retryPrompt: `${validationResult.validationMessage} Could you please provide that information again?`,
         };
       }
 
       const extractedValue = validationResult.extractedValue;
 
-      // Helper to process array values
-      const toArray = (val: any): string[] => {
-        if (Array.isArray(val)) {
-          return val
-            .map(String)
-            .map((s) => s.trim())
-            .filter(Boolean);
-        }
-        if (typeof val === "string") {
-          return val
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
-        }
-        return [];
-      };
-
-      // Save to appropriate table based on role
-      if (role === "candidate") {
-        switch (field.toLowerCase()) {
-          case "phone":
-            await db
-              .update(candidates)
-              .set({ phone: String(extractedValue || "") })
-              .where(eq(candidates.userId, userId));
-            break;
-
-          case "gender": {
-            const genderValue = String(extractedValue || "").toLowerCase();
-            await db
-              .update(candidates)
-              .set({ gender: genderValue as any })
-              .where(eq(candidates.userId, userId));
-            break;
-          }
-
-          case "experience_level":
-            await db
-              .update(candidates)
-              .set({ experienceLevel: String(extractedValue || "") })
-              .where(eq(candidates.userId, userId));
-            break;
-
-          case "skills":
-            await db
-              .update(candidates)
-              .set({ skills: toArray(extractedValue) })
-              .where(eq(candidates.userId, userId));
-            break;
-
-          case "interests":
-            await db
-              .update(candidates)
-              .set({ interests: toArray(extractedValue) })
-              .where(eq(candidates.userId, userId));
-            break;
-
-          case "type": {
-            const typeValue = String(extractedValue || "").toLowerCase();
-            await db
-              .update(candidates)
-              .set({ type: typeValue as any })
-              .where(eq(candidates.userId, userId));
-            break;
-          }
-
-          case "looking_for": {
-            const arr = toArray(extractedValue).map((s) => s.toLowerCase());
-            const result = await db
-              .update(candidates)
-              .set({ lookingFor: arr })
-              .where(eq(candidates.userId, userId))
-              .returning();
-
-            if (result.length === 0) {
-              throw new Error("No candidate record found to update");
-            }
-            break;
-          }
-
-          default:
-            return { success: false, error: "Field not supported" };
-        }
-      } else {
-        // role === "unit"
-        switch (field.toLowerCase()) {
-          case "name":
-            await db
-              .update(units)
-              .set({ name: String(extractedValue || "") })
-              .where(eq(units.userId, userId));
-            break;
-
-          case "type":
-            await db
-              .update(units)
-              .set({ type: String(extractedValue || "") })
-              .where(eq(units.userId, userId));
-            break;
-
-          case "phone":
-            await db
-              .update(units)
-              .set({ phone: String(extractedValue || "") })
-              .where(eq(units.userId, userId));
-            break;
-
-          case "location":
-            await db
-              .update(units)
-              .set({ location: String(extractedValue || "") })
-              .where(eq(units.userId, userId));
-            break;
-
-          case "focus_areas":
-            await db
-              .update(units)
-              .set({ focusAreas: toArray(extractedValue) })
-              .where(eq(units.userId, userId));
-            break;
-
-          case "skills_offered":
-            await db
-              .update(units)
-              .set({ skillsOffered: toArray(extractedValue) })
-              .where(eq(units.userId, userId));
-            break;
-
-          case "is_aurovillian": {
-            const boolValue =
-              String(extractedValue || "").toLowerCase() === "true" ||
-              String(extractedValue || "").toLowerCase() === "yes" ||
-              String(extractedValue || "").toLowerCase() === "aurovillian";
-
-            await db
-              .update(units)
-              .set({ isAurovillian: boolValue })
-              .where(eq(units.userId, userId));
-            break;
-          }
-
-          case "opportunities_offered":
-            await db
-              .update(units)
-              .set({ opportunitiesOffered: toArray(extractedValue) })
-              .where(eq(units.userId, userId));
-            break;
-
-          default:
-            return { success: false, error: "Field not supported" };
-        }
-      }
+      // Store in memory (not DB)
+      addExtractedField(userId, field, extractedValue);
 
       return { success: true, extractedValue };
     } catch (err) {
+      console.error(
+        `[Validate Field Error] userId: ${userId}, field: ${field}`,
+        err,
+      );
       return {
         success: false,
-        error: String(err instanceof Error ? err.message : "Database error"),
-        needsRetry: true,
-        retryPrompt:
-          "Something went wrong. Could you please try answering that question again?",
+        error: String(err instanceof Error ? err.message : "Validation error"),
       };
     }
   };
@@ -337,103 +247,113 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
     // Validate role
     if (role !== "candidate" && role !== "unit") {
       return c.json(
-        {
-          success: false as const,
-          error: "Invalid user role",
-        },
+        { success: false as const, error: "Invalid user role" },
         422,
       );
     }
 
-    // Check if profile exists and onboarding status
+    // Check onboarding status
     const onboardingStatus = await ensureProfileExists(userId, role);
 
     if (!onboardingStatus.exists) {
       return c.json(
-        {
-          success: false as const,
-          error: `Failed to access ${role} profile`,
-        },
+        { success: false as const, error: `Failed to access ${role} profile` },
         500,
       );
     }
 
-    // If onboarding is already completed, return static message
     if (onboardingStatus.onboardingCompleted) {
       const completionMessage =
         role === "candidate"
-          ? "You have already completed the onboarding process! Your profile is all set up. You can now explore internships, courses, and opportunities on the platform."
-          : "You have already completed the unit registration! Your unit profile is all set up. You can now start posting opportunities and finding candidates.";
+          ? "You have already completed the onboarding process!"
+          : "You have already completed the unit registration!";
 
       return c.json(
         {
           success: true as const,
-          response: completionMessage,
+          response: {
+            message: completionMessage,
+            question: null,
+            options: null,
+            fieldType: null,
+            isComplete: true,
+          },
           onboardingCompleted: true,
-          skipQuestions: true,
         },
         200,
       );
     }
 
-    // Get conversation history
-    const storedHistory = getConversation(convoKey);
-    const lastBotQuestion = getLastBotQuestion(convoKey);
+    // Initialize conversation if needed
+    initializeConversation(userId);
 
-    // AUTO-DETECT fields from user message
-    let fieldsToSave: Array<{ field: string; value: any }> = [];
+    // Add user message to conversation array
+    addMessage(userId, "user", message);
+    console.log(`[User Message] userId: ${userId}, message: "${message}"`);
+
+    // Get conversation history and last question
+    const conversationHistory = getMessages(userId);
+    const lastBotQuestion = getLastBotQuestion(userId);
+
+    // Auto-detect and validate fields from user's response
+    let fieldsToValidate: Array<{ field: string; value: any }> = [];
 
     if (lastBotQuestion) {
       try {
         const detection = await detectAndExtractFields(
           message,
           lastBotQuestion,
-          storedHistory,
+          conversationHistory,
           role,
         );
-
-        // Filter high-confidence detections
-        fieldsToSave = detection.fieldsDetected
+        fieldsToValidate = detection.fieldsDetected
           .filter((f) => f.confidence > 0.7)
           .map((f) => ({ field: f.field, value: f.value }));
-      } catch {
-        // Continue without auto-save if detection fails
+
+        if (fieldsToValidate.length > 0) {
+          console.log(
+            `[Fields Detected] userId: ${userId}, fields:`,
+            fieldsToValidate.map((f) => f.field),
+          );
+        }
+      } catch (error) {
+        console.error(`[Field Detection Error] userId: ${userId}`, error);
       }
     }
 
-    // Attempt to save detected fields (with LLM validation)
-    const savedFields: string[] = [];
+    // Validate and store fields in memory
     const failedFields: Array<{ field: string; error: string }> = [];
 
-    for (const fieldData of fieldsToSave) {
-      const saveResult = await saveField(
+    for (const fieldData of fieldsToValidate) {
+      const validationResult = await validateAndStoreField(
+        userId,
         fieldData.field,
         fieldData.value,
         lastBotQuestion,
         role,
       );
 
-      if (saveResult.success) {
-        savedFields.push(fieldData.field);
-        addToConversation(convoKey, {
-          role: "system",
-          content: `[Auto-saved: ${fieldData.field} = ${saveResult.extractedValue}]`,
-        });
-      } else if (saveResult.needsRetry) {
+      if (!validationResult.success) {
         failedFields.push({
           field: fieldData.field,
-          error: saveResult.error || "Validation failed",
+          error: validationResult.error || "Validation failed",
         });
+      } else {
+        // Add system message about field extraction
+        addMessage(userId, "system", `[Extracted: ${fieldData.field}]`);
       }
     }
 
-    // If there were validation failures, return retry prompt
+    // Return validation error if any fields failed
     if (failedFields.length > 0) {
-      const retryMessage = failedFields[0].error;
+      console.log(
+        `[Validation Failed] userId: ${userId}, fields:`,
+        failedFields,
+      );
       return c.json(
         {
           success: false as const,
-          error: retryMessage,
+          error: failedFields[0].error,
           needsRetry: true,
           fieldsFailed: failedFields.map((f) => f.field),
         },
@@ -441,60 +361,96 @@ export const chat: AppRouteHandler<Chat> = async (c) => {
       );
     }
 
-    // Generate bot response
-    const resultPromise = generateTextFromModel(
-      message,
-      SYSTEM_PROMPT,
-      storedHistory,
-    );
+    // Stream structured response
+    return streamSSE(c, async (stream) => {
+      let structuredResponse: StructuredBotResponse | null = null;
 
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Request timeout")), 55000),
-    );
+      try {
+        await stream.writeSSE({
+          event: "start",
+          data: JSON.stringify({ message: "Streaming started" }),
+        });
 
-    const result = await Promise.race([resultPromise, timeoutPromise]);
+        // Generate structured response from model
+        for await (const response of generateStructuredStreamFromModel(
+          conversationHistory,
+          SYSTEM_PROMPT,
+        )) {
+          structuredResponse = response;
 
-    const botResponse = (result as any)?.text;
-    if (!botResponse) {
-      throw new Error("No response from model");
-    }
+          // Send the complete structured response
+          await stream.writeSSE({
+            event: "structured",
+            data: JSON.stringify(response),
+          });
+        }
 
-    // Check if bot response indicates completion
-    const completionPhrases = [
-      "perfect! you're all set",
-      "you're all set",
-      "profile is complete",
-      "find the best matches for you",
-      "help you find the best candidates",
-    ];
+        if (!structuredResponse) {
+          throw new Error("No response from model");
+        }
 
-    const isCompletionMessage = completionPhrases.some((phrase) =>
-      botResponse.toLowerCase().includes(phrase.toLowerCase()),
-    );
+        // Add assistant response to conversation array
+        addMessage(userId, "assistant", structuredResponse.message);
+        console.log(
+          `[Bot Response] userId: ${userId}, isComplete: ${structuredResponse.isComplete || false}`,
+        );
 
-    if (isCompletionMessage) {
-      await markOnboardingComplete(userId, role);
-    }
+        // Check if onboarding is complete
+        const isComplete = structuredResponse.isComplete || false;
 
-    // Persist conversation
-    try {
-      addToConversation(convoKey, { role: "user", content: message });
-      addToConversation(convoKey, { role: "assistant", content: botResponse });
-    } catch (err) {
-      console.warn("Failed to persist conversation:", err);
-    }
+        if (isComplete) {
+          // NOW save all data to database
+          const extractedData = getExtractedData(userId);
+          const saveResult = await saveAllDataToDatabase(
+            userId,
+            role,
+            extractedData,
+          );
 
-    return c.json(
-      {
-        success: true as const,
-        response: botResponse
-          .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "")
-          .trim(),
-        ...(isCompletionMessage && { onboardingCompleted: true }),
-      },
-      200,
-    );
+          if (!saveResult.success) {
+            throw new Error(
+              saveResult.error || "Failed to save data to database",
+            );
+          }
+
+          console.log(`[Onboarding Complete] userId: ${userId}, role: ${role}`);
+
+          // Optional: Print final conversation for debugging
+          if (process.env.NODE_ENV === "development") {
+            printConversation(userId);
+          }
+
+          // Clear conversation from memory after successful save
+          clearConversation(userId);
+        }
+
+        // Send completion event
+        await stream.writeSSE({
+          event: "complete",
+          data: JSON.stringify({
+            message: "Stream completed",
+            structuredResponse,
+            onboardingCompleted: isComplete,
+          }),
+        });
+      } catch (err: any) {
+        console.error(`[Stream Error] userId: ${userId}`, err);
+
+        await stream.writeSSE({
+          event: "error",
+          data: JSON.stringify({
+            error: String(err?.message || err),
+            errorType:
+              err?.name === "ThrottlingException" ? "THROTTLING" : "UNKNOWN",
+          }),
+        });
+      } finally {
+        await stream.close();
+      }
+    });
   } catch (err: any) {
+    console.error(`[Handler Error] userId: ${userId}`, err);
+
     if (err?.message === "Request timeout") {
       return c.json(
         {

@@ -1,4 +1,5 @@
 import type { OpenAPIHono, RouteConfig, RouteHandler } from "@hono/zod-openapi";
+import { User } from "better-auth";
 import type { Schema } from "hono";
 import type { PinoLogger } from "hono-pino";
 
@@ -30,3 +31,11 @@ export type AppRouteHandler<R extends RouteConfig> = RouteHandler<
   R,
   AppBindings
 >;
+
+export type BetterAuthUser = User & {
+  metadata?: {
+    invitedByAdmin?: boolean;
+    website_url?: string;
+    role?: string;
+  };
+};

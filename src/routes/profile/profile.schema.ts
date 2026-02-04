@@ -1,5 +1,30 @@
 import { z } from "zod";
 
+export const genderEnum = z.enum(["male", "female", "other"]);
+
+export const maritalStatusEnum = z.enum([
+  "married",
+  "single",
+  "prefer not to say",
+]);
+
+const socialLinkSchema = z.object({
+  id: z.string().optional(),
+  platform: z.string(),
+  url: z.url(),
+});
+
+const languageSchema = z.union([
+  z.string(),
+  z.object({
+    id: z.string().optional(),
+    name: z.string(),
+    read: z.boolean(),
+    speak: z.boolean(),
+    write: z.boolean(),
+  }),
+]);
+
 export const updateProfileSchema = z
   .object({
     // user fields
@@ -15,23 +40,24 @@ export const updateProfileSchema = z
     // candidate-specific complex fields (allow loose types to keep flexibility)
     type: z.string().optional(),
     experienceLevel: z.string().optional(),
-    maritalStatus: z.string().optional(),
+    maritalStatus: maritalStatusEnum.optional(),
     isDifferentlyAbled: z.boolean().optional(),
     hasCareerBreak: z.boolean().optional(),
     skills: z.array(z.string()).optional(),
     interests: z.array(z.string()).optional(),
     lookingFor: z.array(z.string()).optional(),
-    gender: z.string().optional(),
+    gender: genderEnum.optional(),
     dateOfBirth: z.string().optional(),
     onboardingCompleted: z.boolean().optional(),
     education: z.array(z.any()).optional(),
-    language: z.array(z.string()).optional(),
+    language: z.array(languageSchema).optional(),
     course: z.array(z.any()).optional(),
     internship: z.array(z.any()).optional(),
     projects: z.array(z.any()).optional(),
-    socialLinks: z.record(z.string(), z.string()).optional(),
+    socialLinks: z.array(socialLinkSchema).optional(),
     // unit-specific fields
-    websiteUrl: z.url().optional(),
+    // Accept plain strings for website (some clients submit non-URL values)
+    websiteUrl: z.string().optional(),
     mission: z.string().optional(),
     values: z.string().optional(),
     description: z.string().optional(),
@@ -51,7 +77,7 @@ export const updateProfileSchema = z
 const baseUserSchema = z.object({
   id: z.string(),
   name: z.string(),
-  email: z.string().email(),
+  email: z.email(),
   image: z.string().nullable(),
   role: z.enum(["candidate", "unit", "admin"]),
   createdAt: z.date(),
@@ -65,7 +91,7 @@ const candidateFieldsSchema = z.object({
   experienceLevel: z.string().nullable(),
   profileSummary: z.string().nullable(),
   location: z.string().nullable(),
-  maritalStatus: z.string().nullable(),
+  maritalStatus: maritalStatusEnum.nullable(),
   isDifferentlyAbled: z.boolean().nullable(),
   hasCareerBreak: z.boolean().nullable(),
   skills: z.array(z.string()).nullable(),
@@ -73,15 +99,15 @@ const candidateFieldsSchema = z.object({
   lookingFor: z.array(z.string()).nullable(),
   avatarUrl: z.string().nullable(),
   phone: z.string().nullable(),
-  gender: z.string().nullable(),
+  gender: genderEnum.nullable(),
   dateOfBirth: z.date().nullable(),
   onboardingCompleted: z.boolean().nullable(),
   education: z.array(z.any()).nullable(),
-  language: z.array(z.string()).nullable(),
+  language: z.array(languageSchema).nullable(),
   course: z.array(z.any()).nullable(),
   internship: z.array(z.any()).nullable(),
   projects: z.array(z.any()).nullable(),
-  socialLinks: z.record(z.string(), z.string()).nullable(),
+  socialLinks: z.array(socialLinkSchema).nullable(),
 });
 
 // Unit-specific fields
@@ -107,7 +133,7 @@ const unitFieldsSchema = z.object({
   skillsOffered: z.array(z.string()).nullable(),
   opportunitiesOffered: z.array(z.any()).nullable(),
   projects: z.array(z.any()).nullable(),
-  socialLinks: z.record(z.string(), z.string()).nullable(),
+  socialLinks: z.array(socialLinkSchema).nullable(),
 });
 
 // Profile score field (always included in GET /profile response)

@@ -4,7 +4,7 @@ import { z } from "zod";
 export const applicationStatusEnum = z.enum([
   "applied",
   "shortlisted",
-  "rejected",
+  "not_shortlisted",
   "interviewed",
   "hired",
 ]);
@@ -53,7 +53,29 @@ export const applicationResponseSchema = z.object({
   application: z.object({
     id: z.string(),
     status: applicationStatusEnum,
-    profileScore: z.number().nullable(),
+    createdAt: z.union([z.string(), z.date()]),
+    updatedAt: z.union([z.string(), z.date()]),
+    candidateOfferDecision: candidateOfferDecisionEnum,
+  }),
+  internship: z.object({
+    id: z.string(),
+    title: z.string(),
+    type: z.string().nullable(),
+  }),
+  candidate: z.object({
+    userId: z.string(),
+    name: z.string(),
+    avatarUrl: z.string().nullable(),
+    skills: z.array(z.string()).nullable(),
+    profileSummary: z.string().nullable(),
+    interests: z.array(z.string()).nullable(),
+  }),
+});
+
+export const detailedApplicationResponseSchema = z.object({
+  application: z.object({
+    id: z.string(),
+    status: applicationStatusEnum,
     candidateOfferDecision: candidateOfferDecisionEnum,
     createdAt: z.union([z.string(), z.date()]),
     updatedAt: z.union([z.string(), z.date()]),
@@ -115,3 +137,16 @@ export const getApplicationsResponseSchema = z
     total: z.number(),
   })
   .catchall(z.any()); // Allows for the data array to be included
+
+export const applicationByInternshipResponseSchema = z.object({
+  applicationId: z.string(),
+  candidateName: z.string(),
+  candidateAvatarUrl: z.string().nullable(),
+  internshipTitle: z.string(),
+  status: applicationStatusEnum,
+  profileSummary: z.string().nullable(),
+  createdAt: z.union([z.string(), z.date()]),
+  updatedAt: z.union([z.string(), z.date()]),
+  candidateSkills: z.array(z.string()).nullable(),
+  candidateInterests: z.array(z.string()).nullable(),
+});

@@ -30,6 +30,23 @@ import {
 /**
  * GET /internships - List internships (role-based filtering)
  */
+
+/**
+ * GET /stats - Get unit statistics
+ */
+export const getUnitStats = createRoute({
+  method: "get" as const,
+  path: "/internships/stats",
+  tags: ["Internships"],
+  middleware: requireRole({ allowedRoles: ["unit"] }),
+  summary: "Get unit dashboard statistics",
+  description: "Retrieve aggregated statistics for the authenticated unit",
+  responses: {
+    [OK]: createResponse(OK, unitStatsResponseSchema),
+    ...restrictedErrorResponses,
+  },
+});
+
 export const getInternships = createRoute({
   method: "get" as const,
   path: "/internships",
@@ -69,7 +86,7 @@ export const createInternship = createRoute({
   method: "post" as const,
   path: "/internships",
   tags: ["Internships"],
-  middleware: requireRole({ allowedRoles: ["unit"] }),
+  middleware: requireRole({ allowedRoles: ["unit", "admin"] }),
   summary: "Create new internship posting",
   description: "Create a new internship (units only)",
   request: {
@@ -95,7 +112,7 @@ export const getInternshipById = createRoute({
   method: "get" as const,
   path: "/internships/{id}",
   tags: ["Internships"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "admin"] }),
   summary: "Get internship by ID",
   description: "Retrieve detailed information about a specific internship",
   request: {
@@ -149,22 +166,6 @@ export const deleteInternship = createRoute({
   responses: {
     [OK]: createResponse(OK),
     ...resourceErrorResponses,
-  },
-});
-
-/**
- * GET /stats - Get unit statistics
- */
-export const getUnitStats = createRoute({
-  method: "get" as const,
-  path: "/internships/stats",
-  tags: ["Internships"],
-  middleware: requireRole({ allowedRoles: ["unit"] }),
-  summary: "Get unit dashboard statistics",
-  description: "Retrieve aggregated statistics for the authenticated unit",
-  responses: {
-    [OK]: createResponse(OK, unitStatsResponseSchema),
-    ...restrictedErrorResponses,
   },
 });
 

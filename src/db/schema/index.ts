@@ -4,6 +4,7 @@ export * from "./candidate.schema";
 export * from "./course.schema";
 export * from "./internship.schema";
 export * from "./interview.schema";
+export * from "./invitation.schema";
 export * from "./notification.schema";
 export * from "./saved-internship.schema";
 export * from "./task.management.schema";

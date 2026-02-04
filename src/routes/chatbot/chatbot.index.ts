@@ -5,9 +5,7 @@ import * as routes from "./chatbot.routes";
 
 const router = createRouter();
 
-// Apply authentication middleware
-
-// Register routes
+// Register route - handler is now type-compatible
 router.openapi(routes.chat, handlers.chat);
 
 export default router;

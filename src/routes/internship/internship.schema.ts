@@ -19,6 +19,7 @@ export const createInternshipSchema = z.object({
   skillsRequired: z.array(z.string()).optional(),
   responsibilities: z.array(z.string()).optional(),
   language: z.array(z.string()).optional(),
+  createdBy: z.uuid().optional(),
 });
 
 export const updateInternshipSchema = z
@@ -43,10 +44,21 @@ export const internshipIdParamSchema = z.object({
   id: z.uuid(),
 });
 
+export const createdByMetadataSchema = z.object({
+  userId: z.uuid().nullable(),
+  name: z.string().nullable(),
+  address: z.string().nullable(),
+  phone: z.string().nullable(),
+  websiteUrl: z.string().nullable(),
+  description: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+  bannerUrl: z.string().nullable(),
+  location: z.string().nullable(),
+});
+
 // Response Schemas
 export const internshipResponseSchema = z.object({
   id: z.uuid(),
-  createdBy: z.string().uuid(),
   title: z.string(),
   description: z.string().nullable(),
   duration: z.string().nullable(),
@@ -62,6 +74,8 @@ export const internshipResponseSchema = z.object({
   language: z.array(z.string()).nullable(),
   createdAt: z.union([z.string(), z.date()]),
   updatedAt: z.union([z.string(), z.date()]),
+  applicationCount: z.number().optional(),
+  createdBy: createdByMetadataSchema,
 });
 
 export const recommendedinternshipResponseSchema =
@@ -82,6 +96,8 @@ export const unitStatsResponseSchema = z.object({
   totalApplications: z.number(),
   totalInterviews: z.number(),
   hiredThisMonth: z.number(),
+  totalActiveInternships: z.number(),
+  totalHired: z.number(),
   period: z.object({
     month: z.string(),
     year: z.number(),

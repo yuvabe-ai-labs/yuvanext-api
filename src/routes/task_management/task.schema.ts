@@ -34,15 +34,15 @@ export const updateTaskSchema = z.object({
 
 export const reviewTaskSchema = z.object({
   status: z.enum(["redo", "accepted"]),
-  reviewRemarks: z.string().min(1),
+  reviewRemarks: z.string().min(1).optional(),
 });
 
 export const taskIdParamSchema = z.object({
   id: z.uuid(),
 });
 
-export const getTasksQuerySchema = z.object({
-  applicationId: z.uuid().optional(),
+export const applicationIdParamSchema = z.object({
+  applicationId: z.uuid(),
 });
 
 // Response Schemas
@@ -66,12 +66,52 @@ export const taskResponseSchema = z.object({
   submissionLink: z.string().nullable(),
 });
 
-export const enrichedtaskResponseSchema = taskResponseSchema.extend({
+// Unified response for both candidate and unit GET /tasks (grouped by internship)
+export const groupedTasksResponseSchema = z.object({
+  internshipId: z.string(),
+  internshipName: z.string().nullable(),
+  internshipStartDate: z.string().nullable(),
+  internshipEndDate: z.string().nullable(),
+  applicationId: z.string(),
+  applicantId: z.string(),
   applicantName: z.string().nullable(),
-  applicantPhone: z.string().nullable(),
-  applicantEmail: z.string().nullable(),
-  internshipTitle: z.string().nullable(),
   unitName: z.string().nullable(),
-  unitId: z.string().nullable(),
-  progress: z.number(),
+  tasks: z.array(
+    z.object({
+      taskId: z.string(),
+      taskStatus: taskStatusEnum,
+    }),
+  ),
+});
+
+// Response for unit's GET /tasks/application/:applicationId
+export const applicationTasksResponseSchema = z.object({
+  applicationId: z.string(),
+  applicantId: z.string(),
+  applicantName: z.string().nullable(),
+  applicantEmail: z.string().nullable(),
+  candidateAvatarUrl: z.string().nullable(),
+  candidatePhoneNumber: z.string().nullable(),
+  internshipId: z.string(),
+  internshipName: z.string().nullable(),
+  internshipCreatedAt: z.string(),
+  internshipClosingDate: z.string().nullable(),
+  tasks: z.array(
+    z.object({
+      taskId: z.string(),
+      taskStatus: taskStatusEnum,
+      taskTitle: z.string(),
+      taskDescription: z.string().nullable(),
+      taskCreatedAt: z.string().nullable(),
+      taskStartDate: z.string().nullable(),
+      taskEndDate: z.string().nullable(),
+      taskStartTime: z.string().nullable(),
+      taskEndTime: z.string().nullable(),
+      taskColor: z.string().nullable(),
+      taskSubmissionLink: z.string().nullable(),
+      taskSubmittedAt: z.string().nullable(),
+      taskReviewRemarks: z.string().nullable(),
+      taskReviewedAt: z.string().nullable(),
+    }),
+  ),
 });

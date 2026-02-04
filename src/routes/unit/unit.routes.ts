@@ -12,7 +12,11 @@ import {
 } from "@/lib/openapi/response-helpers";
 import { requireRole } from "@/middleware/auth";
 
-import { unitIdParamSchema, unitResponseSchema } from "./unit.schema";
+import {
+  unitIdParamSchema,
+  unitResponseSchema,
+  unitWithInternshipsResponseSchema,
+} from "./unit.schema";
 
 /**
  * GET /units - List all units
@@ -21,10 +25,10 @@ export const getAllUnits = createRoute({
   method: "get" as const,
   path: "/units",
   tags: ["Units"],
-  middleware: requireRole({ allowedRoles: ["candidate"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "admin"] }),
   summary: "Get all units",
   description:
-    "Retrieve a list of all organization units/companies (candidate only)",
+    "Retrieve a list of all organization units/companies (candidate and admin only)",
   responses: {
     [OK]: createResponse(OK, z.array(unitResponseSchema)),
     ...restrictedErrorResponses,
@@ -38,15 +42,15 @@ export const getUnitById = createRoute({
   method: "get" as const,
   path: "/units/{id}",
   tags: ["Units"],
-  middleware: requireRole({ allowedRoles: ["candidate"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "admin"] }),
   summary: "Get unit details by ID",
   description:
-    "Retrieve detailed information about a specific organization unit (candidate only)",
+    "Retrieve detailed information about a specific organization unit including their internships (candidate and admin only)",
   request: {
     params: unitIdParamSchema,
   },
   responses: {
-    [OK]: createResponse(OK, unitResponseSchema),
+    [OK]: createResponse(OK, unitWithInternshipsResponseSchema),
     ...restrictedErrorResponses,
     [NOT_FOUND]: createResponse(NOT_FOUND),
     [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
