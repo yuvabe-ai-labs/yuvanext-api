@@ -441,7 +441,24 @@ export async function detectAndExtractFields(
 - is_aurovillian: Whether unit is Aurovillian (boolean: yes/no)
 - opportunities_offered: Opportunities offered (array of strings)`;
 
-  const fieldsDefinition = role === "unit" ? unitFields : candidateFields;
+  const mentorFields = `
+- mentor_type: Type of mentor (Career Guidance Mentor, Internship Application Support Mentor, Skills & Portfolio Mentor, Wellbeing & Confidence Mentor, General Mentor)
+- expertise_areas: Areas of expertise (array of strings)
+- experience_snapshot: Background and mentoring experience (text)
+- availability_days: Available days of week (array of strings)
+- availability_time_windows: Available time windows (array of objects with start/end times)
+- timezone: Timezone (UTC, IST, etc.)
+- mentoring_capacity: How many mentees can support (1–2, 3–5, 6–10, 10+)
+- preferred_stages: Preferred mentorship stages (array of strings)
+- communication_modes: How they prefer to communicate (array of strings)
+- confirm_boundaries: Confirm boundaries agreement (yes/no)`;
+
+  let fieldsDefinition = candidateFields;
+  if (role === "unit") {
+    fieldsDefinition = unitFields;
+  } else if (role === "mentor") {
+    fieldsDefinition = mentorFields;
+  }
 
   // Format conversation history for the prompt
   const historyText = conversationHistory
@@ -570,6 +587,21 @@ export async function validateAndExtractData(
     is_aurovillian:
       "Must be yes/no or true/false or aurovillian/non-aurovillian",
     opportunities_offered: "Comma-separated list of opportunities (minimum 1)",
+    mentor_type:
+      "Must be one of: Career Guidance Mentor, Internship Application Support Mentor, Skills & Portfolio Mentor, Wellbeing & Confidence Mentor, General Mentor",
+    expertise_areas: "Comma-separated list of expertise areas (minimum 1)",
+    experience_snapshot:
+      "Text description of background and mentoring experience (non-empty)",
+    availability_days:
+      "Comma-separated list of days (Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday)",
+    availability_time_windows:
+      "Time windows like '9 AM - 12 PM' or 'start:HH:MM end:HH:MM'",
+    timezone: "Timezone code (UTC, IST, EST, PST, etc.)",
+    mentoring_capacity: "Must be one of: 1–2, 3–5, 6–10, 10+",
+    preferred_stages: "Comma-separated list of mentorship stages",
+    communication_modes:
+      "Comma-separated list of communication modes (In-person Meetings, Virtual Video Calls, Messaging, etc.)",
+    confirm_boundaries: "Must be yes/no or true/false (agreement confirmation)",
   };
 
   let validationRule = fieldValidationRules[expectedField] || "Valid input";
@@ -580,6 +612,16 @@ export async function validateAndExtractData(
     } else if (role === "unit") {
       validationRule = "Non-empty string describing unit type";
     }
+  }
+
+  if (expectedField === "mentor_type") {
+    validationRule =
+      "Must be one of: Career Guidance Mentor, Internship Application Support Mentor, Skills & Portfolio Mentor, Wellbeing & Confidence Mentor, General Mentor (case-insensitive)";
+  }
+
+  if (expectedField === "availability_time_windows") {
+    validationRule =
+      "Extract time windows from text like '9 AM - 12 PM' and convert to {start: 'HH:MM', end: 'HH:MM'} format. Return as array of objects.";
   }
 
   const validationPrompt = `

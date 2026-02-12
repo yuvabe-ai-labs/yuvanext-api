@@ -84,7 +84,7 @@ export const chat = createRoute({
   method: "post" as const,
   path: "/chatbot",
   tags: ["Chatbot"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Chat with onboarding bot (Streaming SSE)",
   description: `
 Interactive AI-powered chatbot for onboarding new users with real-time streaming responses.

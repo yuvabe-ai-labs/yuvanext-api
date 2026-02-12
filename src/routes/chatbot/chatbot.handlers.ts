@@ -6,6 +6,7 @@ import type { Context } from "hono";
 
 import db from "@/db";
 import { candidates } from "@/db/schema/candidate.schema";
+import { mentors } from "@/db/schema/mentor.schema";
 import { units } from "@/db/schema/unit.schema";
 
 import {
@@ -23,7 +24,11 @@ import {
   type ExtractedFieldData,
   type StructuredBotResponse,
 } from "./chatbot.service";
-import { CANDIDATE_SYSTEM_PROMPT, UNIT_SYSTEM_PROMPT } from "./prompts";
+import {
+  CANDIDATE_SYSTEM_PROMPT,
+  UNIT_SYSTEM_PROMPT,
+  MENTOR_SYSTEM_PROMPT,
+} from "./prompts";
 
 /**
  * Main chat handler for onboarding chatbot
@@ -41,6 +46,8 @@ export const chat = async (c: Context) => {
   let SYSTEM_PROMPT = CANDIDATE_SYSTEM_PROMPT;
   if (role === "unit") {
     SYSTEM_PROMPT = UNIT_SYSTEM_PROMPT;
+  } else if (role === "mentor") {
+    SYSTEM_PROMPT = MENTOR_SYSTEM_PROMPT;
   }
 
   /**
@@ -48,7 +55,7 @@ export const chat = async (c: Context) => {
    */
   const ensureProfileExists = async (
     userId: string,
-    role: "candidate" | "unit",
+    role: "candidate" | "unit" | "mentor",
   ): Promise<{
     exists: boolean;
     onboardingCompleted: boolean;
@@ -65,6 +72,21 @@ export const chat = async (c: Context) => {
           return {
             exists: true,
             onboardingCompleted: existing[0].onboardingCompleted,
+          };
+        }
+
+        return { exists: false, onboardingCompleted: false };
+      } else if (role === "mentor") {
+        const existing = await db
+          .select({ onboardingCompleted: mentors.onboardingCompleted })
+          .from(mentors)
+          .where(eq(mentors.userId, userId))
+          .limit(1);
+
+        if (existing.length > 0) {
+          return {
+            exists: true,
+            onboardingCompleted: existing[0].onboardingCompleted || false,
           };
         }
 
@@ -118,7 +140,7 @@ export const chat = async (c: Context) => {
    */
   const saveAllDataToDatabase = async (
     userId: string,
-    role: "candidate" | "unit",
+    role: "candidate" | "unit" | "mentor",
     extractedData: ExtractedFieldData,
   ): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -156,6 +178,89 @@ export const chat = async (c: Context) => {
 
         console.log(
           `[Candidate Data Saved] userId: ${userId}, fields: ${Object.keys(updateData).join(", ")}`,
+        );
+      } else if (role === "mentor") {
+        const updateData: any = {
+          onboardingCompleted: true,
+          updatedAt: new Date(),
+        };
+
+        // Map extracted fields to database columns
+
+        if (extractedData.mentor_type) {
+          // Map mentor type names to enum values
+          const mentorTypeMap: Record<string, string> = {
+            "career guidance mentor": "career_guidance",
+            "internship application support mentor": "internship_support",
+            "skills & portfolio mentor": "skills_portfolio",
+            "skills and portfolio mentor": "skills_portfolio",
+            "wellbeing & confidence mentor": "wellbeing_confidence",
+            "wellbeing and confidence mentor": "wellbeing_confidence",
+            "general mentor": "general",
+          };
+          const mentorTypeStr = String(extractedData.mentor_type)
+            .toLowerCase()
+            .trim();
+          updateData.mentorType = mentorTypeMap[mentorTypeStr] || "general";
+          console.log(
+            `[Mentor Type Mapping] userId: ${userId}, original: ${extractedData.mentor_type}, mapped: ${updateData.mentorType}`,
+          );
+        }
+        if (extractedData.expertise_areas)
+          updateData.expertiseAreas = toArray(extractedData.expertise_areas);
+        if (extractedData.experience_snapshot)
+          updateData.experienceSnapshot = String(
+            extractedData.experience_snapshot,
+          );
+
+        // Availability
+        if (extractedData.availability_days)
+          updateData.availabilityDays = toArray(
+            extractedData.availability_days,
+          );
+        if (extractedData.availability_time_windows) {
+          const windows = extractedData.availability_time_windows;
+          if (Array.isArray(windows)) {
+            updateData.availabilityTimeWindows = windows;
+          }
+        }
+        if (extractedData.timezone)
+          updateData.timezone = String(extractedData.timezone);
+
+        // Capacity & Preferences
+        if (extractedData.mentoring_capacity) {
+          // Normalize capacity ranges: "1–2" or "1-2" to match enum "1-2"
+          const capacityStr = String(
+            extractedData.mentoring_capacity,
+          ).toLowerCase();
+          // Replace en-dash with regular hyphen
+          const normalized = capacityStr.replace(/–|−/g, "-").trim();
+          updateData.mentoringCapacity = normalized;
+          console.log(
+            `[Capacity Mapping] userId: ${userId}, original: ${extractedData.mentoring_capacity}, mapped: ${normalized}`,
+          );
+        }
+        if (extractedData.preferred_stages)
+          updateData.preferredStages = toArray(extractedData.preferred_stages);
+        if (extractedData.communication_modes)
+          updateData.communicationModes = toArray(
+            extractedData.communication_modes,
+          );
+
+        // Boundaries
+        if (extractedData.confirm_boundaries !== undefined) {
+          updateData.confirmBoundaries =
+            String(extractedData.confirm_boundaries).toLowerCase() === "yes" ||
+            String(extractedData.confirm_boundaries).toLowerCase() === "true";
+        }
+
+        await db
+          .update(mentors)
+          .set(updateData)
+          .where(eq(mentors.userId, userId));
+
+        console.log(
+          `[Mentor Data Saved] userId: ${userId}, fields: ${Object.keys(updateData).join(", ")}`,
         );
       } else {
         const updateData: any = {
@@ -207,7 +312,7 @@ export const chat = async (c: Context) => {
     field: string,
     value: any,
     lastQuestion: string,
-    role: "candidate" | "unit",
+    role: "candidate" | "unit" | "mentor",
   ): Promise<{ success: boolean; error?: string; extractedValue?: any }> => {
     try {
       // Validate the field value
@@ -245,7 +350,7 @@ export const chat = async (c: Context) => {
 
   try {
     // Validate role
-    if (role !== "candidate" && role !== "unit") {
+    if (role !== "candidate" && role !== "unit" && role !== "mentor") {
       return c.json(
         { success: false as const, error: "Invalid user role" },
         422,
@@ -256,17 +361,89 @@ export const chat = async (c: Context) => {
     const onboardingStatus = await ensureProfileExists(userId, role);
 
     if (!onboardingStatus.exists) {
-      return c.json(
-        { success: false as const, error: `Failed to access ${role} profile` },
-        500,
-      );
+      // Try to create the profile if it doesn't exist
+      if (role === "candidate") {
+        try {
+          await db.insert(candidates).values({
+            userId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            onboardingCompleted: false,
+          });
+          console.log(
+            `[Profile Auto-Created] userId: ${userId}, role: ${role}`,
+          );
+        } catch (err) {
+          console.error(
+            `[Profile Creation Error] userId: ${userId}, role: ${role}`,
+            err,
+          );
+          return c.json(
+            {
+              success: false as const,
+              error: `Failed to access or create ${role} profile. Please contact support.`,
+            },
+            500,
+          );
+        }
+      } else if (role === "mentor") {
+        try {
+          await db.insert(mentors).values({
+            userId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            onboardingCompleted: false,
+          });
+          console.log(
+            `[Profile Auto-Created] userId: ${userId}, role: ${role}`,
+          );
+        } catch (err) {
+          console.error(
+            `[Profile Creation Error] userId: ${userId}, role: ${role}`,
+            err,
+          );
+          return c.json(
+            {
+              success: false as const,
+              error: `Failed to access or create ${role} profile. Please contact support.`,
+            },
+            500,
+          );
+        }
+      } else if (role === "unit") {
+        try {
+          await db.insert(units).values({
+            userId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            onboardingCompleted: false,
+          });
+          console.log(
+            `[Profile Auto-Created] userId: ${userId}, role: ${role}`,
+          );
+        } catch (err) {
+          console.error(
+            `[Profile Creation Error] userId: ${userId}, role: ${role}`,
+            err,
+          );
+          return c.json(
+            {
+              success: false as const,
+              error: `Failed to access or create ${role} profile. Please contact support.`,
+            },
+            500,
+          );
+        }
+      }
     }
 
     if (onboardingStatus.onboardingCompleted) {
       const completionMessage =
         role === "candidate"
           ? "You have already completed the onboarding process!"
-          : "You have already completed the unit registration!";
+          : role === "mentor"
+            ? "You have already completed the mentor profile setup!"
+            : "You have already completed the unit registration!";
 
       return c.json(
         {
@@ -321,8 +498,9 @@ export const chat = async (c: Context) => {
       }
     }
 
-    // Validate and store fields in memory
+    // Validate and store fields in memory (re-ask on failure)
     const failedFields: Array<{ field: string; error: string }> = [];
+    const successfulFields: string[] = [];
 
     for (const fieldData of fieldsToValidate) {
       const validationResult = await validateAndStoreField(
@@ -338,26 +516,26 @@ export const chat = async (c: Context) => {
           field: fieldData.field,
           error: validationResult.error || "Validation failed",
         });
+        // Add system message instructing bot to re-ask the same question
+        addMessage(
+          userId,
+          "system",
+          `[Invalid Input] The response for "${fieldData.field}" was invalid. Reason: ${validationResult.error}. Please politely ask the user to provide the information again with clear guidance on the expected format. Do NOT accept this answer - ask the SAME question again.`,
+        );
+        console.log(
+          `[Field Validation Failed - Re-asking] userId: ${userId}, field: ${fieldData.field}, reason: ${validationResult.error}`,
+        );
       } else {
         // Add system message about field extraction
         addMessage(userId, "system", `[Extracted: ${fieldData.field}]`);
+        successfulFields.push(fieldData.field);
       }
     }
 
-    // Return validation error if any fields failed
+    // Log validation summary
     if (failedFields.length > 0) {
       console.log(
-        `[Validation Failed] userId: ${userId}, fields:`,
-        failedFields,
-      );
-      return c.json(
-        {
-          success: false as const,
-          error: failedFields[0].error,
-          needsRetry: true,
-          fieldsFailed: failedFields.map((f) => f.field),
-        },
-        422,
+        `[Validation Summary] userId: ${userId}, successful: ${successfulFields.length}, failed: ${failedFields.length} - re-asking failed questions`,
       );
     }
 

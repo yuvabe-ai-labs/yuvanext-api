@@ -1,0 +1,1 @@
+ALTER TABLE "mentors" DROP COLUMN "display_name";
