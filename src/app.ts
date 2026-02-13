@@ -17,7 +17,7 @@ import admin from "./routes/admin_actions/admin.index";
 
 const app = createApp();
 
-// Register routes BEFORE configuring OpenAPI
+// Register routes BEFORE configuring
 const apiRouters = [
   auth,
   chatbot,
