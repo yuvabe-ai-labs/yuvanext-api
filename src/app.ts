@@ -14,6 +14,7 @@ import unit from "./routes/unit/unit.index";
 import settings from "./routes/settings/settings.index";
 import ai_content from "./routes/ai_content_generates/ai.content.index";
 import admin from "./routes/admin_actions/admin.index";
+import mentor from "./routes/mentors/mentors.index";
 
 const app = createApp();
 
@@ -32,6 +33,7 @@ const apiRouters = [
   settings,
   ai_content,
   admin,
+  mentor,
 ] as const;
 
 const _routes = apiRouters.map((r) => app.route("/api", r));
