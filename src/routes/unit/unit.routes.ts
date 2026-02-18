@@ -42,7 +42,7 @@ export const getUnitById = createRoute({
   method: "get" as const,
   path: "/units/{id}",
   tags: ["Units"],
-  middleware: requireRole({ allowedRoles: ["candidate", "admin"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "admin", "mentor"] }),
   summary: "Get unit details by ID",
   description:
     "Retrieve detailed information about a specific organization unit including their internships (candidate and admin only)",
