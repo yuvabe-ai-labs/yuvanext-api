@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-// Enums from the mentor schema
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
 export const mentorTypeEnum = z.enum([
   "career_guidance",
   "internship_support",
@@ -11,19 +12,40 @@ export const mentorTypeEnum = z.enum([
 
 export const capacityEnum = z.enum(["1-2", "3-5", "6-10", "10+"]);
 
-// Request Schemas
+// ─── Pagination (mirrors admin pattern exactly) ───────────────────────────────
+
+export const paginationMetadataSchema = z.object({
+  currentPage: z.number(),
+  totalPages: z.number(),
+  totalItems: z.number(),
+  itemsPerPage: z.number(),
+});
+
+export const createPaginatedResponseSchema = <T extends z.ZodTypeAny>(
+  itemSchema: T,
+) =>
+  z.object({
+    data: z.array(itemSchema),
+    pagination: paginationMetadataSchema,
+  });
+
+// ─── Query Schemas ────────────────────────────────────────────────────────────
+
 export const getMentorsQuerySchema = z.object({
+  // Search by mentor name or expertise area (case-insensitive)
+  search: z.string().optional(),
   mentorType: mentorTypeEnum.optional(),
   expertiseArea: z.string().optional(),
   availabilityDay: z.string().optional(),
-  limit: z.coerce.number().int().positive().max(100).optional().default(50),
-  offset: z.coerce.number().int().min(0).optional().default(0),
+  page: z.coerce.number().int().positive().default(1).optional(),
+  limit: z.coerce.number().int().positive().max(100).default(10).optional(),
 });
 
-// Response Schemas
+// ─── Item Schemas ─────────────────────────────────────────────────────────────
+
 export const mentorListItemSchema = z.object({
   userId: z.string(),
-  name: z.string(),
+  name: z.string().nullable(),
   email: z.string().email(),
   image: z.string().nullable(),
   mentorType: mentorTypeEnum.nullable(),
@@ -31,23 +53,18 @@ export const mentorListItemSchema = z.object({
   experienceSnapshot: z.string().nullable(),
   availabilityDays: z.array(z.string()).nullable(),
   availabilityTimeWindows: z
-    .array(
-      z.object({
-        start: z.string(),
-        end: z.string(),
-      }),
-    )
+    .array(z.object({ start: z.string(), end: z.string() }))
     .nullable(),
   timezone: z.string().nullable(),
   mentoringCapacity: capacityEnum.nullable(),
   preferredStages: z.array(z.string()).nullable(),
   communicationModes: z.array(z.string()).nullable(),
-  createdAt: z.union([z.string(), z.date()]),
+  createdAt: z.date(),
 });
 
 export const detailedMentorSchema = z.object({
   userId: z.string(),
-  name: z.string(),
+  name: z.string().nullable(),
   email: z.string().email(),
   image: z.string().nullable(),
   mentorType: mentorTypeEnum.nullable(),
@@ -55,12 +72,7 @@ export const detailedMentorSchema = z.object({
   experienceSnapshot: z.string().nullable(),
   availabilityDays: z.array(z.string()).nullable(),
   availabilityTimeWindows: z
-    .array(
-      z.object({
-        start: z.string(),
-        end: z.string(),
-      }),
-    )
+    .array(z.object({ start: z.string(), end: z.string() }))
     .nullable(),
   timezone: z.string().nullable(),
   mentoringCapacity: capacityEnum.nullable(),
@@ -68,21 +80,6 @@ export const detailedMentorSchema = z.object({
   communicationModes: z.array(z.string()).nullable(),
   confirmBoundaries: z.boolean().nullable(),
   onboardingCompleted: z.boolean(),
-  createdAt: z.union([z.string(), z.date()]),
-  updatedAt: z.union([z.string(), z.date()]),
-});
-
-export const getMentorsResponseSchema = z.object({
-  status_code: z.number(),
-  message: z.string(),
-  data: z.array(mentorListItemSchema),
-  total: z.number(),
-  limit: z.number(),
-  offset: z.number(),
-});
-
-export const getMentorByIdResponseSchema = z.object({
-  status_code: z.number(),
-  message: z.string(),
-  data: detailedMentorSchema,
+  createdAt: z.date(),
+  updatedAt: z.date(),
 });

@@ -1,7 +1,10 @@
 import { createRoute } from "@hono/zod-openapi";
-import { z } from "zod";
 
-import { NOT_FOUND, OK } from "@/lib/openapi/http-status-codes";
+import {
+  NOT_FOUND,
+  OK,
+  UNPROCESSABLE_ENTITY,
+} from "@/lib/openapi/http-status-codes";
 import {
   createResponse,
   restrictedErrorResponses,
@@ -9,13 +12,15 @@ import {
 import { requireRole } from "@/middleware/auth";
 
 import {
+  createPaginatedResponseSchema,
   detailedMentorSchema,
   getMentorsQuerySchema,
   mentorListItemSchema,
 } from "./mentors.schema";
 
 /**
- * GET /mentors - Get all available mentors with optional filters
+ * GET /candidate/mentors
+ * List all onboarded mentors with optional search + filters, paginated.
  */
 export const getMentors = createRoute({
   method: "get" as const,
@@ -24,40 +29,40 @@ export const getMentors = createRoute({
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Get all available mentors",
   description:
-    "Returns a list of mentors available for candidates, with optional filters for mentor type, expertise area, and availability. Results are paginated.",
+    "Returns a paginated list of mentors available to candidates. " +
+    "Supports free-text search by name, and filters for mentor type, " +
+    "expertise area, and availability day.",
   request: {
     query: getMentorsQuerySchema,
   },
   responses: {
     [OK]: createResponse(
       OK,
-      z.object({
-        data: z.array(mentorListItemSchema),
-        total: z.number(),
-        limit: z.number(),
-        offset: z.number(),
-      }),
+      createPaginatedResponseSchema(mentorListItemSchema),
     ),
     ...restrictedErrorResponses,
-    [NOT_FOUND]: createResponse(NOT_FOUND),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
   },
 });
 
 /**
- * GET /mentors/:mentorId - Get detailed information about a specific mentor
+ * GET /candidate/mentors/:mentorId
+ * Full detail view for a single mentor.
  */
 export const getMentorById = createRoute({
   method: "get" as const,
-  path: "/candidate/mentors/{mentorId}",
+  path: "/candidate/mentors/:mentorId",
   tags: ["Candidate - Mentors"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Get detailed mentor information",
   description:
-    "Returns detailed information about a specific mentor including their expertise, availability, capacity, and communication preferences.",
+    "Returns full profile for a specific mentor including availability, " +
+    "capacity, preferred stages, and communication preferences.",
   responses: {
     [OK]: createResponse(OK, detailedMentorSchema),
     ...restrictedErrorResponses,
     [NOT_FOUND]: createResponse(NOT_FOUND),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
   },
 });
 

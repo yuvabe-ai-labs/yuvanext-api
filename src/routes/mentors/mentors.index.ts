@@ -5,7 +5,6 @@ import * as routes from "./mentors.routes";
 
 const router = createRouter();
 
-// Register routes
 router
   .openapi(routes.getMentors, handlers.getAllMentors)
   .openapi(routes.getMentorById, handlers.getMentorById);

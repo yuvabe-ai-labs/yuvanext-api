@@ -1,4 +1,4 @@
-import { and, arrayContains, eq, ilike, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, sql } from "drizzle-orm";
 
 import type { AppRouteHandler } from "@/types/app.types";
 
@@ -14,93 +14,99 @@ import {
 import type { GetMentorById, GetMentors } from "./mentors.routes";
 
 /**
- * GET /candidate/mentors - Get all available mentors with filters
+ * GET /candidate/mentors
+ *
+ * Returns a paginated list of onboarded mentors.
+ * Filters: search (name), mentorType, expertiseArea, availabilityDay
+ * Pagination: page / limit → response includes pagination metadata
  */
 export const getAllMentors: AppRouteHandler<GetMentors> = async (c) => {
-  try {
-    const { mentorType, expertiseArea, availabilityDay, limit, offset } =
-      c.req.valid("query");
+  const {
+    search,
+    mentorType,
+    expertiseArea,
+    availabilityDay,
+    page = 1,
+    limit = 10,
+  } = c.req.valid("query");
 
-    // Build the where conditions dynamically
+  try {
+    const offset = (page - 1) * limit;
+
+    // Build dynamic WHERE conditions
     const conditions = [eq(mentors.onboardingCompleted, true)];
+
+    // search → case-insensitive match on the user's name
+    if (search) {
+      conditions.push(ilike(userTable.name, `%${search}%`));
+    }
 
     if (mentorType) {
       conditions.push(eq(mentors.mentorType, mentorType));
     }
 
+    // JSONB array-contains: expertiseAreas @> '["<value>"]'
     if (expertiseArea) {
-      // For JSONB array contains check, we need to use sql operator
       conditions.push(
         sql`${mentors.expertiseAreas} @> ${JSON.stringify([expertiseArea])}`,
       );
     }
 
+    // JSONB array-contains: availabilityDays @> '["<value>"]'
     if (availabilityDay) {
       conditions.push(
         sql`${mentors.availabilityDays} @> ${JSON.stringify([availabilityDay])}`,
       );
     }
 
-    // Get total count for pagination
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(mentors)
-      .innerJoin(userTable, eq(mentors.userId, userTable.id))
-      .where(and(...conditions));
+    // Run data query and count query in parallel (mirrors admin pattern)
+    const [mentorsList, totalCountResult] = await Promise.all([
+      db
+        .select({
+          userId: mentors.userId,
+          mentorType: mentors.mentorType,
+          expertiseAreas: mentors.expertiseAreas,
+          experienceSnapshot: mentors.experienceSnapshot,
+          availabilityDays: mentors.availabilityDays,
+          availabilityTimeWindows: mentors.availabilityTimeWindows,
+          timezone: mentors.timezone,
+          mentoringCapacity: mentors.mentoringCapacity,
+          preferredStages: mentors.preferredStages,
+          communicationModes: mentors.communicationModes,
+          createdAt: mentors.createdAt,
+          // User fields
+          name: userTable.name,
+          email: userTable.email,
+          image: userTable.image,
+        })
+        .from(mentors)
+        .innerJoin(userTable, eq(mentors.userId, userTable.id))
+        .where(and(...conditions))
+        .orderBy(desc(mentors.createdAt))
+        .limit(limit)
+        .offset(offset),
 
-    // Get mentors with user details
-    const mentorsData = await db
-      .select({
-        // Mentor fields
-        userId: mentors.userId,
-        mentorType: mentors.mentorType,
-        expertiseAreas: mentors.expertiseAreas,
-        experienceSnapshot: mentors.experienceSnapshot,
-        availabilityDays: mentors.availabilityDays,
-        availabilityTimeWindows: mentors.availabilityTimeWindows,
-        timezone: mentors.timezone,
-        mentoringCapacity: mentors.mentoringCapacity,
-        preferredStages: mentors.preferredStages,
-        communicationModes: mentors.communicationModes,
-        createdAt: mentors.createdAt,
+      db
+        .select({ count: count() })
+        .from(mentors)
+        .innerJoin(userTable, eq(mentors.userId, userTable.id))
+        .where(and(...conditions)),
+    ]);
 
-        // User fields
-        name: userTable.name,
-        email: userTable.email,
-        image: userTable.image,
-      })
-      .from(mentors)
-      .innerJoin(userTable, eq(mentors.userId, userTable.id))
-      .where(and(...conditions))
-      .limit(limit)
-      .offset(offset)
-      .orderBy(mentors.createdAt);
-
-    const formattedMentors = mentorsData.map((mentor) => ({
-      userId: mentor.userId,
-      name: mentor.name,
-      email: mentor.email,
-      image: mentor.image,
-      mentorType: mentor.mentorType,
-      expertiseAreas: mentor.expertiseAreas,
-      experienceSnapshot: mentor.experienceSnapshot,
-      availabilityDays: mentor.availabilityDays,
-      availabilityTimeWindows: mentor.availabilityTimeWindows,
-      timezone: mentor.timezone,
-      mentoringCapacity: mentor.mentoringCapacity,
-      preferredStages: mentor.preferredStages,
-      communicationModes: mentor.communicationModes,
-      createdAt: mentor.createdAt,
-    }));
+    const totalItems = totalCountResult[0]?.count || 0;
+    const totalPages = Math.ceil(totalItems / limit);
 
     return c.json(
       {
         status_code: OK,
         message: "Mentors retrieved successfully",
-        data: formattedMentors,
-        total: Number(count),
-        limit,
-        offset,
+        data: mentorsList,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalItems,
+          itemsPerPage: limit,
+        },
       },
       OK,
     );
@@ -117,16 +123,16 @@ export const getAllMentors: AppRouteHandler<GetMentors> = async (c) => {
 };
 
 /**
- * GET /candidate/mentors/:mentorId - Get detailed mentor information
+ * GET /candidate/mentors/:mentorId
+ *
+ * Returns full profile for a single onboarded mentor.
  */
 export const getMentorById: AppRouteHandler<GetMentorById> = async (c) => {
   const mentorId = c.req.param("mentorId");
 
   try {
-    // Get the specific mentor with user details
     const mentorData = await db
       .select({
-        // Mentor fields
         userId: mentors.userId,
         mentorType: mentors.mentorType,
         expertiseAreas: mentors.expertiseAreas,
@@ -141,7 +147,6 @@ export const getMentorById: AppRouteHandler<GetMentorById> = async (c) => {
         onboardingCompleted: mentors.onboardingCompleted,
         createdAt: mentors.createdAt,
         updatedAt: mentors.updatedAt,
-
         // User fields
         name: userTable.name,
         email: userTable.email,
@@ -167,33 +172,11 @@ export const getMentorById: AppRouteHandler<GetMentorById> = async (c) => {
       );
     }
 
-    const mentor = mentorData[0];
-
-    const formattedMentor = {
-      userId: mentor.userId,
-      name: mentor.name,
-      email: mentor.email,
-      image: mentor.image,
-      mentorType: mentor.mentorType,
-      expertiseAreas: mentor.expertiseAreas,
-      experienceSnapshot: mentor.experienceSnapshot,
-      availabilityDays: mentor.availabilityDays,
-      availabilityTimeWindows: mentor.availabilityTimeWindows,
-      timezone: mentor.timezone,
-      mentoringCapacity: mentor.mentoringCapacity,
-      preferredStages: mentor.preferredStages,
-      communicationModes: mentor.communicationModes,
-      confirmBoundaries: mentor.confirmBoundaries,
-      onboardingCompleted: mentor.onboardingCompleted,
-      createdAt: mentor.createdAt,
-      updatedAt: mentor.updatedAt,
-    };
-
     return c.json(
       {
         status_code: OK,
         message: "Mentor retrieved successfully",
-        data: formattedMentor,
+        data: mentorData[0],
       },
       OK,
     );

@@ -169,6 +169,13 @@
       "when": 1770869954046,
       "tag": "0023_green_supreme_intelligence",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1771325274150,
+      "tag": "0024_handy_albert_cleary",
+      "breakpoints": true
     }
   ]
 }

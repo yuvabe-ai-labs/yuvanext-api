@@ -15,6 +15,7 @@ import settings from "./routes/settings/settings.index";
 import ai_content from "./routes/ai_content_generates/ai.content.index";
 import admin from "./routes/admin_actions/admin.index";
 import mentor from "./routes/mentors/mentors.index";
+import mentorship_request from "./routes/mentorship_request/mentorship-request.index";
 
 const app = createApp();
 
@@ -34,6 +35,7 @@ const apiRouters = [
   ai_content,
   admin,
   mentor,
+  mentorship_request,
 ] as const;
 
 const _routes = apiRouters.map((r) => app.route("/api", r));
