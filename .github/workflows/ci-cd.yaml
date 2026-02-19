@@ -7,6 +7,9 @@ on:
       - staging
       - main
 
+# --------------------
+# Top-level environment variables
+# --------------------
 env:
   NODE_VERSION: 20
   AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -14,7 +17,7 @@ env:
   LAMBDA_ROLE_ARN: ${{ secrets.LAMBDA_ROLE_ARN }}
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
+  # Common secrets
   BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
   SMTP_HOST: ${{ secrets.SMTP_HOST }}
   SMTP_PORT: ${{ secrets.SMTP_PORT }}
@@ -30,11 +33,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-
-      # -----------------------------
-      # Set environment per branch
-      # -----------------------------
+      # --------------------
+      # Set environment-specific variables
+      # --------------------
       - name: Set environment variables
         run: |
           if [ "${{ github.ref }}" == "refs/heads/main" ]; then
@@ -43,7 +44,7 @@ jobs:
             echo "DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}" >> $GITHUB_ENV
             echo "IMAGE_TAG=prod" >> $GITHUB_ENV
             echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_PROD }}" >> $GITHUB_ENV
-            echo "S3_BUCKET_NAME=${{ secrets.BUCKET_NAME_PROD }}" >> $GITHUB_ENV
+            echo "S3_BUCKET_NAME=${{secrets.BUCKET_NAME_PROD}}" >> $GITHUB_ENV
             echo "FRONTEND_URL=${{ secrets.FRONTEND_URL_PROD }}" >> $GITHUB_ENV
           elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
             echo "NODE_ENV=staging" >> $GITHUB_ENV
@@ -62,62 +63,74 @@ jobs:
             echo "S3_BUCKET_NAME=${{ secrets.BUCKET_NAME_DEV }}" >> $GITHUB_ENV
             echo "FRONTEND_URL=${{ secrets.FRONTEND_URL_DEV }}" >> $GITHUB_ENV
           fi
-
-      # -----------------------------
-      # Node + pnpm
-      # -----------------------------
+      - uses: actions/checkout@v4
+      # --------------------
+      # Setup Node + pnpm
+      # --------------------
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - run: corepack enable
-      - run: pnpm install --frozen-lockfile
+      - name: Enable Corepack
+        run: corepack enable
 
+      - name: Setup pnpm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # --------------------
+      # Run Database Migrations (THIS IS WHAT YOU'RE TESTING)
+      # --------------------
       - name: Run database migrations
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
-        run: pnpm run db:migrate
+        run: |
+          echo "🔍 Testing database migration..."
+          echo "Using database: $DATABASE_URL"
+          pnpm run db:migrate
+          echo "✅ Migration completed successfully!"
+      - name: Build project
+        run: pnpm run build
 
-      - run: pnpm run build
-
-      # -----------------------------
-      # AWS Auth + ECR login
-      # -----------------------------
-      - name: Configure AWS credentials
+      # --------------------
+      # Configure AWS
+      # --------------------
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
+      # --------------------
+      # Build & Push Docker Image
+      # --------------------
       - name: Build & Push Docker Image
         run: |
           IMAGE_URI=${{ env.ECR_REPO_URL }}:$IMAGE_TAG
-
-          docker buildx build \
-            --platform linux/amd64 \
-            --provenance=false \
-            -t $IMAGE_URI \
-            --push .
-
+          docker build -t backend-api:$IMAGE_TAG .
+          docker tag backend-api:$IMAGE_TAG $IMAGE_URI
+          docker push $IMAGE_URI
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
-      # -----------------------------
-      # Deploy Lambda
-      # -----------------------------
-      - name: Deploy Lambda
+      # --------------------
+      # Create or Update Lambda
+      # --------------------
+      - name: Create or Update Lambda
         env:
-          FUNCTION_NAME: ${{ env.FUNCTION_NAME }}
-          IMAGE_URI: ${{ env.IMAGE_URI }}
-          NODE_ENV: ${{ env.NODE_ENV }}
           DATABASE_URL: ${{ env.DATABASE_URL }}
           BETTER_AUTH_URL: ${{ env.BETTER_AUTH_URL }}
+          FUNCTION_NAME: ${{ env.FUNCTION_NAME }}
+          NODE_ENV: ${{ env.NODE_ENV }}
           S3_BUCKET_NAME: ${{ env.S3_BUCKET_NAME }}
+          IMAGE_URI: ${{ env.IMAGE_URI }}
           FRONTEND_URL: ${{ env.FRONTEND_URL }}
         run: |
           set +e
@@ -125,6 +138,7 @@ jobs:
           EXISTS=$?
           set -e
 
+          # Safe JSON for environment variables
           ENV_JSON=$(jq -n \
             --arg NODE_ENV "$NODE_ENV" \
             --arg DATABASE_URL "$DATABASE_URL" \
@@ -158,6 +172,7 @@ jobs:
             }}')
 
           if [ $EXISTS -ne 0 ]; then
+            echo "🚀 Creating Lambda function: $FUNCTION_NAME"
             aws lambda create-function \
               --function-name $FUNCTION_NAME \
               --package-type Image \
@@ -166,14 +181,25 @@ jobs:
               --timeout 15 \
               --memory-size 1024 \
               --environment "$ENV_JSON"
+
+            echo "⏳ Waiting for Lambda creation to complete..."
+            aws lambda wait function-active --function-name $FUNCTION_NAME
           else
+            echo "♻️ Updating Lambda function: $FUNCTION_NAME"
             aws lambda update-function-code \
               --function-name $FUNCTION_NAME \
               --image-uri $IMAGE_URI
 
+            echo "⏳ Waiting for Lambda code update to complete..."
+            aws lambda wait function-updated --function-name $FUNCTION_NAME
+
+            echo "🔧 Updating Lambda configuration..."
             aws lambda update-function-configuration \
               --function-name $FUNCTION_NAME \
               --environment "$ENV_JSON"
+
+            echo "⏳ Waiting for Lambda configuration update to complete..."
+            aws lambda wait function-updated --function-name $FUNCTION_NAME
           fi
 
-          echo "🎉 Deployment successful"
+          echo "✅ Lambda deployment completed successfully!"
