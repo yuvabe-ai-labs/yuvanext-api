@@ -17,6 +17,7 @@ import admin from "./routes/admin_actions/admin.index";
 import mentor from "./routes/mentors/mentors.index";
 import mentorship_request from "./routes/mentorship_request/mentorship-request.index";
 import mentor_view from "./routes/mentor_view/view.index";
+import mentor_meetings from "./routes/mentor-meetings/meeting.index";
 
 const app = createApp();
 
@@ -38,6 +39,7 @@ const apiRouters = [
   mentor,
   mentorship_request,
   mentor_view,
+  mentor_meetings,
 ] as const;
 
 const _routes = apiRouters.map((r) => app.route("/api", r));

@@ -17,6 +17,7 @@ router
   .openapi(routes.getMentorUnits, handlers.getMentorUnits)
   .openapi(routes.getMentorUnitProfile, handlers.getMentorUnitProfile)
   .openapi(routes.getMentorHiredCandidates, handlers.getMentorHiredCandidates)
+  .openapi(routes.getMentorUnitCandidates, handlers.getMentorUnitCandidates)
   .openapi(routes.getMentorDashboard, handlers.getMentorDashboard);
 
 export default router;

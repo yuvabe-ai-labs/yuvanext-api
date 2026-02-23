@@ -22,6 +22,8 @@ import {
   mentorDashboardResponseSchema,
   getHiredCandidatesQuerySchema,
   mentorHiredCandidateItemSchema,
+  getMentorUnitCandidatesQuerySchema,
+  mentorUnitCandidateItemSchema,
 } from "./view.schema";
 
 /**
@@ -196,6 +198,44 @@ export const getMentorHiredCandidates = createRoute({
   },
 });
 
+/**
+ * GET /mentor/units/:unitId/candidates
+ *
+ * Mentor clicks a unit and sees which of their accepted candidates
+ * applied to an internship at that unit.
+ *
+ * Guard (enforced in handler):
+ *  - At least one accepted candidate of this mentor must have applied
+ *    to this unit — prevents looking up arbitrary units.
+ */
+export const getMentorUnitCandidates = createRoute({
+  method: "get" as const,
+  path: "/mentor/units/:unitId/candidates",
+  tags: ["Mentor view - Mentor"],
+  middleware: requireRole({ allowedRoles: ["mentor"] }),
+  summary: "List accepted candidates who applied to a specific unit",
+  description:
+    "When a mentor clicks on a unit from their units list, this returns all of " +
+    "their accepted candidates who have applied to an internship at that unit. " +
+    "Supports search by candidate name and optional application status filter.",
+  request: {
+    params: z.object({
+      unitId: z.string().uuid("Invalid unit ID"),
+    }),
+    query: getMentorUnitCandidatesQuerySchema,
+  },
+  responses: {
+    [OK]: createResponse(
+      OK,
+      createPaginatedResponseSchema(mentorUnitCandidateItemSchema),
+    ),
+    ...restrictedErrorResponses,
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
+  },
+});
+
+export type GetMentorUnitCandidates = typeof getMentorUnitCandidates;
 export type GetMentorAcceptedCandidates = typeof getMentorAcceptedCandidates;
 export type GetMentorAcceptedCandidatesApplications =
   typeof getMentorAcceptedCandidatesApplications;

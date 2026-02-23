@@ -211,3 +211,41 @@ export const mentorHiredCandidateItemSchema = z.object({
     }),
   }),
 });
+
+export const getMentorUnitCandidatesQuerySchema = z.object({
+  search: z.string().optional().describe("Filter by candidate name"),
+  status: z
+    .enum(["applied", "shortlisted", "not_shortlisted", "interviewed", "hired"])
+    .optional()
+    .describe("Filter by application status"),
+  page: z.coerce.number().int().positive().default(1).optional(),
+  limit: z.coerce.number().int().positive().max(100).default(10).optional(),
+});
+
+/**
+ * A single row: one of the mentor's accepted candidates who applied to the unit,
+ * with the specific internship they applied to and their application status.
+ */
+export const mentorUnitCandidateItemSchema = z.object({
+  applicationId: z.string(),
+  applicationStatus: z.enum([
+    "applied",
+    "shortlisted",
+    "not_shortlisted",
+    "interviewed",
+    "hired",
+  ]),
+  appliedAt: z.date(),
+  updatedAt: z.date(),
+  candidateOfferDecision: z.enum(["accept", "reject", "pending"]),
+  unitOfferDecision: z.enum(["selected", "reject", "pending"]),
+  candidate: candidateSnapshotSchema,
+  internship: z.object({
+    id: z.string(),
+    title: z.string(),
+    duration: z.string().nullable(),
+    jobType: z.enum(["part_time", "full_time", "both"]).nullable(),
+    isPaid: z.boolean().nullable(),
+    status: z.enum(["active", "closed", "draft"]),
+  }),
+});

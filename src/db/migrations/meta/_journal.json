@@ -176,6 +176,20 @@
       "when": 1771325274150,
       "tag": "0024_handy_albert_cleary",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1771827146835,
+      "tag": "0025_motionless_slayback",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1771838456593,
+      "tag": "0026_quiet_shotgun",
+      "breakpoints": true
     }
   ]
 }
