@@ -50,7 +50,9 @@ export const updateNotifications = createRoute({
   method: "patch" as const,
   path: "/settings/notifications",
   tags: ["Settings"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit", "admin"] }),
+  middleware: requireRole({
+    allowedRoles: ["candidate", "unit", "admin", "mentor"],
+  }),
   summary: "Update notification preferences",
   description: "Update email and in-app notification settings",
   request: {
@@ -114,7 +116,9 @@ export const getNotificationSettings = createRoute({
   method: "get" as const,
   path: "/settings/notifications",
   tags: ["Settings"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit", "admin"] }),
+  middleware: requireRole({
+    allowedRoles: ["candidate", "unit", "admin", "mentor"],
+  }),
   summary: "Get notification preferences",
   description: "Retrieve email and in-app notification settings",
   responses: {

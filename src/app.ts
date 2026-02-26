@@ -14,10 +14,14 @@ import unit from "./routes/unit/unit.index";
 import settings from "./routes/settings/settings.index";
 import ai_content from "./routes/ai_content_generates/ai.content.index";
 import admin from "./routes/admin_actions/admin.index";
+import mentor from "./routes/mentors/mentors.index";
+import mentorship_request from "./routes/mentorship_request/mentorship-request.index";
+import mentor_view from "./routes/mentor_view/view.index";
+import mentor_meetings from "./routes/mentor-meetings/meeting.index";
 
 const app = createApp();
 
-// Register routes BEFORE configuring OpenAPI
+// Register routes BEFORE configuring
 const apiRouters = [
   auth,
   chatbot,
@@ -32,6 +36,10 @@ const apiRouters = [
   settings,
   ai_content,
   admin,
+  mentor,
+  mentorship_request,
+  mentor_view,
+  mentor_meetings,
 ] as const;
 
 const _routes = apiRouters.map((r) => app.route("/api", r));

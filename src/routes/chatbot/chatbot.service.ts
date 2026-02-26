@@ -29,9 +29,6 @@ async function streamToString(stream: Readable | Uint8Array): Promise<string> {
 // TYPE DEFINITIONS
 // ============================================================================
 
-/**
- * Type for structured bot response
- */
 export interface StructuredBotResponse {
   message: string;
   question?: string | null;
@@ -40,25 +37,16 @@ export interface StructuredBotResponse {
   isComplete?: boolean;
 }
 
-/**
- * Type for conversation message
- */
 export interface ConversationMessage {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp?: Date;
 }
 
-/**
- * Type for extracted field data
- */
 export interface ExtractedFieldData {
   [key: string]: any;
 }
 
-/**
- * Conversation session structure
- */
 interface ConversationSession {
   messages: ConversationMessage[];
   extractedData: ExtractedFieldData;
@@ -74,7 +62,9 @@ const MAX_MESSAGES_PER_CONVO = 50;
 const conversationStore: Map<string, ConversationSession> = new Map();
 
 /**
- * Initialize a new conversation session
+ * Initialize a new conversation session.
+ * FIX: Always resets extractedData when called, so stale data from a previous
+ * incomplete session never bleeds into a new one.
  */
 export function initializeConversation(userId: string): void {
   if (!conversationStore.has(userId)) {
@@ -86,6 +76,19 @@ export function initializeConversation(userId: string): void {
     });
     console.log(`[Conversation Initialized] userId: ${userId}`);
   }
+}
+
+/**
+ * Force-reset conversation session (use on new onboarding start).
+ */
+export function resetConversation(userId: string): void {
+  conversationStore.set(userId, {
+    messages: [],
+    extractedData: {},
+    createdAt: new Date(),
+    lastUpdatedAt: new Date(),
+  });
+  console.log(`[Conversation Reset] userId: ${userId}`);
 }
 
 /**
@@ -113,7 +116,6 @@ export function addMessage(
   session.messages.push(message);
   session.lastUpdatedAt = new Date();
 
-  // Trim old messages if exceeding limit
   if (session.messages.length > MAX_MESSAGES_PER_CONVO) {
     session.messages.splice(
       0,
@@ -162,7 +164,7 @@ export function addExtractedField(
 export function getExtractedData(userId: string): ExtractedFieldData {
   if (!userId) return {};
   const session = conversationStore.get(userId);
-  return session ? session.extractedData : {};
+  return session ? { ...session.extractedData } : {};
 }
 
 /**
@@ -189,18 +191,12 @@ export function clearConversation(userId: string): void {
   console.log(`[Conversation Cleared] userId: ${userId}`);
 }
 
-/**
- * Get conversation session info
- */
 export function getConversationSession(
   userId: string,
 ): ConversationSession | null {
   return conversationStore.get(userId) || null;
 }
 
-/**
- * Print conversation history (for debugging)
- */
 export function printConversation(userId: string): void {
   const session = conversationStore.get(userId);
 
@@ -246,20 +242,14 @@ export function printConversation(userId: string): void {
 // AI MODEL FUNCTIONS
 // ============================================================================
 
-/**
- * Generate structured streaming response from AI model
- * Now accepts conversation array directly
- */
 export async function* generateStructuredStreamFromModel(
   conversationHistory: ConversationMessage[],
   systemPrompt: string,
 ): AsyncGenerator<StructuredBotResponse, void, unknown> {
-  // Extract previously asked questions to avoid repetition
   const askedQuestions: string[] = [];
 
   for (const msg of conversationHistory) {
     if (msg.role === "assistant") {
-      // Extract questions (sentences ending with ?)
       const questions = msg.content.match(/[^.!?]*\?/g);
       if (questions) {
         askedQuestions.push(...questions.map((q) => q.trim()));
@@ -324,12 +314,10 @@ For completion:
 
 IMPORTANT: Return ONLY the JSON object, no other text.`;
 
-  // Build message array for LLM
   const messages: Array<{ role: string; content: string }> = [
     { role: "system", content: enhancedSystemPrompt },
   ];
 
-  // Add conversation history (excluding system messages)
   for (const msg of conversationHistory) {
     if (msg.role !== "system") {
       messages.push({
@@ -359,7 +347,6 @@ IMPORTANT: Return ONLY the JSON object, no other text.`;
 
     let accumulatedText = "";
 
-    // Stream response chunks
     for await (const event of response.body) {
       if (event.chunk?.bytes) {
         try {
@@ -377,7 +364,6 @@ IMPORTANT: Return ONLY the JSON object, no other text.`;
       }
     }
 
-    // Parse accumulated JSON response
     const cleanedText = accumulatedText
       .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "")
       .replace(/```json\n?/g, "")
@@ -390,7 +376,6 @@ IMPORTANT: Return ONLY the JSON object, no other text.`;
     } catch (jsonErr) {
       console.error("[JSON Parse Error] Raw text:", cleanedText);
 
-      // Fallback to unstructured response
       yield {
         message: accumulatedText,
         question: null,
@@ -405,10 +390,108 @@ IMPORTANT: Return ONLY the JSON object, no other text.`;
   }
 }
 
+// ============================================================================
+// NORMALIZATION HELPERS
+// ============================================================================
+
 /**
- * Detect and extract fields from user message
- * Uses AI to identify which profile fields the user is answering
+ * Normalize dashes and whitespace in a string value.
+ * Converts en dash / em dash → hyphen, non-breaking spaces → regular spaces.
  */
+function normalizeDashes(value: string): string {
+  return value
+    .replace(/\u2013|\u2014|–|—/g, "-")
+    .replace(/\u202F|\u00A0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * availability_time_windows: no validation, accept any non-empty value.
+ * The LLM detector already extracts this reasonably; validation only causes
+ * false negatives due to format variations.
+ */
+function validateTimeWindows(userInput: any): {
+  isValid: boolean;
+  extractedValue?: any;
+  validationMessage: string;
+} {
+  const isEmpty =
+    userInput === null ||
+    userInput === undefined ||
+    (typeof userInput === "string" && userInput.trim() === "") ||
+    (Array.isArray(userInput) && userInput.length === 0);
+
+  if (isEmpty) {
+    return {
+      isValid: false,
+      validationMessage:
+        "Please provide at least one time window (e.g. '9 AM - 12 PM').",
+    };
+  }
+
+  // Safely convert any value to a clean string — prevents [object Object] being stored.
+  // Objects/arrays from the LLM detector are serialized to JSON; plain strings are dash-normalized.
+  let stored: string;
+  if (typeof userInput === "string") {
+    stored = normalizeDashes(userInput);
+  } else if (Array.isArray(userInput)) {
+    // e.g. ["9 AM - 12 PM", "3 PM - 6 PM"] → "9 AM - 12 PM, 3 PM - 6 PM"
+    stored = userInput
+      .map((v) =>
+        typeof v === "string" ? normalizeDashes(v) : JSON.stringify(v),
+      )
+      .join(", ");
+  } else {
+    // Object like { start: "9 AM", end: "12 PM" } → store as JSON string
+    stored = JSON.stringify(userInput);
+  }
+
+  return { isValid: true, extractedValue: stored, validationMessage: "" };
+}
+
+/**
+ * Deterministically validate mentoring_capacity.
+ * Accepts both hyphen and en-dash variants.
+ */
+function validateMentoringCapacity(userInput: string): {
+  isValid: boolean;
+  extractedValue?: string;
+  validationMessage: string;
+} {
+  const normalized = normalizeDashes(userInput).toLowerCase().trim();
+  const allowed = ["1-2", "3-5", "6-10", "10+"];
+
+  if (allowed.includes(normalized)) {
+    return { isValid: true, extractedValue: normalized, validationMessage: "" };
+  }
+
+  return {
+    isValid: false,
+    validationMessage:
+      "Please select a valid mentoring capacity: 1-2, 3-5, 6-10, or 10+.",
+  };
+}
+
+/**
+ * Pre-process a user's raw input before it reaches the LLM validator.
+ * Handles known edge cases per field so the LLM sees clean input.
+ */
+function preprocessFieldValue(field: string, value: string): string {
+  switch (field) {
+    case "availability_time_windows":
+      return normalizeDashes(value);
+    case "mentoring_capacity":
+      return normalizeDashes(value);
+    default:
+      return value;
+  }
+}
+
+// ============================================================================
+// FIELD DETECTION & VALIDATION
+// ============================================================================
+
 export async function detectAndExtractFields(
   userMessage: string,
   lastBotQuestion: string,
@@ -441,9 +524,25 @@ export async function detectAndExtractFields(
 - is_aurovillian: Whether unit is Aurovillian (boolean: yes/no)
 - opportunities_offered: Opportunities offered (array of strings)`;
 
-  const fieldsDefinition = role === "unit" ? unitFields : candidateFields;
+  const mentorFields = `
+- mentor_type: Type of mentor (Career Guidance Mentor, Internship Application Support Mentor, Skills & Portfolio Mentor, Wellbeing & Confidence Mentor, General Mentor)
+- expertise_areas: Areas of expertise (array of strings)
+- experience_snapshot: Background and experience description (text) — mentoring experience is optional
+- availability_days: Available days of week (array of strings)
+- availability_time_windows: Available time windows as a plain string (e.g. "9 AM - 12 PM, 3 PM - 6 PM")
+- timezone: Timezone (UTC, IST, etc.)
+- mentoring_capacity: How many mentees can support (1-2, 3-5, 6-10, 10+)
+- preferred_stages: Preferred mentorship stages (array of strings)
+- communication_modes: How they prefer to communicate (array of strings)
+- confirm_boundaries: Confirm boundaries agreement (yes/no)`;
 
-  // Format conversation history for the prompt
+  let fieldsDefinition = candidateFields;
+  if (role === "unit") {
+    fieldsDefinition = unitFields;
+  } else if (role === "mentor") {
+    fieldsDefinition = mentorFields;
+  }
+
   const historyText = conversationHistory
     .filter((msg) => msg.role !== "system")
     .map((m) => `${m.role}: ${m.content}`)
@@ -511,7 +610,6 @@ Rules:
     const rawText = json?.choices?.[0]?.message?.content || "{}";
 
     try {
-      // Clean wrapper text
       let cleaned = rawText.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "");
       cleaned = cleaned.replace(/```/g, "").trim();
 
@@ -538,10 +636,6 @@ Rules:
   }
 }
 
-/**
- * Validate and extract data from user input
- * Ensures data meets field requirements before saving
- */
 export async function validateAndExtractData(
   userInput: string,
   question: string,
@@ -552,6 +646,20 @@ export async function validateAndExtractData(
   extractedValue?: any;
   validationMessage: string;
 }> {
+  // FIX: Handle these fields deterministically — avoids LLM false negatives
+  if (expectedField === "availability_time_windows") {
+    return validateTimeWindows(userInput);
+  }
+  if (expectedField === "mentoring_capacity") {
+    return validateMentoringCapacity(userInput);
+  }
+
+  // Pre-process input before sending to LLM validator
+  const normalizedInput = preprocessFieldValue(
+    expectedField,
+    typeof userInput === "string" ? userInput : JSON.stringify(userInput),
+  );
+
   const fieldValidationRules: Record<string, string> = {
     phone: "Valid phone number (10 digits, may include country code)",
     gender: "Must be one of: male, female, other, prefer not to say",
@@ -570,6 +678,29 @@ export async function validateAndExtractData(
     is_aurovillian:
       "Must be yes/no or true/false or aurovillian/non-aurovillian",
     opportunities_offered: "Comma-separated list of opportunities (minimum 1)",
+    mentor_type:
+      "Must be one of: Career Guidance Mentor, Internship Application Support Mentor, Skills & Portfolio Mentor, Wellbeing & Confidence Mentor, General Mentor",
+    expertise_areas: "Comma-separated list of expertise areas (minimum 1)",
+    // FIX: Removed "mentoring experience required" — it is optional
+    experience_snapshot:
+      "Non-empty text description of professional background. Mentoring experience is optional.",
+    availability_days:
+      "Comma-separated list of days (Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday)",
+    // availability_time_windows is validated deterministically (no LLM)
+    availability_time_windows: "Not used — handled before reaching this point.",
+    timezone: "Timezone code (UTC, IST, EST, PST, etc.)",
+    // FIX: Accept both hyphen and en-dash forms
+    mentoring_capacity:
+      "Must be one of: 1-2, 3-5, 6-10, 10+ (hyphens or en-dashes are both valid). " +
+      "Normalize to use a regular hyphen in extractedValue.",
+    preferred_stages: "Comma-separated list of mentorship stages",
+    communication_modes:
+      "Comma-separated list of communication modes (In-person Meetings, Virtual Video Calls, Messaging, etc.)",
+    // FIX: Explicitly instruct to return boolean true for any agreement
+    confirm_boundaries:
+      "Any expression of agreement (e.g. 'I agree', 'yes', 'ok', 'sure', 'agreed') " +
+      "must be treated as valid. Return extractedValue as true (boolean). " +
+      "Only return isValid=false if user explicitly disagrees or refuses.",
   };
 
   let validationRule = fieldValidationRules[expectedField] || "Valid input";
@@ -588,7 +719,7 @@ You are a strict but intelligent data validator for a recruitment system.
 Question asked: "${question}"
 Expected field: "${expectedField}"
 Validation rule: ${validationRule}
-User's answer: "${userInput}"
+User's answer: "${normalizedInput}"
 
 Return ONLY valid JSON in this exact format:
 {
@@ -608,6 +739,20 @@ Rules for "looking_for":
   - "community project"/"community projects" → "find community projects or internships"
 - Trim punctuation and whitespace; return normalized values as an array of strings matching the allowed values
 - If no matches, set isValid=false and include a helpful validationMessage
+
+Rules for "confirm_boundaries":
+- Any form of agreement must return: { "isValid": true, "extractedValue": true, "validationMessage": "" }
+- Only return isValid=false if the user explicitly refuses or disagrees
+
+Rules for "mentoring_capacity":
+- Accept both hyphen (-) and en-dash (–) as separators
+- Normalize extractedValue to use a regular hyphen: "1-2", "3-5", "6-10", "10+"
+- If the input is "1-2" or "1–2", return extractedValue as "1-2"
+
+Rules for "experience_snapshot":
+- Any non-empty description of professional background is valid
+- Mentoring experience is NOT required
+- Return isValid=false only if the input is empty or completely unrelated gibberish
 `;
 
   const messages = [{ role: "user", content: validationPrompt }];

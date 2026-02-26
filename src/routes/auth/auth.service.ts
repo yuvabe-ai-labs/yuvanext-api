@@ -8,6 +8,7 @@ import env from "@/config/env";
 import db from "@/db";
 import { user } from "@/db/schema/auth.schema";
 import { candidates } from "@/db/schema/candidate.schema";
+import { mentors } from "@/db/schema/mentor.schema";
 import { units } from "@/db/schema/unit.schema";
 
 const transporter = nodemailer.createTransport({
@@ -180,6 +181,31 @@ export async function updateUserRoleOnEmailVerification(
         onboardingCompleted: false,
       });
       console.log("Candidate profile created for user:", userId);
+    }
+  } else if (role === "mentor") {
+    // Check if mentor already exists (to avoid duplicate inserts)
+    const existingMentor = await db
+      .select({ userId: mentors.userId })
+      .from(mentors)
+      .where(eq(mentors.userId, userId))
+      .limit(1);
+
+    if (existingMentor.length === 0) {
+      try {
+        // Create new mentor profile
+        await db.insert(mentors).values({
+          userId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          onboardingCompleted: false,
+        });
+        console.log("Mentor profile created for user:", userId);
+      } catch (err) {
+        console.error("Error creating mentor profile for user:", userId, err);
+        throw err;
+      }
+    } else {
+      console.log("Mentor profile already exists for user:", userId);
     }
   } else if (role === "unit") {
     // Check if unit already exists (to avoid duplicate inserts)

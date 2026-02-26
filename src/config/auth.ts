@@ -15,7 +15,7 @@ import {
 } from "@/routes/auth/auth.service";
 
 import db from "../db/index";
-import { ac, admin, candidate, unit } from "./auth-permission";
+import { ac, admin, candidate, mentor, unit } from "./auth-permission";
 import { ALLOWED_ORIGINS } from "@/lib/create-app";
 import { BetterAuthUser } from "@/types/app.types";
 
@@ -34,6 +34,7 @@ export const auth = betterAuth({
         admin,
         candidate,
         unit,
+        mentor,
       },
     }),
   ],

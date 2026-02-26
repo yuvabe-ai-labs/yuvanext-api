@@ -335,6 +335,9 @@ export const getTasksByApplicationId: AppRouteHandler<
         eq(internships.createdBy, user.id),
         eq(applications.status, "hired"),
       );
+    } else if (user.role === "mentor") {
+      // Mentor can access any application
+      whereConditions = eq(applications.id, applicationId);
     } else if (user.role === "admin") {
       // Admin can access any application
       whereConditions = eq(applications.id, applicationId);
