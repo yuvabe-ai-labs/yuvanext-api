@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meeting Cancelled</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      color: #333;
+      background-color: #f5f5f5;
+      margin: 0;
+      padding: 0;
+    }
+    .email-container {
+      max-width: 600px;
+      margin: 20px auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .header {
+      background: linear-gradient(135deg, #f77062 0%, #fe5196 100%);
+      color: white;
+      padding: 30px 20px;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 600;
+    }
+    .content {
+      padding: 30px 20px;
+    }
+    .greeting {
+      font-size: 16px;
+      margin-bottom: 20px;
+      color: #333;
+    }
+    .alert-box {
+      background-color: #fff3cd;
+      border-left: 4px solid #ffc107;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 20px 0;
+    }
+    .alert-box p {
+      margin: 0;
+      color: #856404;
+      font-weight: 500;
+    }
+    .meeting-details {
+      background-color: #f9f9f9;
+      border-left: 4px solid #f77062;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 4px;
+    }
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+    .detail-label {
+      font-weight: 600;
+      color: #f77062;
+      min-width: 120px;
+    }
+    .detail-value {
+      color: #333;
+      text-align: right;
+      flex: 1;
+      padding-left: 10px;
+    }
+    .cancellation-reason {
+      background-color: #fff8f8;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 20px 0;
+      font-size: 14px;
+      line-height: 1.5;
+      border-left: 3px solid #f77062;
+    }
+    .cancellation-reason-label {
+      font-weight: 600;
+      color: #f77062;
+      margin-bottom: 8px;
+    }
+    .next-steps {
+      background-color: #f0f7ff;
+      padding: 20px;
+      border-radius: 6px;
+      margin: 20px 0;
+      border: 1px solid #d0e8ff;
+    }
+    .next-steps h3 {
+      margin: 0 0 12px 0;
+      color: #0066cc;
+      font-size: 16px;
+    }
+    .next-steps ul {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 14px;
+    }
+    .next-steps li {
+      margin-bottom: 8px;
+      color: #333;
+    }
+    .footer {
+      background-color: #f5f5f5;
+      padding: 20px;
+      text-align: center;
+      font-size: 12px;
+      color: #666;
+      border-top: 1px solid #eee;
+    }
+    .contact-section {
+      background-color: #f9f9f9;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 20px 0;
+      text-align: center;
+      font-size: 14px;
+    }
+    .contact-section p {
+      margin: 8px 0;
+      color: #333;
+    }
+    .contact-section .mentor-name {
+      font-weight: 600;
+      color: #0066cc;
+    }
+  </style>
+</head>
+<body>
+  <div class="email-container">
+    <!-- Header -->
+    <div class="header">
+      <h1>✕ Meeting Cancelled</h1>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+      <div class="greeting">
+        <p>Hi {{candidateName}},</p>
+        <p>
+          We wanted to notify you that an upcoming meeting has been cancelled.
+        </p>
+      </div>
+
+      <!-- Alert -->
+      <div class="alert-box">
+        <p>⚠️ The following meeting has been cancelled by {{mentorName}}:</p>
+      </div>
+
+      <!-- Meeting Details -->
+      <div class="meeting-details">
+        <div class="detail-row">
+          <span class="detail-label">Purpose:</span>
+          <span class="detail-value">{{purpose}}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Original Date:</span>
+          <span class="detail-value">{{scheduledAt}}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">With:</span>
+          <span class="detail-value">{{mentorName}}</span>
+        </div>
+        {{#if location}}
+        <div class="detail-row">
+          <span class="detail-label">Location:</span>
+          <span class="detail-value">{{location}}</span>
+        </div>
+        {{/if}}
+      </div>
+      <!-- Contact Section -->
+      <div class="contact-section">
+        <p>For more information or to discuss rescheduling, you can reach out to:</p>
+        <p class="mentor-name">{{mentorName}}</p>
+      </div>
+
+      <p style="color: #666; font-size: 14px; margin-top: 20px;">
+        We apologize for any inconvenience this may cause. We hope to reschedule the meeting at a more convenient time.
+      </p>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <p style="margin: 0;">
+        © 2026 YuvaNext. All rights reserved.
+      </p>
+      <p style="margin: 8px 0 0 0; font-size: 11px;">
+        This is an automated email. Please do not reply to this message.
+      </p>
+    </div>
+  </div>
+</body>
+</html>

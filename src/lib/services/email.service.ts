@@ -56,6 +56,120 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+interface MeetingCreatedEmailParams {
+  to: string;
+  candidateName: string;
+  mentorName: string;
+  purpose: string;
+  meetingType: "zoom" | "in_person";
+  scheduledAt: Date;
+  durationMinutes: number;
+  zoomJoinUrl: string | null; // only set when meetingType = "zoom"
+  location: string | null; // only set when meetingType = "in_person"
+  description: string | null;
+}
+
+interface MeetingCancelledEmailParams {
+  to: string;
+  candidateName: string;
+  mentorName: string;
+  purpose: string;
+  meetingType: "zoom" | "in_person";
+  scheduledAt: Date;
+  location: string | null;
+  cancellationReason: string | null;
+}
+
+export async function sendMeetingCreatedEmail(
+  params: MeetingCreatedEmailParams,
+): Promise<boolean> {
+  try {
+    await loadTemplates();
+
+    const template = compiledTemplates.meetingCreated;
+    if (!template) throw new Error("meeting-created template not found");
+
+    const scheduledAtFormatted = params.scheduledAt.toLocaleString("en-IN", {
+      dateStyle: "full",
+      timeStyle: "short",
+    });
+
+    // Make checks case-insensitive
+    const meetingTypeLower = params.meetingType.toLowerCase();
+
+    const html = template({
+      candidateName: params.candidateName,
+      mentorName: params.mentorName,
+      purpose: params.purpose,
+      meetingType: params.meetingType,
+      scheduledAt: scheduledAtFormatted,
+      durationMinutes: params.durationMinutes,
+      location: params.location ?? null,
+      zoomJoinUrl: params.zoomJoinUrl ?? null,
+      description: params.description ?? null,
+      // ADDED: these flags for smart template rendering
+      isZoom: meetingTypeLower.includes("zoom"),
+      isInPerson: meetingTypeLower.includes("person"),
+    });
+
+    await transporter.sendMail({
+      from: env.SMTP_USER,
+      to: params.to,
+      subject: `Meeting Scheduled: ${params.purpose} with ${params.mentorName}`,
+      html,
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error sending meeting created email:", error);
+    return false;
+  }
+}
+
+export async function sendMeetingCancelledEmail(
+  params: MeetingCancelledEmailParams,
+): Promise<boolean> {
+  try {
+    await loadTemplates();
+
+    const template = compiledTemplates.meetingCancelled;
+    if (!template) throw new Error("meeting-cancelled template not found");
+
+    const scheduledAtFormatted = params.scheduledAt.toLocaleString("en-IN", {
+      dateStyle: "full",
+      timeStyle: "short",
+    });
+
+    // Make checks case-insensitive
+    const meetingTypeLower = params.meetingType.toLowerCase();
+
+    const html = template({
+      candidateName: params.candidateName,
+      mentorName: params.mentorName,
+      purpose: params.purpose,
+      meetingType: params.meetingType,
+      scheduledAt: scheduledAtFormatted,
+      // FIXED: Made case-insensitive
+      isZoom: meetingTypeLower.includes("zoom"),
+      isInPerson: meetingTypeLower.includes("person"),
+      location: params.location ?? null,
+      cancellationReason: params.cancellationReason ?? null,
+    });
+
+    await transporter.sendMail({
+      from: env.SMTP_USER,
+      to: params.to,
+      subject: `Meeting Cancelled: ${params.purpose} with ${params.mentorName}`,
+      html,
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error sending meeting cancelled email:", error);
+    return false;
+  }
+}
+
 // Resolve templates directory
 // FIX: Detect if running in Lambda (compiled) or Local (source)
 const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
@@ -76,8 +190,9 @@ const templateFiles: Record<string, string> = {
     templatesDir,
     "change-email-verification.html",
   ),
+  meetingCreated: path.join(templatesDir, "meeting-created.html"),
+  meetingCancelled: path.join(templatesDir, "meeting-cancelled.html"),
 };
-
 const compiledTemplates: Record<string, Handlebars.TemplateDelegate> = {};
 let templatesLoaded = false;
 let loadingPromise: Promise<void> | null = null;

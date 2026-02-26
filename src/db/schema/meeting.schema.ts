@@ -26,6 +26,8 @@ export const meetingPurposeEnum = pgEnum("meeting_purpose", [
   "other",
 ]);
 
+export const meetingTypeEnum = pgEnum("meeting_type", ["zoom", "in_person"]);
+
 export const meetings = pgTable(
   "meetings",
   {
@@ -43,6 +45,8 @@ export const meetings = pgTable(
 
     status: meetingStatusEnum("status").notNull().default("pending"),
 
+    meetingType: meetingTypeEnum("meeting_type").notNull().default("zoom"),
+
     scheduledAt: timestamp("scheduled_at", {
       withTimezone: true,
       precision: 0,
@@ -55,6 +59,8 @@ export const meetings = pgTable(
 
     // optional — no .notNull()
     cancellationReason: text("cancellation_reason"),
+
+    location: text("location"),
 
     // Zoom fields
     zoomMeetingId: text("zoom_meeting_id"),

@@ -36,14 +36,14 @@ import {
  */
 export const createMeeting = createRoute({
   method: "post" as const,
-  path: "/mentor/meetings",
-  tags: ["Mentor Meetings"],
-  middleware: requireRole({ allowedRoles: ["mentor"] }),
-  summary: "Create a meeting with an accepted candidate",
+  path: "/meetings",
+  tags: ["Meetings"],
+  middleware: requireRole({ allowedRoles: ["mentor", "candidate"] }),
+  summary: "Create a meeting",
   description:
-    "Allows a mentor to schedule a meeting with one of their accepted candidates. " +
-    "The scheduled time must fall on a weekday between 09:00 and 17:00. " +
-    "The candidate must be one of this mentor's accepted mentees.",
+    "Allows a mentor or candidate to schedule a meeting. " +
+    "If candidate creates, the time must match the mentor's availability. " +
+    "They must have an accepted mentorship request.",
   request: {
     body: {
       content: {
@@ -74,14 +74,12 @@ export const createMeeting = createRoute({
  */
 export const cancelMeeting = createRoute({
   method: "put" as const,
-  path: "/mentor/meetings/cancel",
-  tags: ["Mentor Meetings"],
-  middleware: requireRole({ allowedRoles: ["mentor"] }),
+  path: "/meetings/cancel",
+  tags: ["Meetings"],
+  middleware: requireRole({ allowedRoles: ["mentor", "candidate"] }),
   summary: "Cancel a meeting",
   description:
-    "Allows a mentor to cancel a meeting they created. " +
-    "A cancellation reason is required. " +
-    "Only meetings with status 'pending' or 'completed' can be cancelled.",
+    "Allows the meeting creator (or counterpart) to cancel a meeting. Requires a reason.",
   request: {
     body: {
       content: {
@@ -112,15 +110,14 @@ export const cancelMeeting = createRoute({
  * status  → filter by meeting status
  * purpose → filter by meeting purpose
  */
-export const getMentorMeetings = createRoute({
+export const getMeetings = createRoute({
   method: "get" as const,
-  path: "/mentor/meetings",
-  tags: ["Mentor Meetings"],
-  middleware: requireRole({ allowedRoles: ["mentor"] }),
+  path: "/meetings",
+  tags: ["Meetings"],
+  middleware: requireRole({ allowedRoles: ["mentor", "candidate"] }),
   summary: "List all meetings",
   description:
-    "Returns a paginated list of all meetings created by the authenticated mentor. " +
-    "Supports search by candidate name, and optional filters for status and purpose.",
+    "Returns a paginated list of all meetings created by the authenticated user.",
   request: {
     query: getMeetingsQuerySchema,
   },
@@ -135,4 +132,4 @@ export const getMentorMeetings = createRoute({
 
 export type CreateMeeting = typeof createMeeting;
 export type CancelMeeting = typeof cancelMeeting;
-export type GetMentorMeetings = typeof getMentorMeetings;
+export type GetMeetings = typeof getMeetings;

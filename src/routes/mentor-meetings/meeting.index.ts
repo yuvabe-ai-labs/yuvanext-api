@@ -8,6 +8,6 @@ const router = createRouter();
 router
   .openapi(routes.createMeeting, handlers.createMeeting)
   .openapi(routes.cancelMeeting, handlers.cancelMeeting)
-  .openapi(routes.getMentorMeetings, handlers.getMentorMeetings);
+  .openapi(routes.getMeetings, handlers.getMeetings);
 
 export default router;

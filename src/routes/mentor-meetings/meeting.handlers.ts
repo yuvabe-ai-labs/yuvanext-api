@@ -6,7 +6,9 @@ import db from "@/db";
 import { user as userTable } from "@/db/schema/auth.schema";
 import { candidates } from "@/db/schema/candidate.schema";
 import { meetings } from "@/db/schema/meeting.schema";
+import { notifications } from "@/db/schema/notification.schema";
 import { mentorshipRequests } from "@/db/schema/mentorship-requests.schema";
+import { userSettings } from "@/db/schema/settings.schema";
 import {
   BAD_REQUEST,
   FORBIDDEN,
@@ -18,47 +20,103 @@ import {
   cancelZoomMeeting,
   createZoomMeeting,
 } from "@/lib/services/zoom.service";
+import {
+  sendMeetingCreatedEmail,
+  sendMeetingCancelledEmail,
+} from "@/lib/services/email.service";
 
 import type {
   CancelMeeting,
   CreateMeeting,
-  GetMentorMeetings,
+  GetMeetings,
 } from "./meeting.routes";
+import { mentors } from "@/db/schema/mentor.schema";
+
+// ─── Notification helpers ─────────────────────────────────────────────────────
+
+interface NotificationSettings {
+  emailEnabled: boolean;
+  inAppEnabled: boolean;
+}
+
+async function getNotificationSettings(
+  userId: string,
+): Promise<NotificationSettings> {
+  try {
+    const [settings] = await db
+      .select({
+        emailEnabled: userSettings.emailNotificationsEnabled,
+        inAppEnabled: userSettings.inAppNotificationsEnabled,
+      })
+      .from(userSettings)
+      .where(eq(userSettings.userId, userId))
+      .limit(1);
+
+    return {
+      emailEnabled: settings?.emailEnabled ?? true,
+      inAppEnabled: settings?.inAppEnabled ?? true,
+    };
+  } catch (err) {
+    console.error("Error checking notification settings:", err);
+    return { emailEnabled: true, inAppEnabled: true };
+  }
+}
+
+async function createInAppNotification(
+  userId: string,
+  title: string,
+  message: string,
+  type: "success" | "info" | "warning" | "error" = "info",
+) {
+  await db.insert(notifications).values({
+    userId,
+    title,
+    message,
+    type,
+    isRead: false,
+  });
+}
 
 // ─── Create Meeting ───────────────────────────────────────────────────────────
 
-/**
- * POST /mentor/meetings
- *
- * Guards:
- *  1. candidateId must belong to an accepted mentee of this mentor.
- *  2. scheduledAt office-hours validation is done by Zod already.
- *
- * Zoom:
- *  - Attempts to create a Zoom meeting automatically.
- *  - If Zoom fails, the meeting is still saved — zoomJoinUrl will be null.
- *    zoomCreated in the response tells the caller whether Zoom succeeded.
- */
 export const createMeeting: AppRouteHandler<CreateMeeting> = async (c) => {
-  const mentor = c.get("user");
+  const user = c.get("user");
 
   try {
+    // Note: You will need to update your Zod schema to allow mentorId to be passed when a candidate is creating!
     const {
       candidateId,
+      mentorId,
       purpose,
+      meetingType,
       scheduledAt,
       durationMinutes = 30,
       description,
+      location,
     } = c.req.valid("json");
 
-    // Guard: candidate must be an accepted mentee of this mentor
+    // 1. Determine roles dynamically
+    const actualMentorId = user.role === "mentor" ? user.id : mentorId;
+    const actualCandidateId = user.role === "candidate" ? user.id : candidateId;
+
+    if (!actualMentorId || !actualCandidateId) {
+      return c.json(
+        {
+          status_code: BAD_REQUEST,
+          message: "Missing mentorId or candidateId.",
+        },
+        BAD_REQUEST,
+      );
+    }
+
+    // 2. Guard: Must be accepted mentees
     const [accepted] = await db
       .select({ id: mentorshipRequests.id })
       .from(mentorshipRequests)
       .where(
         and(
-          eq(mentorshipRequests.mentorId, mentor.id),
-          eq(mentorshipRequests.candidateId, candidateId),
+          eq(mentorshipRequests.mentorId, actualMentorId),
+          eq(mentorshipRequests.candidateId, actualCandidateId),
           eq(mentorshipRequests.status, "accepted"),
         ),
       )
@@ -68,68 +126,153 @@ export const createMeeting: AppRouteHandler<CreateMeeting> = async (c) => {
       return c.json(
         {
           status_code: NOT_FOUND,
-          message:
-            "Candidate not found or is not one of your accepted mentees.",
+          message: "Mentorship connection not found or not accepted.",
         },
         NOT_FOUND,
       );
     }
 
-    // Fetch candidate name for the Zoom meeting topic
-    const [candidateUser] = await db
+    // 3. CANDIDATE SPECIFIC LOGIC: Check Mentor Availability
+    if (user.role === "candidate") {
+      const [mentorSettings] = await db
+        .select()
+        .from(mentors)
+        .where(eq(mentors.userId, actualMentorId))
+        .limit(1);
+
+      if (mentorSettings) {
+        const requestedDate = new Date(scheduledAt);
+        const mentorTz = mentorSettings.timezone || "UTC";
+
+        // Convert requested time to mentor's timezone to check day and time bounds
+        const formatter = new Intl.DateTimeFormat("en-US", {
+          timeZone: mentorTz,
+          weekday: "long",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        });
+        const parts = formatter.formatToParts(requestedDate);
+
+        const dayName = parts.find((p) => p.type === "weekday")?.value || "";
+        const hour = parts.find((p) => p.type === "hour")?.value || "00";
+        const minute = parts.find((p) => p.type === "minute")?.value || "00";
+        const timeStr = `${hour}:${minute}`;
+
+        const isDayAvailable =
+          mentorSettings.availabilityDays?.includes(dayName);
+        const isTimeAvailable = mentorSettings.availabilityTimeWindows?.some(
+          (window) => {
+            return timeStr >= window.start && timeStr <= window.end;
+          },
+        );
+
+        if (!isDayAvailable || !isTimeAvailable) {
+          return c.json(
+            {
+              status_code: BAD_REQUEST,
+              message: `Mentor is not available at this time in their timezone (${mentorTz}).`,
+            },
+            BAD_REQUEST,
+          );
+        }
+      }
+    }
+
+    // 4. Fetch the counterpart details for Zoom & Notifications
+    const counterpartId =
+      user.role === "mentor" ? actualCandidateId : actualMentorId;
+    const [counterpartUser] = await db
       .select({ name: userTable.name, email: userTable.email })
       .from(userTable)
-      .where(eq(userTable.id, candidateId))
+      .where(eq(userTable.id, counterpartId))
       .limit(1);
 
-    // Attempt to create Zoom meeting
     const purposeLabel = purpose.replace(/_/g, " ");
-    const zoomMeeting = await createZoomMeeting({
-      topic: `Mentor Meeting: ${purposeLabel} with ${candidateUser?.name ?? "Candidate"}`,
-      startTime: scheduledAt,
-      duration: durationMinutes,
-      attendeeEmail: candidateUser?.email ?? "",
-      attendeeName: candidateUser?.name ?? "Candidate",
-    });
 
-    // Save meeting to DB — even if Zoom failed, we still create the record
+    // ── Zoom (only when meetingType = "zoom") ─────────────────────────────────
+    let zoomMeeting = null;
+    if (meetingType === "zoom") {
+      zoomMeeting = await createZoomMeeting({
+        topic: `Mentor Meeting: ${purposeLabel}`,
+        startTime: scheduledAt,
+        duration: durationMinutes,
+        attendeeEmail: counterpartUser?.email ?? "",
+        attendeeName: counterpartUser?.name ?? "User",
+      });
+    }
+
+    // Save meeting to DB
     const [newMeeting] = await db
       .insert(meetings)
       .values({
-        mentorId: mentor.id,
-        candidateId,
+        mentorId: actualMentorId,
+        candidateId: actualCandidateId,
         purpose,
+        meetingType,
         status: "pending",
         scheduledAt: new Date(scheduledAt),
         durationMinutes: String(durationMinutes),
         description: description ?? null,
-        cancellationReason: null,
+        location: meetingType === "in_person" ? (location ?? null) : null,
         zoomMeetingId: zoomMeeting?.meetingId ?? null,
         zoomJoinUrl: zoomMeeting?.joinUrl ?? null,
         zoomStartUrl: zoomMeeting?.startUrl ?? null,
       })
       .returning();
 
+    // ── Notifications ─────────────────────────────────────────────────────────
+    const counterpartSettings = await getNotificationSettings(counterpartId);
+    const scheduledDate = new Date(scheduledAt).toLocaleString("en-IN", {
+      dateStyle: "full",
+      timeStyle: "short",
+    });
+
+    const creatorRoleName =
+      user.role === "mentor" ? "Your mentor" : "Your mentee";
+    const notificationTitle = "Meeting Scheduled!";
+    const notificationMessage =
+      meetingType === "zoom"
+        ? `${creatorRoleName} has scheduled a ${purposeLabel} meeting on ${scheduledDate}.` +
+          (zoomMeeting?.joinUrl ? ` Join here: ${zoomMeeting.joinUrl}` : "")
+        : `${creatorRoleName} has scheduled an in-person ${purposeLabel} meeting on ${scheduledDate} at ${location}.`;
+
+    if (counterpartSettings.inAppEnabled) {
+      await createInAppNotification(
+        counterpartId,
+        notificationTitle,
+        notificationMessage,
+        "info",
+      );
+    }
+
+    let emailSent = false;
+    if (counterpartSettings.emailEnabled && counterpartUser?.email) {
+      emailSent = await sendMeetingCreatedEmail({
+        to: counterpartUser.email,
+        candidateName:
+          user.role === "candidate"
+            ? (user.name ?? "Candidate")
+            : (counterpartUser.name ?? "Candidate"),
+        mentorName:
+          user.role === "mentor"
+            ? (user.name ?? "Mentor")
+            : (counterpartUser.name ?? "Mentor"),
+        purpose: purposeLabel,
+        meetingType,
+        scheduledAt: new Date(scheduledAt),
+        durationMinutes,
+        zoomJoinUrl: zoomMeeting?.joinUrl ?? null,
+        location: meetingType === "in_person" ? (location ?? null) : null,
+        description: description ?? null,
+      });
+    }
+
     return c.json(
       {
         status_code: OK,
-        message: zoomMeeting
-          ? "Meeting created successfully with Zoom link."
-          : "Meeting created successfully. Zoom link could not be generated.",
-        data: {
-          id: newMeeting.id,
-          mentorId: newMeeting.mentorId,
-          candidateId: newMeeting.candidateId,
-          purpose: newMeeting.purpose,
-          status: newMeeting.status,
-          scheduledAt: newMeeting.scheduledAt,
-          durationMinutes: newMeeting.durationMinutes,
-          description: newMeeting.description,
-          zoomJoinUrl: newMeeting.zoomJoinUrl,
-          zoomStartUrl: newMeeting.zoomStartUrl,
-          zoomCreated: zoomMeeting !== null,
-          createdAt: newMeeting.createdAt,
-        },
+        message: "Meeting created successfully.",
+        data: newMeeting,
       },
       OK,
     );
@@ -144,32 +287,31 @@ export const createMeeting: AppRouteHandler<CreateMeeting> = async (c) => {
 
 // ─── Cancel Meeting ───────────────────────────────────────────────────────────
 
-/**
- * PUT /mentor/meetings/cancel
- *
- * - Only the mentor who created the meeting can cancel it.
- * - Only "pending" or "completed" meetings can be cancelled.
- * - If a Zoom meeting was created, it is also cancelled via the Zoom API.
- *   If Zoom cancellation fails, the DB record is still marked cancelled.
- */
 export const cancelMeeting: AppRouteHandler<CancelMeeting> = async (c) => {
   const mentor = c.get("user");
 
   try {
     const { meetingId, cancellationReason } = c.req.valid("json");
 
-    const [meeting] = await db
-      .select()
+    const [meetingRow] = await db
+      .select({
+        meeting: meetings,
+        candidateName: userTable.name,
+        candidateEmail: userTable.email,
+      })
       .from(meetings)
+      .innerJoin(userTable, eq(meetings.candidateId, userTable.id))
       .where(eq(meetings.id, meetingId))
       .limit(1);
 
-    if (!meeting) {
+    if (!meetingRow) {
       return c.json(
         { status_code: NOT_FOUND, message: "Meeting not found." },
         NOT_FOUND,
       );
     }
+
+    const { meeting, candidateName, candidateEmail } = meetingRow;
 
     if (meeting.mentorId !== mentor.id) {
       return c.json(
@@ -191,9 +333,9 @@ export const cancelMeeting: AppRouteHandler<CancelMeeting> = async (c) => {
       );
     }
 
-    // Cancel Zoom meeting if one was created
+    // Cancel Zoom meeting only if it was a Zoom meeting
     let zoomCancelled = false;
-    if (meeting.zoomMeetingId) {
+    if (meeting.meetingType === "zoom" && meeting.zoomMeetingId) {
       zoomCancelled = await cancelZoomMeeting(meeting.zoomMeetingId);
       if (!zoomCancelled) {
         console.error(
@@ -206,11 +348,50 @@ export const cancelMeeting: AppRouteHandler<CancelMeeting> = async (c) => {
       .update(meetings)
       .set({
         status: "cancelled",
-        cancellationReason,
+        cancellationReason: cancellationReason ?? null,
         updatedAt: new Date(),
       })
       .where(eq(meetings.id, meetingId))
       .returning();
+
+    // ── Notifications ─────────────────────────────────────────────────────────
+    const candidateSettings = await getNotificationSettings(
+      meeting.candidateId,
+    );
+
+    const purposeLabel = meeting.purpose.replace(/_/g, " ");
+    const scheduledDate = meeting.scheduledAt.toLocaleString("en-IN", {
+      dateStyle: "full",
+      timeStyle: "short",
+    });
+
+    const notificationTitle = "Meeting Cancelled";
+    const notificationMessage =
+      `Your mentor has cancelled the ${purposeLabel} meeting scheduled for ${scheduledDate}.` +
+      (cancellationReason ? ` Reason: ${cancellationReason}` : "");
+
+    if (candidateSettings.inAppEnabled) {
+      await createInAppNotification(
+        meeting.candidateId,
+        notificationTitle,
+        notificationMessage,
+        "warning",
+      );
+    }
+
+    let emailSent = false;
+    if (candidateSettings.emailEnabled && candidateEmail) {
+      emailSent = await sendMeetingCancelledEmail({
+        to: candidateEmail,
+        candidateName: candidateName ?? "Candidate",
+        mentorName: mentor.name ?? "Your Mentor",
+        purpose: purposeLabel,
+        meetingType: meeting.meetingType,
+        scheduledAt: meeting.scheduledAt,
+        location: meeting.location ?? null,
+        cancellationReason: cancellationReason ?? null,
+      });
+    }
 
     return c.json(
       {
@@ -221,6 +402,8 @@ export const cancelMeeting: AppRouteHandler<CancelMeeting> = async (c) => {
           status: updated.status,
           cancellationReason: updated.cancellationReason ?? null,
           zoomCancelled,
+          notificationSent: candidateSettings.inAppEnabled,
+          emailSent,
           updatedAt: updated.updatedAt,
         },
       },
@@ -237,22 +420,13 @@ export const cancelMeeting: AppRouteHandler<CancelMeeting> = async (c) => {
 
 // ─── List Meetings ────────────────────────────────────────────────────────────
 
-/**
- * GET /mentor/meetings
- *
- * Paginated list of all meetings for this mentor.
- * search  → candidate name (case-insensitive)
- * status  → meeting status filter
- * purpose → meeting purpose filter
- */
-export const getMentorMeetings: AppRouteHandler<GetMentorMeetings> = async (
-  c,
-) => {
+export const getMeetings: AppRouteHandler<GetMeetings> = async (c) => {
   const mentor = c.get("user");
   const {
     search,
     status,
     purpose,
+    meetingType,
     page = 1,
     limit = 10,
   } = c.req.valid("query");
@@ -263,6 +437,7 @@ export const getMentorMeetings: AppRouteHandler<GetMentorMeetings> = async (
     const baseConditions = [eq(meetings.mentorId, mentor.id)];
     if (status) baseConditions.push(eq(meetings.status, status));
     if (purpose) baseConditions.push(eq(meetings.purpose, purpose));
+    if (meetingType) baseConditions.push(eq(meetings.meetingType, meetingType));
 
     const searchCondition = search
       ? ilike(userTable.name, `%${search}%`)
@@ -277,11 +452,13 @@ export const getMentorMeetings: AppRouteHandler<GetMentorMeetings> = async (
         .select({
           id: meetings.id,
           purpose: meetings.purpose,
+          meetingType: meetings.meetingType,
           status: meetings.status,
           scheduledAt: meetings.scheduledAt,
           durationMinutes: meetings.durationMinutes,
           description: meetings.description,
           cancellationReason: meetings.cancellationReason,
+          location: meetings.location,
           zoomJoinUrl: meetings.zoomJoinUrl,
           zoomStartUrl: meetings.zoomStartUrl,
           createdAt: meetings.createdAt,
@@ -316,11 +493,13 @@ export const getMentorMeetings: AppRouteHandler<GetMentorMeetings> = async (
     const data = rows.map((row) => ({
       id: row.id,
       purpose: row.purpose,
+      meetingType: row.meetingType,
       status: row.status,
       scheduledAt: row.scheduledAt,
       durationMinutes: row.durationMinutes,
       description: row.description,
       cancellationReason: row.cancellationReason,
+      location: row.location,
       zoomJoinUrl: row.zoomJoinUrl,
       zoomStartUrl: row.zoomStartUrl,
       createdAt: row.createdAt,
@@ -336,15 +515,13 @@ export const getMentorMeetings: AppRouteHandler<GetMentorMeetings> = async (
       },
     }));
 
-    const message =
-      data.length === 0
-        ? "No meetings found."
-        : "Meetings retrieved successfully.";
-
     return c.json(
       {
         status_code: OK,
-        message,
+        message:
+          data.length === 0
+            ? "No meetings found."
+            : "Meetings retrieved successfully.",
         data,
         pagination: {
           currentPage: page,
