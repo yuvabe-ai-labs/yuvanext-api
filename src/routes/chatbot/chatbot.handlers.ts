@@ -19,6 +19,7 @@ import {
   getLastBotQuestion,
   getMessages,
   initializeConversation,
+  resetConversation,
   printConversation,
   validateAndExtractData,
   type ExtractedFieldData,
@@ -42,7 +43,6 @@ export const chat = async (c: Context) => {
   const userId = user.id as string;
   const role = user.role;
 
-  // Select appropriate system prompt based on role
   let SYSTEM_PROMPT = CANDIDATE_SYSTEM_PROMPT;
   if (role === "unit") {
     SYSTEM_PROMPT = UNIT_SYSTEM_PROMPT;
@@ -74,7 +74,6 @@ export const chat = async (c: Context) => {
             onboardingCompleted: existing[0].onboardingCompleted,
           };
         }
-
         return { exists: false, onboardingCompleted: false };
       } else if (role === "mentor") {
         const existing = await db
@@ -89,7 +88,6 @@ export const chat = async (c: Context) => {
             onboardingCompleted: existing[0].onboardingCompleted || false,
           };
         }
-
         return { exists: false, onboardingCompleted: false };
       } else {
         const existing = await db
@@ -104,7 +102,6 @@ export const chat = async (c: Context) => {
             onboardingCompleted: existing[0].onboardingCompleted || false,
           };
         }
-
         return { exists: false, onboardingCompleted: false };
       }
     } catch (error) {
@@ -153,7 +150,6 @@ export const chat = async (c: Context) => {
           updatedAt: new Date(),
         };
 
-        // Map extracted fields to database columns
         if (extractedData.phone) updateData.phone = String(extractedData.phone);
         if (extractedData.gender)
           updateData.gender = String(extractedData.gender).toLowerCase();
@@ -185,10 +181,7 @@ export const chat = async (c: Context) => {
           updatedAt: new Date(),
         };
 
-        // Map extracted fields to database columns
-
         if (extractedData.mentor_type) {
-          // Map mentor type names to enum values
           const mentorTypeMap: Record<string, string> = {
             "career guidance mentor": "career_guidance",
             "internship application support mentor": "internship_support",
@@ -206,52 +199,69 @@ export const chat = async (c: Context) => {
             `[Mentor Type Mapping] userId: ${userId}, original: ${extractedData.mentor_type}, mapped: ${updateData.mentorType}`,
           );
         }
+
         if (extractedData.expertise_areas)
           updateData.expertiseAreas = toArray(extractedData.expertise_areas);
+
         if (extractedData.experience_snapshot)
           updateData.experienceSnapshot = String(
             extractedData.experience_snapshot,
           );
 
-        // Availability
         if (extractedData.availability_days)
           updateData.availabilityDays = toArray(
             extractedData.availability_days,
           );
-        if (extractedData.availability_time_windows) {
-          const windows = extractedData.availability_time_windows;
-          if (Array.isArray(windows)) {
-            updateData.availabilityTimeWindows = windows;
-          }
-        }
-        if (extractedData.timezone)
-          updateData.timezone = String(extractedData.timezone);
 
-        // Capacity & Preferences
+        // Debug log to inspect the structure of availability_time_windows
+        console.log(
+          `[Debug] availability_time_windows before saving:`,
+          extractedData.availability_time_windows,
+        );
+
+        if (extractedData.availability_time_windows) {
+          // Serialize the availability_time_windows field if it's an object or array
+          updateData.availabilityTimeWindows =
+            typeof extractedData.availability_time_windows === "object"
+              ? JSON.stringify(extractedData.availability_time_windows)
+              : extractedData.availability_time_windows;
+        }
+
+        // Log the normalized availability_time_windows for debugging
+        console.log(
+          `[Availability Time Windows] userId: ${userId}, normalized:`,
+          updateData.availabilityTimeWindows,
+        );
+
         if (extractedData.mentoring_capacity) {
-          // Normalize capacity ranges: "1–2" or "1-2" to match enum "1-2"
-          const capacityStr = String(
-            extractedData.mentoring_capacity,
-          ).toLowerCase();
-          // Replace en-dash with regular hyphen
-          const normalized = capacityStr.replace(/–|−/g, "-").trim();
-          updateData.mentoringCapacity = normalized;
+          // FIX: Normalize dashes at save time as a final safety net
+          const capacityStr = String(extractedData.mentoring_capacity)
+            .toLowerCase()
+            .replace(/\u2013|\u2014|–|—/g, "-")
+            .trim();
+          updateData.mentoringCapacity = capacityStr;
           console.log(
-            `[Capacity Mapping] userId: ${userId}, original: ${extractedData.mentoring_capacity}, mapped: ${normalized}`,
+            `[Capacity Mapping] userId: ${userId}, original: ${extractedData.mentoring_capacity}, mapped: ${capacityStr}`,
           );
         }
+
         if (extractedData.preferred_stages)
           updateData.preferredStages = toArray(extractedData.preferred_stages);
+
         if (extractedData.communication_modes)
           updateData.communicationModes = toArray(
             extractedData.communication_modes,
           );
 
-        // Boundaries
+        if (extractedData.timezone)
+          updateData.timezone = String(extractedData.timezone);
+
+        // FIX: confirm_boundaries was extracted but never mapped to DB
         if (extractedData.confirm_boundaries !== undefined) {
           updateData.confirmBoundaries =
-            String(extractedData.confirm_boundaries).toLowerCase() === "yes" ||
-            String(extractedData.confirm_boundaries).toLowerCase() === "true";
+            extractedData.confirm_boundaries === true ||
+            String(extractedData.confirm_boundaries).toLowerCase() === "true" ||
+            String(extractedData.confirm_boundaries).toLowerCase() === "yes";
         }
 
         await db
@@ -268,7 +278,6 @@ export const chat = async (c: Context) => {
           updatedAt: new Date(),
         };
 
-        // Map extracted fields to database columns
         if (extractedData.name) updateData.name = String(extractedData.name);
         if (extractedData.type) updateData.type = String(extractedData.type);
         if (extractedData.phone) updateData.phone = String(extractedData.phone);
@@ -315,9 +324,12 @@ export const chat = async (c: Context) => {
     role: "candidate" | "unit" | "mentor",
   ): Promise<{ success: boolean; error?: string; extractedValue?: any }> => {
     try {
-      // Validate the field value
+      // Do NOT coerce value to String here — for fields like availability_time_windows
+      // the detector may return an object/array, and String() would corrupt it to "[object Object]".
+      // validateAndExtractData accepts `any` and handles type-specific logic internally.
+      const rawValue = value ?? "";
       const validationResult = await validateAndExtractData(
-        String(value || ""),
+        rawValue,
         lastQuestion,
         field,
         role,
@@ -331,8 +343,6 @@ export const chat = async (c: Context) => {
       }
 
       const extractedValue = validationResult.extractedValue;
-
-      // Store in memory (not DB)
       addExtractedField(userId, field, extractedValue);
 
       return { success: true, extractedValue };
@@ -349,7 +359,6 @@ export const chat = async (c: Context) => {
   };
 
   try {
-    // Validate role
     if (role !== "candidate" && role !== "unit" && role !== "mentor") {
       return c.json(
         { success: false as const, error: "Invalid user role" },
@@ -357,11 +366,9 @@ export const chat = async (c: Context) => {
       );
     }
 
-    // Check onboarding status
     const onboardingStatus = await ensureProfileExists(userId, role);
 
     if (!onboardingStatus.exists) {
-      // Try to create the profile if it doesn't exist
       if (role === "candidate") {
         try {
           await db.insert(candidates).values({
@@ -461,18 +468,25 @@ export const chat = async (c: Context) => {
       );
     }
 
-    // Initialize conversation if needed
-    initializeConversation(userId);
+    // FIX: Detect if this is the first message ("hi", "hello", "start", etc.).
+    // If so, reset the conversation so stale extracted data from a previous
+    // incomplete session doesn't persist. This prevents wrong field values
+    // (e.g. old timezone) from leaking into the new save.
+    const isGreeting = /^\s*(hi|hello|hey|start|begin|ok|okay|sure)\s*$/i.test(
+      message,
+    );
+    if (isGreeting) {
+      resetConversation(userId);
+    } else {
+      initializeConversation(userId);
+    }
 
-    // Add user message to conversation array
     addMessage(userId, "user", message);
     console.log(`[User Message] userId: ${userId}, message: "${message}"`);
 
-    // Get conversation history and last question
     const conversationHistory = getMessages(userId);
     const lastBotQuestion = getLastBotQuestion(userId);
 
-    // Auto-detect and validate fields from user's response
     let fieldsToValidate: Array<{ field: string; value: any }> = [];
 
     if (lastBotQuestion) {
@@ -498,7 +512,6 @@ export const chat = async (c: Context) => {
       }
     }
 
-    // Validate and store fields in memory (re-ask on failure)
     const failedFields: Array<{ field: string; error: string }> = [];
     const successfulFields: string[] = [];
 
@@ -516,7 +529,6 @@ export const chat = async (c: Context) => {
           field: fieldData.field,
           error: validationResult.error || "Validation failed",
         });
-        // Add system message instructing bot to re-ask the same question
         addMessage(
           userId,
           "system",
@@ -526,20 +538,17 @@ export const chat = async (c: Context) => {
           `[Field Validation Failed - Re-asking] userId: ${userId}, field: ${fieldData.field}, reason: ${validationResult.error}`,
         );
       } else {
-        // Add system message about field extraction
         addMessage(userId, "system", `[Extracted: ${fieldData.field}]`);
         successfulFields.push(fieldData.field);
       }
     }
 
-    // Log validation summary
     if (failedFields.length > 0) {
       console.log(
         `[Validation Summary] userId: ${userId}, successful: ${successfulFields.length}, failed: ${failedFields.length} - re-asking failed questions`,
       );
     }
 
-    // Stream structured response
     return streamSSE(c, async (stream) => {
       let structuredResponse: StructuredBotResponse | null = null;
 
@@ -549,14 +558,12 @@ export const chat = async (c: Context) => {
           data: JSON.stringify({ message: "Streaming started" }),
         });
 
-        // Generate structured response from model
         for await (const response of generateStructuredStreamFromModel(
           conversationHistory,
           SYSTEM_PROMPT,
         )) {
           structuredResponse = response;
 
-          // Send the complete structured response
           await stream.writeSSE({
             event: "structured",
             data: JSON.stringify(response),
@@ -567,17 +574,14 @@ export const chat = async (c: Context) => {
           throw new Error("No response from model");
         }
 
-        // Add assistant response to conversation array
         addMessage(userId, "assistant", structuredResponse.message);
         console.log(
           `[Bot Response] userId: ${userId}, isComplete: ${structuredResponse.isComplete || false}`,
         );
 
-        // Check if onboarding is complete
         const isComplete = structuredResponse.isComplete || false;
 
         if (isComplete) {
-          // NOW save all data to database
           const extractedData = getExtractedData(userId);
           const saveResult = await saveAllDataToDatabase(
             userId,
@@ -593,16 +597,13 @@ export const chat = async (c: Context) => {
 
           console.log(`[Onboarding Complete] userId: ${userId}, role: ${role}`);
 
-          // Optional: Print final conversation for debugging
           if (process.env.NODE_ENV === "development") {
             printConversation(userId);
           }
 
-          // Clear conversation from memory after successful save
           clearConversation(userId);
         }
 
-        // Send completion event
         await stream.writeSSE({
           event: "complete",
           data: JSON.stringify({
