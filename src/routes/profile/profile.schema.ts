@@ -136,18 +136,42 @@ const unitFieldsSchema = z.object({
   socialLinks: z.array(socialLinkSchema).nullable(),
 });
 
+// Mentor-specific fields
+const mentorFieldsSchema = z.object({
+  userId: z.string().optional(),
+  mentorType: z.string().nullable(),
+  expertiseAreas: z.array(z.string()).nullable(),
+  experienceSnapshot: z.string().nullable(),
+  availabilityDays: z.array(z.string()).nullable(),
+  availabilityTimeWindows: z
+    .array(
+      z.object({
+        start: z.string(),
+        end: z.string(),
+      }),
+    )
+    .nullable(),
+  timezone: z.string().nullable(),
+  mentoringCapacity: z.string().nullable(),
+  preferredStages: z.array(z.string()).nullable(),
+  communicationModes: z.array(z.string()).nullable(),
+  confirmBoundaries: z.boolean().nullable(),
+  onboardingCompleted: z.boolean().nullable(),
+});
+
 // Profile score field (always included in GET /profile response)
 const profileScoreSchema = z.object({
   profileScore: z.number().min(0).max(100),
 });
 
-// Profile response can be user + candidate fields or user + unit fields
+// Profile response can be user + candidate fields or user + unit fields or user + mentor fields
 // Always includes profileScore
 export const profileResponseSchema = z.union([
   baseUserSchema
     .merge(candidateFieldsSchema.partial())
     .merge(profileScoreSchema),
   baseUserSchema.merge(unitFieldsSchema.partial()).merge(profileScoreSchema),
+  baseUserSchema.merge(mentorFieldsSchema.partial()).merge(profileScoreSchema),
   baseUserSchema.merge(profileScoreSchema), // Just base user if no role-specific data
 ]);
 

@@ -6,6 +6,7 @@ import db from "@/db";
 import { user as userTable } from "@/db/schema/auth.schema";
 import { candidates } from "@/db/schema/candidate.schema";
 import { units } from "@/db/schema/unit.schema";
+import { mentors } from "@/db/schema/mentor.schema";
 import {
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
@@ -172,6 +173,69 @@ function calculateUnitScore(unit: any): number {
   if (unit.websiteUrl) score += weights.websiteUrl;
   if (unit.socialLinks && Object.keys(unit.socialLinks).length > 0)
     score += weights.socialLinks;
+
+  return Math.min(score, 100);
+}
+
+// Helper function to calculate mentor profile score
+function calculateMentorScore(mentor: any): number {
+  let score = 0;
+  const weights = {
+    // Basic info (20 points)
+    name: 5,
+    email: 5,
+    phone: 5,
+    mentorType: 5,
+
+    // Experience & Expertise (30 points)
+    expertiseAreas: 10,
+    experienceSnapshot: 10,
+
+    // Availability (20 points)
+    availabilityDays: 7,
+    availabilityTimeWindows: 7,
+    timezone: 6,
+
+    // Preferences & Capacity (20 points)
+    mentoringCapacity: 5,
+    preferredStages: 7,
+    communicationModes: 8,
+
+    // Boundaries (10 points)
+    confirmBoundaries: 10,
+  };
+
+  // Check basic fields
+  if (mentor.name) score += weights.name;
+  if (mentor.email) score += weights.email;
+  if (mentor.phone) score += weights.phone;
+  if (mentor.mentorType) score += weights.mentorType;
+
+  // Check experience & expertise
+  if (mentor.expertiseAreas && mentor.expertiseAreas.length > 0)
+    score += weights.expertiseAreas;
+  if (mentor.experienceSnapshot && mentor.experienceSnapshot.length > 20)
+    score += weights.experienceSnapshot;
+
+  // Check availability
+  if (mentor.availabilityDays && mentor.availabilityDays.length > 0)
+    score += weights.availabilityDays;
+  if (
+    mentor.availabilityTimeWindows &&
+    mentor.availabilityTimeWindows.length > 0
+  )
+    score += weights.availabilityTimeWindows;
+  if (mentor.timezone) score += weights.timezone;
+
+  // Check preferences & capacity
+  if (mentor.mentoringCapacity) score += weights.mentoringCapacity;
+  if (mentor.preferredStages && mentor.preferredStages.length > 0)
+    score += weights.preferredStages;
+  if (mentor.communicationModes && mentor.communicationModes.length > 0)
+    score += weights.communicationModes;
+
+  // Check boundaries
+  if (mentor.confirmBoundaries) score += weights.confirmBoundaries;
 
   return Math.min(score, 100);
 }
@@ -360,6 +424,77 @@ export const getProfile: AppRouteHandler<GetProfile> = async (c) => {
           message: "Profile retrieved successfully",
           data: {
             ...unitProfile,
+            profileScore,
+          },
+        },
+        OK,
+      );
+    } else if (user.role === "mentor") {
+      const profileData = await db
+        .select({
+          // User fields
+          id: userTable.id,
+          name: userTable.name,
+          email: userTable.email,
+          role: userTable.role,
+          createdAt: userTable.createdAt,
+          updatedAt: userTable.updatedAt,
+          // Mentor fields
+          mentorType: mentors.mentorType,
+          expertiseAreas: mentors.expertiseAreas,
+          experienceSnapshot: mentors.experienceSnapshot,
+          availabilityDays: mentors.availabilityDays,
+          availabilityTimeWindows: mentors.availabilityTimeWindows,
+          timezone: mentors.timezone,
+          mentoringCapacity: mentors.mentoringCapacity,
+          preferredStages: mentors.preferredStages,
+          communicationModes: mentors.communicationModes,
+          confirmBoundaries: mentors.confirmBoundaries,
+          onboardingCompleted: mentors.onboardingCompleted,
+        })
+        .from(userTable)
+        .leftJoin(mentors, eq(mentors.userId, userTable.id))
+        .where(eq(userTable.id, user.id))
+        .limit(1);
+
+      if (!profileData || profileData.length === 0) {
+        return c.json(
+          { status_code: NOT_FOUND, message: "User not found" },
+          NOT_FOUND,
+        );
+      }
+
+      const data = profileData[0];
+
+      // Construct mentor profile
+      const mentorProfile = {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+        mentorType: data.mentorType,
+        expertiseAreas: data.expertiseAreas,
+        experienceSnapshot: data.experienceSnapshot,
+        availabilityDays: data.availabilityDays,
+        availabilityTimeWindows: data.availabilityTimeWindows,
+        timezone: data.timezone,
+        mentoringCapacity: data.mentoringCapacity,
+        preferredStages: data.preferredStages,
+        communicationModes: data.communicationModes,
+        confirmBoundaries: data.confirmBoundaries,
+        onboardingCompleted: data.onboardingCompleted,
+      };
+
+      const profileScore = calculateMentorScore(mentorProfile);
+
+      return c.json(
+        {
+          status_code: OK,
+          message: "Profile retrieved successfully",
+          data: {
+            ...mentorProfile,
             profileScore,
           },
         },

@@ -17,6 +17,7 @@ import {
   GetMentorAcceptedCandidatesApplications,
   GetMentorDashboard,
   GetMentorHiredCandidates,
+  GetMentorStats,
   GetMentorUnitCandidates,
   GetMentorUnitProfile,
   GetMentorUnits,
@@ -26,6 +27,8 @@ import { mentorshipRequests } from "@/db/schema/mentorship-requests.schema";
 import { user as userTable } from "@/db/schema/auth.schema";
 import { candidates } from "@/db/schema/candidate.schema";
 import db from "@/db";
+import { countDistinct, gt, gte, lt } from "drizzle-orm";
+import { meetings } from "@/db/schema/meeting.schema";
 import {
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
@@ -1179,6 +1182,197 @@ export const getMentorUnitCandidates: AppRouteHandler<
     );
   } catch (err) {
     console.error("Error fetching unit candidates for mentor:", err);
+    return c.json(
+      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Returns the first and last instant of the current calendar month (UTC). */
+function currentMonthBounds(): { start: Date; end: Date } {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const end = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+  );
+  return { start, end };
+}
+
+// ─── Handler ──────────────────────────────────────────────────────────────────
+
+/**
+ * GET /mentor/stats
+ *
+ * All four counts are fetched in parallel for performance.
+ * Each stat returns:
+ *   total        – all-time figure
+ *   newThisMonth – items created / scheduled in the current calendar month
+ */
+export const getMentorStats: AppRouteHandler<GetMentorStats> = async (c) => {
+  const mentor = c.get("user");
+  const { start: monthStart, end: monthEnd } = currentMonthBounds();
+
+  try {
+    // ── 1. Accepted Mentees ───────────────────────────────────────────────────
+    // "accepted" rows in mentorship_requests where mentorId = me.
+    // newThisMonth → requests accepted (updatedAt) in current month.
+    const acceptedMenteesPromise = Promise.all([
+      db
+        .select({ count: count() })
+        .from(mentorshipRequests)
+        .where(
+          and(
+            eq(mentorshipRequests.mentorId, mentor.id),
+            eq(mentorshipRequests.status, "accepted"),
+          ),
+        ),
+      db
+        .select({ count: count() })
+        .from(mentorshipRequests)
+        .where(
+          and(
+            eq(mentorshipRequests.mentorId, mentor.id),
+            eq(mentorshipRequests.status, "accepted"),
+            // updatedAt is when the status last changed — i.e. when accepted
+            gte(mentorshipRequests.updatedAt, monthStart),
+            lt(mentorshipRequests.updatedAt, monthEnd),
+          ),
+        ),
+    ]);
+
+    // ── 2. Unique Units from Mentees' Applications ────────────────────────────
+    // Distinct unit IDs (internships.createdBy) across applications by accepted mentees.
+    // newThisMonth → applications that were *submitted* this month (applications.createdAt).
+    // We count distinct units from those new applications, mirroring the total logic.
+    const acceptedCandidateSubquery = db
+      .select({ candidateId: mentorshipRequests.candidateId })
+      .from(mentorshipRequests)
+      .where(
+        and(
+          eq(mentorshipRequests.mentorId, mentor.id),
+          eq(mentorshipRequests.status, "accepted"),
+        ),
+      );
+
+    const menteeUnitsPromise = Promise.all([
+      // total distinct units
+      db
+        .select({ count: countDistinct(internships.createdBy) })
+        .from(applications)
+        .innerJoin(internships, eq(applications.internshipId, internships.id))
+        .where(sql`${applications.userId} IN (${acceptedCandidateSubquery})`),
+      // distinct units from applications submitted this month
+      db
+        .select({ count: countDistinct(internships.createdBy) })
+        .from(applications)
+        .innerJoin(internships, eq(applications.internshipId, internships.id))
+        .where(
+          and(
+            sql`${applications.userId} IN (${acceptedCandidateSubquery})`,
+            gte(applications.createdAt, monthStart),
+            lt(applications.createdAt, monthEnd),
+          ),
+        ),
+    ]);
+
+    // ── 3. Upcoming Meetings ──────────────────────────────────────────────────
+    // Meetings where mentorId = me, status = "pending", scheduledAt > now.
+    // newThisMonth → pending future meetings *created* (createdAt) this month.
+    const now = new Date();
+    const upcomingMeetingsPromise = Promise.all([
+      db
+        .select({ count: count() })
+        .from(meetings)
+        .where(
+          and(
+            eq(meetings.mentorId, mentor.id),
+            eq(meetings.status, "pending"),
+            gt(meetings.scheduledAt, now),
+          ),
+        ),
+      db
+        .select({ count: count() })
+        .from(meetings)
+        .where(
+          and(
+            eq(meetings.mentorId, mentor.id),
+            eq(meetings.status, "pending"),
+            gt(meetings.scheduledAt, now),
+            gte(meetings.createdAt, monthStart),
+            lt(meetings.createdAt, monthEnd),
+          ),
+        ),
+    ]);
+
+    // ── 4. Hired Applications ─────────────────────────────────────────────────
+    // Applications with status = "hired" from accepted mentees.
+    // newThisMonth → those hired applications updated (status set) this month.
+    const hiredApplicationsPromise = Promise.all([
+      db
+        .select({ count: count() })
+        .from(applications)
+        .where(
+          and(
+            sql`${applications.userId} IN (${acceptedCandidateSubquery})`,
+            eq(applications.status, "hired"),
+          ),
+        ),
+      db
+        .select({ count: count() })
+        .from(applications)
+        .where(
+          and(
+            sql`${applications.userId} IN (${acceptedCandidateSubquery})`,
+            eq(applications.status, "hired"),
+            gte(applications.updatedAt, monthStart),
+            lt(applications.updatedAt, monthEnd),
+          ),
+        ),
+    ]);
+
+    // ── Await all in parallel ─────────────────────────────────────────────────
+    const [
+      [acceptedTotal, acceptedNew],
+      [unitsTotal, unitsNew],
+      [upcomingTotal, upcomingNew],
+      [hiredTotal, hiredNew],
+    ] = await Promise.all([
+      acceptedMenteesPromise,
+      menteeUnitsPromise,
+      upcomingMeetingsPromise,
+      hiredApplicationsPromise,
+    ]);
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Mentor stats retrieved successfully.",
+        data: {
+          acceptedMentees: {
+            total: acceptedTotal[0]?.count ?? 0,
+            newThisMonth: acceptedNew[0]?.count ?? 0,
+          },
+          menteeUnitCount: {
+            total: unitsTotal[0]?.count ?? 0,
+            newThisMonth: unitsNew[0]?.count ?? 0,
+          },
+          upcomingMeetings: {
+            total: upcomingTotal[0]?.count ?? 0,
+            newThisMonth: upcomingNew[0]?.count ?? 0,
+          },
+          hiredApplications: {
+            total: hiredTotal[0]?.count ?? 0,
+            newThisMonth: hiredNew[0]?.count ?? 0,
+          },
+        },
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error fetching mentor stats:", err);
     return c.json(
       { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
       INTERNAL_SERVER_ERROR,
