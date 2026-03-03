@@ -249,3 +249,33 @@ export const mentorUnitCandidateItemSchema = z.object({
     status: z.enum(["active", "closed", "draft"]),
   }),
 });
+
+/**
+ * A single stat tile: total count + how many are new this calendar month.
+ */
+export const statTileSchema = z.object({
+  total: z.number().describe("All-time total count"),
+  newThisMonth: z
+    .number()
+    .describe(
+      "Count of items created / scheduled in the current calendar month",
+    ),
+});
+
+/**
+ * Full response for GET /mentor/stats
+ */
+export const mentorStatsResponseSchema = z.object({
+  acceptedMentees: statTileSchema.describe(
+    "Candidates whose mentorship request the mentor accepted",
+  ),
+  menteeUnitCount: statTileSchema.describe(
+    "Unique units (companies) that accepted mentees have applied to",
+  ),
+  upcomingMeetings: statTileSchema.describe(
+    "Pending meetings whose scheduledAt is in the future",
+  ),
+  hiredApplications: statTileSchema.describe(
+    "Applications with status = 'hired' submitted by accepted mentees",
+  ),
+});

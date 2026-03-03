@@ -24,6 +24,7 @@ import {
   mentorHiredCandidateItemSchema,
   getMentorUnitCandidatesQuerySchema,
   mentorUnitCandidateItemSchema,
+  mentorStatsResponseSchema,
 } from "./view.schema";
 
 /**
@@ -234,6 +235,34 @@ export const getMentorUnitCandidates = createRoute({
     [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
   },
 });
+
+/**
+ * GET /mentor/stats
+ *
+ * Returns four summary tiles for the mentor's dashboard:
+ *  - Total accepted mentees  + new this month
+ *  - Unique units from mentees' applications + new this month
+ *  - Upcoming (pending, future) meetings + new this month
+ *  - Hired applications from accepted mentees + new this month
+ */
+export const getMentorStats = createRoute({
+  method: "get" as const,
+  path: "/mentor/stats",
+  tags: ["Mentor view - Mentor"],
+  middleware: requireRole({ allowedRoles: ["mentor"] }),
+  summary: "Mentor dashboard stat tiles",
+  description:
+    "Returns four stat tiles — accepted mentees, mentee unit count, " +
+    "upcoming meetings, and hired applications — each with an all-time total " +
+    "and a newThisMonth delta (e.g. +8 new this month).",
+  responses: {
+    [OK]: createResponse(OK, mentorStatsResponseSchema),
+    ...restrictedErrorResponses,
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
+  },
+});
+
+export type GetMentorStats = typeof getMentorStats;
 
 export type GetMentorUnitCandidates = typeof getMentorUnitCandidates;
 export type GetMentorAcceptedCandidates = typeof getMentorAcceptedCandidates;

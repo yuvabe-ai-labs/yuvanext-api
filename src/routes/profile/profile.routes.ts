@@ -23,7 +23,7 @@ export const getProfile = createRoute({
   method: "get" as const,
   path: "/profile",
   tags: ["Profile"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Get user profile",
   description: "Retrieve the complete profile for the authenticated user",
   responses: {
