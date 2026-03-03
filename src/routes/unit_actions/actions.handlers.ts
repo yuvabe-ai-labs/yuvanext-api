@@ -477,6 +477,7 @@ export const getUnitApplicationById: AppRouteHandler<
         internshipTitle: internships.title,
         internshipType: internships.jobType,
         internshipDuration: internships.duration,
+        internshipCreatedBy: internships.createdBy,
 
         // Candidate fields
         candidateUserId: candidates.userId,
@@ -502,22 +503,33 @@ export const getUnitApplicationById: AppRouteHandler<
       .innerJoin(internships, eq(applications.internshipId, internships.id))
       .innerJoin(candidates, eq(applications.userId, candidates.userId))
       .innerJoin(userTable, eq(applications.userId, userTable.id))
-      .where(
-        and(
-          eq(applications.id, applicationId),
-          eq(internships.createdBy, user.id),
-        ),
-      );
+      .where(eq(applications.id, applicationId));
 
     if (applicationData.length === 0) {
       return c.json(
         {
           status_code: NOT_FOUND,
-          message: "Application not found or does not belong to this unit",
+          message: "Application not found",
         },
         NOT_FOUND,
       );
     }
+
+    const app = applicationData[0];
+
+    // Permission check: only unit/admin who created the internship or any mentor can view
+    if (user.role === "unit" || user.role === "admin") {
+      if (app.internshipCreatedBy !== user.id) {
+        return c.json(
+          {
+            status_code: FORBIDDEN,
+            message: "You can only view applications for your own internships",
+          },
+          FORBIDDEN,
+        );
+      }
+    }
+    // Mentors can view any candidate's application details
 
     const formattedApplications = applicationData.map((app) => ({
       application: {

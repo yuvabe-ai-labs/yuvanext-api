@@ -34,7 +34,7 @@ export const getUserNotifications = createRoute({
   method: "get" as const,
   path: "/notifications",
   tags: ["Notifications"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Get user notifications",
   description:
     "Returns all notifications for the authenticated user (both candidates and units), ordered by creation date",
