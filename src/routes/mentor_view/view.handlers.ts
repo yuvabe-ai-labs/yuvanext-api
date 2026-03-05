@@ -29,6 +29,7 @@ import {
   NOT_FOUND,
   OK,
 } from "@/lib/openapi/http-status-codes";
+import { applicationStatusEnum } from "../candidate_actions/action.schema";
 
 /**
  * GET /mentor/accepted-candidates
@@ -82,6 +83,7 @@ export const getMentorAcceptedCandidates: AppRouteHandler<
       candidateExperienceLevel: candidates.experienceLevel,
       // Application enrichment fields (null when candidate has no application)
       applicationId: applications.id,
+      applicationStatus: applications.status,
       internshipTitle: internships.title,
       unitName: unitUser.name,
     } as const;
@@ -103,6 +105,7 @@ export const getMentorAcceptedCandidates: AppRouteHandler<
       application: row.applicationId
         ? {
             applicationId: row.applicationId,
+            status: row.applicationStatus,
             internshipTitle: row.internshipTitle,
             unitName: row.unitName,
           }
