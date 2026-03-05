@@ -37,7 +37,7 @@ import {
  */
 export const createMentorshipRequest = createRoute({
   method: "post" as const,
-  path: "/candidate/mentorship-requests",
+  path: "/mentorship-requests",
   tags: ["Mentorship Requests - Candidate"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Send a mentorship request",
@@ -73,7 +73,7 @@ export const createMentorshipRequest = createRoute({
  */
 export const cancelMentorshipRequest = createRoute({
   method: "delete" as const,
-  path: "/candidate/mentorship-requests/:requestId",
+  path: "/mentorship-requests/:requestId",
   tags: ["Mentorship Requests - Candidate"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Cancel a pending mentorship request",
@@ -98,7 +98,7 @@ export const cancelMentorshipRequest = createRoute({
  */
 export const getCandidateOwnRequests = createRoute({
   method: "get" as const,
-  path: "/candidate/mentorship-requests",
+  path: "/mentorship-requests",
   tags: ["Mentorship Requests - Candidate"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "List my mentorship requests",
@@ -127,7 +127,7 @@ export const getCandidateOwnRequests = createRoute({
  */
 export const getMentorIncomingRequests = createRoute({
   method: "get" as const,
-  path: "/mentor/mentorship-requests",
+  path: "/mentorship-requests/incoming",
   tags: ["Mentorship Requests - Mentor"],
   middleware: requireRole({ allowedRoles: ["mentor"] }),
   summary: "List incoming mentorship requests",
@@ -162,7 +162,7 @@ export const getMentorIncomingRequests = createRoute({
  */
 export const respondToMentorshipRequest = createRoute({
   method: "put" as const,
-  path: "/mentor/mentorship-requests/respond",
+  path: "/mentorship-requests/respond",
   tags: ["Mentorship Requests - Mentor"],
   middleware: requireRole({ allowedRoles: ["mentor"] }),
   summary: "Accept or reject a mentorship request",

@@ -14,7 +14,7 @@ import {
 import type { GetMentorById, GetMentors } from "./mentors.routes";
 
 /**
- * GET /candidate/mentors
+ * GET /mentors
  *
  * Returns a paginated list of onboarded mentors.
  * Filters: search (name), mentorType, expertiseArea, availabilityDay
@@ -29,6 +29,8 @@ export const getAllMentors: AppRouteHandler<GetMentors> = async (c) => {
     page = 1,
     limit = 10,
   } = c.req.valid("query");
+
+  const candidateId = c.get("user")?.id; // Get user from context
 
   try {
     const offset = (page - 1) * limit;
@@ -68,16 +70,17 @@ export const getAllMentors: AppRouteHandler<GetMentors> = async (c) => {
           expertiseAreas: mentors.expertiseAreas,
           experienceSnapshot: mentors.experienceSnapshot,
           availabilityDays: mentors.availabilityDays,
-          availabilityTimeWindows: mentors.availabilityTimeWindows,
-          timezone: mentors.timezone,
-          mentoringCapacity: mentors.mentoringCapacity,
-          preferredStages: mentors.preferredStages,
-          communicationModes: mentors.communicationModes,
-          createdAt: mentors.createdAt,
           // User fields
           name: userTable.name,
           email: userTable.email,
-          image: userTable.image,
+          // Check if the candidate already has a mentorship with the mentor
+          isCurrentMentor: sql`EXISTS (
+            SELECT 1
+            FROM mentorship_requests
+            WHERE mentorship_requests.candidate_id = ${candidateId}
+              AND mentorship_requests.mentor_id = mentors.user_id
+              AND mentorship_requests.status = 'accepted'
+          )`.as<boolean>(),
         })
         .from(mentors)
         .innerJoin(userTable, eq(mentors.userId, userTable.id))
@@ -100,7 +103,10 @@ export const getAllMentors: AppRouteHandler<GetMentors> = async (c) => {
       {
         status_code: OK,
         message: "Mentors retrieved successfully",
-        data: mentorsList,
+        data: mentorsList.map((mentor) => ({
+          ...mentor,
+          isCurrentMentor: mentor.isCurrentMentor || false,
+        })),
         pagination: {
           currentPage: page,
           totalPages,
@@ -129,6 +135,7 @@ export const getAllMentors: AppRouteHandler<GetMentors> = async (c) => {
  */
 export const getMentorById: AppRouteHandler<GetMentorById> = async (c) => {
   const mentorId = c.req.param("mentorId");
+  const candidateId = c.get("user")?.id;
 
   try {
     const mentorData = await db
@@ -150,7 +157,14 @@ export const getMentorById: AppRouteHandler<GetMentorById> = async (c) => {
         // User fields
         name: userTable.name,
         email: userTable.email,
-        image: userTable.image,
+        // Check if the mentor is the current mentor for the candidate
+        isCurrentMentor: sql`EXISTS (
+          SELECT 1
+          FROM mentorship_requests
+          WHERE mentorship_requests.candidate_id = ${candidateId}
+            AND mentorship_requests.mentor_id = ${mentorId}
+            AND mentorship_requests.status = 'accepted'
+        )`.as<boolean>(),
       })
       .from(mentors)
       .innerJoin(userTable, eq(mentors.userId, userTable.id))
@@ -176,7 +190,10 @@ export const getMentorById: AppRouteHandler<GetMentorById> = async (c) => {
       {
         status_code: OK,
         message: "Mentor retrieved successfully",
-        data: mentorData[0],
+        data: {
+          ...mentorData[0],
+          isCurrentMentor: mentorData[0].isCurrentMentor || false,
+        },
       },
       OK,
     );

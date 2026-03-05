@@ -9,16 +9,11 @@ import {
   eq,
   ilike,
   inArray,
-  ne,
   sql,
 } from "drizzle-orm";
 import {
   GetMentorAcceptedCandidates,
-  GetMentorAcceptedCandidatesApplications,
-  GetMentorDashboard,
-  GetMentorHiredCandidates,
   GetMentorStats,
-  GetMentorUnitCandidates,
   GetMentorUnitProfile,
   GetMentorUnits,
 } from "./view.routes";
@@ -36,18 +31,289 @@ import {
 } from "@/lib/openapi/http-status-codes";
 
 /**
- * GET /mentor/candidates
+ * GET /mentor/accepted-candidates
  *
- * Returns a paginated list of candidates whose request this mentor ACCEPTED.
- * search → filters by candidate name (case-insensitive)
+ * Supports three modes via the `filter` query parameter:
+ *
+ *  "recent" (default when filter is omitted or "recent"):
+ *    Returns the 10 most-recently accepted candidates. No pagination applied.
+ *    Useful for dashboard widgets / quick overviews.
+ *
+ *  "all":
+ *    Returns all accepted candidates with full pagination.
+ *    search → filter by candidate name (case-insensitive).
+ *
+ *  "unit":
+ *    Returns only the accepted candidates who have at least one application
+ *    to an internship belonging to the given `unitId`.
+ *    search → additionally filter by candidate name.
+ *    Paginated.
  */
 export const getMentorAcceptedCandidates: AppRouteHandler<
   GetMentorAcceptedCandidates
 > = async (c) => {
   const user = c.get("user");
-  const { search, page = 1, limit = 10 } = c.req.valid("query");
+  const {
+    filter = "all",
+    unitId,
+    search,
+    page = 1,
+    limit = 10,
+  } = c.req.valid("query");
 
   try {
+    // ── Alias unit's user row to avoid column clash with candidate user ─────────
+    const unitUser = aliasedTable(userTable, "unit_user");
+
+    // ── Shared candidate + latest application select ──────────────────────────
+    // LEFT JOINs to applications/internships/units mean candidates with no
+    // applications are still returned; application fields will be null.
+    const candidateSelect = {
+      requestId: mentorshipRequests.id,
+      message: mentorshipRequests.message,
+      requestedAt: mentorshipRequests.createdAt,
+      acceptedAt: mentorshipRequests.updatedAt,
+      candidateUserId: candidates.userId,
+      candidateName: userTable.name,
+      candidateEmail: userTable.email,
+      candidateAvatarUrl: candidates.avatarUrl,
+      candidateProfileSummary: candidates.profileSummary,
+      candidateSkills: candidates.skills,
+      candidateExperienceLevel: candidates.experienceLevel,
+      // Application enrichment fields (null when candidate has no application)
+      applicationId: applications.id,
+      internshipTitle: internships.title,
+      unitName: unitUser.name,
+    } as const;
+
+    const mapRow = (row: (typeof rows)[number]) => ({
+      requestId: row.requestId,
+      message: row.message,
+      requestedAt: row.requestedAt,
+      acceptedAt: row.acceptedAt,
+      candidate: {
+        userId: row.candidateUserId,
+        name: row.candidateName,
+        email: row.candidateEmail,
+        avatarUrl: row.candidateAvatarUrl,
+        profileSummary: row.candidateProfileSummary,
+        skills: row.candidateSkills,
+      },
+      // null when the candidate has not applied anywhere yet
+      application: row.applicationId
+        ? {
+            applicationId: row.applicationId,
+            internshipTitle: row.internshipTitle,
+            unitName: row.unitName,
+          }
+        : null,
+    });
+
+    // ── Shared LEFT JOIN chain appended after the core FROM/innerJoins ────────
+    const applyAppJoins = (q: any) =>
+      q
+        .leftJoin(applications, eq(applications.userId, candidates.userId))
+        .leftJoin(internships, eq(applications.internshipId, internships.id))
+        .leftJoin(units, eq(internships.createdBy, units.userId))
+        .leftJoin(unitUser, eq(units.userId, unitUser.id));
+
+    // ── MODE: "recent" ────────────────────────────────────────────────────────
+    // Return the 10 most-recently accepted candidates with their application info.
+    if (filter === "recent") {
+      const baseConditions = [
+        eq(mentorshipRequests.mentorId, user.id),
+        eq(mentorshipRequests.status, "accepted"),
+      ];
+      const whereClause = search
+        ? and(...baseConditions, ilike(userTable.name, `%${search}%`))
+        : and(...baseConditions);
+
+      const rows = await applyAppJoins(
+        db
+          .select(candidateSelect)
+          .from(mentorshipRequests)
+          .innerJoin(
+            candidates,
+            eq(mentorshipRequests.candidateId, candidates.userId),
+          )
+          .innerJoin(userTable, eq(candidates.userId, userTable.id)) as any,
+      )
+        .where(whereClause)
+        .orderBy(desc(mentorshipRequests.updatedAt))
+        .limit(10);
+
+      return c.json(
+        {
+          status_code: OK,
+          message: "Recent accepted candidates retrieved successfully",
+          data: rows.map(mapRow),
+          pagination: {
+            currentPage: 1,
+            totalPages: 1,
+            totalItems: rows.length,
+            itemsPerPage: 10,
+          },
+        },
+        OK,
+      );
+    }
+
+    // ── MODE: "unit" ──────────────────────────────────────────────────────────
+    // Return accepted candidates who applied to the given unitId, with their
+    // application at that unit included in the response.
+    if (filter === "unit") {
+      if (!unitId) {
+        return c.json(
+          {
+            status_code: INTERNAL_SERVER_ERROR,
+            message: "unitId is required when filter is 'unit'",
+          },
+          INTERNAL_SERVER_ERROR,
+        );
+      }
+
+      const offset = (page - 1) * limit;
+
+      // Step 1: collect all accepted candidateIds for this mentor
+      const acceptedRows = await db
+        .select({ candidateId: mentorshipRequests.candidateId })
+        .from(mentorshipRequests)
+        .where(
+          and(
+            eq(mentorshipRequests.mentorId, user.id),
+            eq(mentorshipRequests.status, "accepted"),
+          ),
+        );
+
+      const acceptedCandidateIds = acceptedRows.map((r) => r.candidateId);
+
+      if (acceptedCandidateIds.length === 0) {
+        return c.json(
+          {
+            status_code: OK,
+            message: "You have not accepted any candidates yet.",
+            data: [],
+            pagination: {
+              currentPage: page,
+              totalPages: 0,
+              totalItems: 0,
+              itemsPerPage: limit,
+            },
+          },
+          OK,
+        );
+      }
+
+      // Step 2: which of those candidates applied to this unit?
+      const candidatesAtUnit = await db
+        .selectDistinct({ candidateId: applications.userId })
+        .from(applications)
+        .innerJoin(internships, eq(applications.internshipId, internships.id))
+        .where(
+          and(
+            inArray(applications.userId, acceptedCandidateIds),
+            eq(internships.createdBy, unitId),
+          ),
+        );
+
+      const candidateIdsAtUnit = candidatesAtUnit.map((r) => r.candidateId);
+
+      if (candidateIdsAtUnit.length === 0) {
+        return c.json(
+          {
+            status_code: OK,
+            message:
+              "None of your accepted candidates have applied to this unit.",
+            data: [],
+            pagination: {
+              currentPage: page,
+              totalPages: 0,
+              totalItems: 0,
+              itemsPerPage: limit,
+            },
+          },
+          OK,
+        );
+      }
+
+      // Step 3: fetch candidates with their application scoped to this unit
+      const baseConditions = [
+        eq(mentorshipRequests.mentorId, user.id),
+        eq(mentorshipRequests.status, "accepted"),
+        inArray(mentorshipRequests.candidateId, candidateIdsAtUnit),
+        // Scope the LEFT JOIN result to only this unit's internships
+        eq(internships.createdBy, unitId),
+      ];
+
+      const whereClause = search
+        ? and(...baseConditions, ilike(userTable.name, `%${search}%`))
+        : and(...baseConditions);
+
+      // Count query doesn't need app joins — count from mentorshipRequests only
+      const countConditions = search
+        ? and(
+            eq(mentorshipRequests.mentorId, user.id),
+            eq(mentorshipRequests.status, "accepted"),
+            inArray(mentorshipRequests.candidateId, candidateIdsAtUnit),
+            ilike(userTable.name, `%${search}%`),
+          )
+        : and(
+            eq(mentorshipRequests.mentorId, user.id),
+            eq(mentorshipRequests.status, "accepted"),
+            inArray(mentorshipRequests.candidateId, candidateIdsAtUnit),
+          );
+
+      const [rows, totalCountResult] = await Promise.all([
+        applyAppJoins(
+          db
+            .select(candidateSelect)
+            .from(mentorshipRequests)
+            .innerJoin(
+              candidates,
+              eq(mentorshipRequests.candidateId, candidates.userId),
+            )
+            .innerJoin(userTable, eq(candidates.userId, userTable.id)) as any,
+        )
+          .where(whereClause)
+          .orderBy(desc(mentorshipRequests.updatedAt))
+          .limit(limit)
+          .offset(offset),
+
+        db
+          .select({ count: count() })
+          .from(mentorshipRequests)
+          .innerJoin(
+            candidates,
+            eq(mentorshipRequests.candidateId, candidates.userId),
+          )
+          .innerJoin(userTable, eq(candidates.userId, userTable.id))
+          .where(countConditions),
+      ]);
+
+      const totalItems = totalCountResult[0]?.count ?? 0;
+      const totalPages = Math.ceil(totalItems / limit);
+
+      return c.json(
+        {
+          status_code: OK,
+          message:
+            rows.length === 0
+              ? "No candidates found for this unit."
+              : "Candidates for unit retrieved successfully",
+          data: rows.map(mapRow),
+          pagination: {
+            currentPage: page,
+            totalPages,
+            totalItems,
+            itemsPerPage: limit,
+          },
+        },
+        OK,
+      );
+    }
+
+    // ── MODE: "all" (default) ─────────────────────────────────────────────────
+    // Full paginated list of all accepted candidates with their latest application.
     const offset = (page - 1) * limit;
 
     const baseConditions = [
@@ -60,31 +326,22 @@ export const getMentorAcceptedCandidates: AppRouteHandler<
       : and(...baseConditions);
 
     const [rows, totalCountResult] = await Promise.all([
-      db
-        .select({
-          requestId: mentorshipRequests.id,
-          message: mentorshipRequests.message,
-          requestedAt: mentorshipRequests.createdAt,
-          acceptedAt: mentorshipRequests.updatedAt, // updatedAt = when status last changed → i.e. when accepted
-          candidateUserId: candidates.userId,
-          candidateName: userTable.name,
-          candidateEmail: userTable.email,
-          candidateAvatarUrl: candidates.avatarUrl,
-          candidateProfileSummary: candidates.profileSummary,
-          candidateSkills: candidates.skills,
-          candidateExperienceLevel: candidates.experienceLevel,
-        })
-        .from(mentorshipRequests)
-        .innerJoin(
-          candidates,
-          eq(mentorshipRequests.candidateId, candidates.userId),
-        )
-        .innerJoin(userTable, eq(candidates.userId, userTable.id))
+      applyAppJoins(
+        db
+          .select(candidateSelect)
+          .from(mentorshipRequests)
+          .innerJoin(
+            candidates,
+            eq(mentorshipRequests.candidateId, candidates.userId),
+          )
+          .innerJoin(userTable, eq(candidates.userId, userTable.id)) as any,
+      )
         .where(allConditions)
-        .orderBy(desc(mentorshipRequests.updatedAt)) // most recently accepted first
+        .orderBy(desc(mentorshipRequests.updatedAt))
         .limit(limit)
         .offset(offset),
 
+      // Count on mentorshipRequests only (no app joins needed for pagination count)
       db
         .select({ count: count() })
         .from(mentorshipRequests)
@@ -99,27 +356,11 @@ export const getMentorAcceptedCandidates: AppRouteHandler<
     const totalItems = totalCountResult[0]?.count ?? 0;
     const totalPages = Math.ceil(totalItems / limit);
 
-    const data = rows.map((row) => ({
-      requestId: row.requestId,
-      message: row.message,
-      requestedAt: row.requestedAt,
-      acceptedAt: row.acceptedAt,
-      candidate: {
-        userId: row.candidateUserId,
-        name: row.candidateName,
-        email: row.candidateEmail,
-        avatarUrl: row.candidateAvatarUrl,
-        profileSummary: row.candidateProfileSummary,
-        skills: row.candidateSkills,
-        experienceLevel: row.candidateExperienceLevel,
-      },
-    }));
-
     return c.json(
       {
         status_code: OK,
         message: "Accepted candidates retrieved successfully",
-        data,
+        data: rows.map(mapRow),
         pagination: {
           currentPage: page,
           totalPages,
@@ -131,196 +372,6 @@ export const getMentorAcceptedCandidates: AppRouteHandler<
     );
   } catch (err) {
     console.error("Error fetching accepted candidates:", err);
-    return c.json(
-      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
-      INTERNAL_SERVER_ERROR,
-    );
-  }
-};
-
-/**
- * GET /mentor/accepted-candidates/applications
- *
- * Strategy:
- *  1. Fetch all candidateIds this mentor has accepted (sub-query / in-memory).
- *     This is typically a small set so it's cheap.
- *  2. If none, return an empty paginated result immediately.
- *  3. Join applications → candidates → user (candidate) → internships → units → user (unit).
- *     Filter to only the accepted candidateIds.
- *  4. Apply optional search (candidate name OR internship title) and status filter.
- *  5. Paginate and return.
- */
-export const getMentorAcceptedCandidatesApplications: AppRouteHandler<
-  GetMentorAcceptedCandidatesApplications
-> = async (c) => {
-  const mentor = c.get("user");
-  const { search, status, page = 1, limit = 10 } = c.req.valid("query");
-
-  try {
-    // ── Step 1: get all accepted candidateIds for this mentor ─────────────────
-    const acceptedRows = await db
-      .select({ candidateId: mentorshipRequests.candidateId })
-      .from(mentorshipRequests)
-      .where(
-        and(
-          eq(mentorshipRequests.mentorId, mentor.id),
-          eq(mentorshipRequests.status, "accepted"),
-        ),
-      );
-
-    const acceptedCandidateIds = acceptedRows.map((r) => r.candidateId);
-
-    // ── Step 2: early-return if mentor has no accepted candidates ─────────────
-    if (acceptedCandidateIds.length === 0) {
-      return c.json(
-        {
-          status_code: OK,
-          message:
-            "You have not accepted any candidates yet. Accept mentorship requests to see their applications here.",
-          data: [],
-          pagination: {
-            currentPage: page,
-            totalPages: 0,
-            totalItems: 0,
-            itemsPerPage: limit,
-          },
-        },
-        OK,
-      );
-    }
-
-    // ── Step 3: alias unit's user row to avoid column clash ───────────────────
-    const unitUser = aliasedTable(userTable, "unit_user");
-
-    // ── Step 4: build conditions ──────────────────────────────────────────────
-    const offset = (page - 1) * limit;
-
-    const baseConditions = [inArray(applications.userId, acceptedCandidateIds)];
-
-    if (status) {
-      baseConditions.push(eq(applications.status, status));
-    }
-
-    // search matches candidate name OR internship title
-    const searchCondition = search
-      ? sql`(${ilike(userTable.name, `%${search}%`)} OR ${ilike(internships.title, `%${search}%`)})`
-      : undefined;
-
-    const allConditions = searchCondition
-      ? and(...baseConditions, searchCondition)
-      : and(...baseConditions);
-
-    // ── Step 5: count + data in parallel ─────────────────────────────────────
-    const [rows, totalCountResult] = await Promise.all([
-      db
-        .select({
-          // Application
-          applicationId: applications.id,
-          appStatus: applications.status,
-          appliedAt: applications.createdAt,
-          updatedAt: applications.updatedAt,
-          profileScore: applications.profileScore,
-          candidateOfferDecision: applications.candidateOfferDecision,
-          unitOfferDecision: applications.unitOfferDecision,
-          // Candidate snapshot (from candidates + user tables)
-          candidateUserId: candidates.userId,
-          candidateName: userTable.name,
-          candidateEmail: userTable.email,
-          candidateAvatarUrl: candidates.avatarUrl,
-          candidateProfileSummary: candidates.profileSummary,
-          candidateSkills: candidates.skills,
-          candidateExperienceLevel: candidates.experienceLevel,
-          // Internship
-          internshipId: internships.id,
-          internshipTitle: internships.title,
-          internshipDescription: internships.description,
-          internshipDuration: internships.duration,
-          internshipJobType: internships.jobType,
-          internshipIsPaid: internships.isPaid,
-          internshipPayment: internships.payment,
-          internshipStatus: internships.status,
-          internshipClosingDate: internships.closingDate,
-          internshipSkillsRequired: internships.skillsRequired,
-          // Unit (via aliased user row)
-          unitUserId: units.userId,
-          unitName: unitUser.name,
-          unitEmail: unitUser.email,
-          unitImage: unitUser.image,
-        })
-        .from(applications)
-        .innerJoin(candidates, eq(applications.userId, candidates.userId))
-        .innerJoin(userTable, eq(candidates.userId, userTable.id))
-        .innerJoin(internships, eq(applications.internshipId, internships.id))
-        .innerJoin(units, eq(internships.createdBy, units.userId))
-        .innerJoin(unitUser, eq(units.userId, unitUser.id))
-        .where(allConditions)
-        .orderBy(desc(applications.createdAt))
-        .limit(limit)
-        .offset(offset),
-
-      db
-        .select({ count: count() })
-        .from(applications)
-        .innerJoin(candidates, eq(applications.userId, candidates.userId))
-        .innerJoin(userTable, eq(candidates.userId, userTable.id))
-        .innerJoin(internships, eq(applications.internshipId, internships.id))
-        .innerJoin(units, eq(internships.createdBy, units.userId))
-        .innerJoin(unitUser, eq(units.userId, unitUser.id))
-        .where(allConditions),
-    ]);
-
-    const totalItems = totalCountResult[0]?.count ?? 0;
-    const totalPages = Math.ceil(totalItems / limit);
-
-    const data = rows.map((row) => ({
-      applicationId: row.applicationId,
-      status: row.appStatus,
-      appliedAt: row.appliedAt,
-      updatedAt: row.updatedAt,
-      candidate: {
-        userId: row.candidateUserId,
-        name: row.candidateName,
-        email: row.candidateEmail,
-        avatarUrl: row.candidateAvatarUrl,
-        profileSummary: row.candidateProfileSummary,
-        skills: row.candidateSkills,
-        experienceLevel: row.candidateExperienceLevel,
-      },
-      internship: {
-        title: row.internshipTitle,
-        unit: {
-          userId: row.unitUserId,
-          name: row.unitName,
-          email: row.unitEmail,
-          image: row.unitImage,
-        },
-      },
-    }));
-
-    const message =
-      data.length === 0
-        ? "Your candidates have not applied to any internship yet."
-        : "Applications retrieved successfully.";
-
-    return c.json(
-      {
-        status_code: OK,
-        message,
-        data,
-        pagination: {
-          currentPage: page,
-          totalPages,
-          totalItems,
-          itemsPerPage: limit,
-        },
-      },
-      OK,
-    );
-  } catch (err) {
-    console.error(
-      "Error fetching accepted candidates applications for mentor:",
-      err,
-    );
     return c.json(
       { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
       INTERNAL_SERVER_ERROR,
@@ -575,620 +626,6 @@ export const getMentorUnitProfile: AppRouteHandler<
   }
 };
 
-// ─── ADD THIS to view.handlers.ts ────────────────────────────────────────────
-// Add to route type imports:
-//   GetMentorDashboard
-
-/**
- * GET /mentor/dashboard
- *
- * Strategy:
- *  1. Fetch all accepted candidates for this mentor (paginated by candidate).
- *  2. If none → early return with clear message.
- *  3. Fetch ALL applications for those candidates in one query
- *     (joined with internships + units), then group them in-memory by candidateId.
- *  4. Apply search filter (candidate name OR internship title) and status filter.
- *  5. Merge: each candidate row gets its own applications[] array nested inside.
- *  6. Return totalAcceptedCandidates + totalApplications as summary counts.
- */
-export const getMentorDashboard: AppRouteHandler<GetMentorDashboard> = async (
-  c,
-) => {
-  const mentor = c.get("user");
-  const { search, status, page = 1, limit = 10 } = c.req.valid("query");
-
-  try {
-    const offset = (page - 1) * limit;
-
-    // Step 1: fetch accepted candidates for this mentor (paginated)
-    // search on candidate name is applied here
-    const candidateConditions = [
-      eq(mentorshipRequests.mentorId, mentor.id),
-      eq(mentorshipRequests.status, "accepted"),
-    ];
-
-    const candidateNameCondition = search
-      ? ilike(userTable.name, `%${search}%`)
-      : undefined;
-
-    const candidateWhereClause = candidateNameCondition
-      ? and(...candidateConditions, candidateNameCondition)
-      : and(...candidateConditions);
-
-    const [candidateRows, candidateTotalResult] = await Promise.all([
-      db
-        .select({
-          requestId: mentorshipRequests.id,
-          acceptedAt: mentorshipRequests.updatedAt,
-          candidateUserId: candidates.userId,
-          candidateName: userTable.name,
-          candidateEmail: userTable.email,
-          candidateAvatarUrl: candidates.avatarUrl,
-          candidateProfileSummary: candidates.profileSummary,
-          candidateSkills: candidates.skills,
-          candidateExperienceLevel: candidates.experienceLevel,
-        })
-        .from(mentorshipRequests)
-        .innerJoin(
-          candidates,
-          eq(mentorshipRequests.candidateId, candidates.userId),
-        )
-        .innerJoin(userTable, eq(candidates.userId, userTable.id))
-        .where(candidateWhereClause)
-        .orderBy(desc(mentorshipRequests.updatedAt))
-        .limit(limit)
-        .offset(offset),
-
-      db
-        .select({ count: count() })
-        .from(mentorshipRequests)
-        .innerJoin(
-          candidates,
-          eq(mentorshipRequests.candidateId, candidates.userId),
-        )
-        .innerJoin(userTable, eq(candidates.userId, userTable.id))
-        .where(candidateWhereClause),
-    ]);
-
-    // Step 2: early return if no accepted candidates
-    if (candidateRows.length === 0) {
-      return c.json(
-        {
-          status_code: OK,
-          message:
-            "You have not accepted any candidates yet. Accept mentorship requests to see them here.",
-          data: {
-            totalAcceptedCandidates: 0,
-            totalApplications: 0,
-            candidates: [],
-            pagination: {
-              currentPage: page,
-              totalPages: 0,
-              totalItems: 0,
-              itemsPerPage: limit,
-            },
-          },
-        },
-        OK,
-      );
-    }
-
-    const acceptedCandidateIds = candidateRows.map((r) => r.candidateUserId);
-
-    // Step 3: fetch all applications for these candidates in one query
-    const unitUser = aliasedTable(userTable, "unit_user");
-
-    const appConditions = [inArray(applications.userId, acceptedCandidateIds)];
-
-    if (status) {
-      appConditions.push(eq(applications.status, status));
-    }
-
-    // search on internship title (in addition to candidate name already filtered above)
-    const internshipTitleCondition = search
-      ? ilike(internships.title, `%${search}%`)
-      : undefined;
-
-    // For applications: match if internship title matches search
-    // (candidates already filtered by name in step 1)
-    const appWhereClause = internshipTitleCondition
-      ? and(...appConditions, internshipTitleCondition)
-      : and(...appConditions);
-
-    const applicationRows = await db
-      .select({
-        applicationId: applications.id,
-        candidateId: applications.userId,
-        appStatus: applications.status,
-        appliedAt: applications.createdAt,
-        updatedAt: applications.updatedAt,
-        profileScore: applications.profileScore,
-        candidateOfferDecision: applications.candidateOfferDecision,
-        unitOfferDecision: applications.unitOfferDecision,
-        internshipId: internships.id,
-        internshipTitle: internships.title,
-        internshipDescription: internships.description,
-        internshipDuration: internships.duration,
-        internshipJobType: internships.jobType,
-        internshipIsPaid: internships.isPaid,
-        internshipPayment: internships.payment,
-        internshipStatus: internships.status,
-        internshipClosingDate: internships.closingDate,
-        internshipSkillsRequired: internships.skillsRequired,
-        unitUserId: units.userId,
-        unitName: unitUser.name,
-        unitEmail: unitUser.email,
-        unitImage: unitUser.image,
-      })
-      .from(applications)
-      .innerJoin(internships, eq(applications.internshipId, internships.id))
-      .innerJoin(units, eq(internships.createdBy, units.userId))
-      .innerJoin(unitUser, eq(units.userId, unitUser.id))
-      .where(appWhereClause)
-      .orderBy(desc(applications.createdAt));
-
-    // Step 4: group applications by candidateId in-memory
-    const applicationsByCandidateId = new Map<string, typeof applicationRows>();
-    for (const app of applicationRows) {
-      if (!applicationsByCandidateId.has(app.candidateId)) {
-        applicationsByCandidateId.set(app.candidateId, []);
-      }
-      applicationsByCandidateId.get(app.candidateId)!.push(app);
-    }
-
-    // Step 5: merge candidates with their applications
-    const candidateData = candidateRows.map((row) => {
-      const candidateApps =
-        applicationsByCandidateId.get(row.candidateUserId) ?? [];
-      return {
-        requestId: row.requestId,
-        acceptedAt: row.acceptedAt,
-        candidate: {
-          userId: row.candidateUserId,
-          name: row.candidateName,
-          email: row.candidateEmail,
-          avatarUrl: row.candidateAvatarUrl,
-          profileSummary: row.candidateProfileSummary,
-          skills: row.candidateSkills,
-          experienceLevel: row.candidateExperienceLevel,
-        },
-        applications: candidateApps.map((app) => ({
-          applicationId: app.applicationId,
-          status: app.appStatus,
-          appliedAt: app.appliedAt,
-          updatedAt: app.updatedAt,
-          profileScore: app.profileScore,
-          candidateOfferDecision: app.candidateOfferDecision,
-          unitOfferDecision: app.unitOfferDecision,
-          internship: {
-            id: app.internshipId,
-            title: app.internshipTitle,
-            description: app.internshipDescription,
-            duration: app.internshipDuration,
-            jobType: app.internshipJobType,
-            isPaid: app.internshipIsPaid,
-            payment: app.internshipPayment,
-            status: app.internshipStatus,
-            closingDate: app.internshipClosingDate,
-            skillsRequired: app.internshipSkillsRequired,
-            unit: {
-              userId: app.unitUserId,
-              name: app.unitName,
-              email: app.unitEmail,
-              image: app.unitImage,
-            },
-          },
-        })),
-      };
-    });
-
-    const totalItems = candidateTotalResult[0]?.count ?? 0;
-    const totalPages = Math.ceil(totalItems / limit);
-    const totalApplications = applicationRows.length;
-
-    const message =
-      totalApplications === 0
-        ? "Your accepted candidates have not applied to any internship yet."
-        : "Dashboard data retrieved successfully.";
-
-    return c.json(
-      {
-        status_code: OK,
-        message,
-        data: {
-          totalAcceptedCandidates: totalItems,
-          totalApplications,
-          candidates: candidateData,
-          pagination: {
-            currentPage: page,
-            totalPages,
-            totalItems,
-            itemsPerPage: limit,
-          },
-        },
-      },
-      OK,
-    );
-  } catch (err) {
-    console.error("Error fetching mentor dashboard:", err);
-    return c.json(
-      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
-      INTERNAL_SERVER_ERROR,
-    );
-  }
-};
-
-export const getMentorHiredCandidates: AppRouteHandler<
-  GetMentorHiredCandidates
-> = async (c) => {
-  const mentor = c.get("user");
-  const { search, page = 1, limit = 10 } = c.req.valid("query");
-
-  try {
-    // Step 1: get all accepted candidateIds for this mentor
-    const acceptedRows = await db
-      .select({ candidateId: mentorshipRequests.candidateId })
-      .from(mentorshipRequests)
-      .where(
-        and(
-          eq(mentorshipRequests.mentorId, mentor.id),
-          eq(mentorshipRequests.status, "accepted"),
-        ),
-      );
-
-    const acceptedCandidateIds = acceptedRows.map((r) => r.candidateId);
-
-    // Step 2: early return if no accepted candidates
-    if (acceptedCandidateIds.length === 0) {
-      return c.json(
-        {
-          status_code: OK,
-          message: "You have not accepted any candidates yet.",
-          data: [],
-          pagination: {
-            currentPage: page,
-            totalPages: 0,
-            totalItems: 0,
-            itemsPerPage: limit,
-          },
-        },
-        OK,
-      );
-    }
-
-    const offset = (page - 1) * limit;
-    const unitUser = aliasedTable(userTable, "unit_user");
-
-    // Step 3: build conditions — only "hired" applications from accepted candidates
-    const baseConditions = [
-      inArray(applications.userId, acceptedCandidateIds),
-      eq(applications.status, "hired"),
-    ];
-
-    const searchCondition = search
-      ? sql`(${ilike(userTable.name, `%${search}%`)} OR ${ilike(internships.title, `%${search}%`)})`
-      : undefined;
-
-    const allConditions = searchCondition
-      ? and(...baseConditions, searchCondition)
-      : and(...baseConditions);
-
-    // Step 4: count + data in parallel
-    const [rows, totalCountResult] = await Promise.all([
-      db
-        .select({
-          applicationId: applications.id,
-          appliedAt: applications.createdAt,
-          updatedAt: applications.updatedAt,
-          candidateOfferDecision: applications.candidateOfferDecision,
-          unitOfferDecision: applications.unitOfferDecision,
-          // Candidate
-          candidateUserId: candidates.userId,
-          candidateName: userTable.name,
-          candidateEmail: userTable.email,
-          candidateAvatarUrl: candidates.avatarUrl,
-          candidateProfileSummary: candidates.profileSummary,
-          candidateSkills: candidates.skills,
-          candidateExperienceLevel: candidates.experienceLevel,
-          // Internship
-          internshipId: internships.id,
-          internshipTitle: internships.title,
-          internshipDuration: internships.duration,
-          internshipJobType: internships.jobType,
-          internshipIsPaid: internships.isPaid,
-          internshipPayment: internships.payment,
-          // Unit
-          unitUserId: units.userId,
-          unitName: unitUser.name,
-          unitAvatarUrl: units.avatarUrl,
-          unitEmail: unitUser.email,
-        })
-        .from(applications)
-        .innerJoin(candidates, eq(applications.userId, candidates.userId))
-        .innerJoin(userTable, eq(candidates.userId, userTable.id))
-        .innerJoin(internships, eq(applications.internshipId, internships.id))
-        .innerJoin(units, eq(internships.createdBy, units.userId))
-        .innerJoin(unitUser, eq(units.userId, unitUser.id))
-        .where(allConditions)
-        .orderBy(desc(applications.updatedAt))
-        .limit(limit)
-        .offset(offset),
-
-      db
-        .select({ count: count() })
-        .from(applications)
-        .innerJoin(candidates, eq(applications.userId, candidates.userId))
-        .innerJoin(userTable, eq(candidates.userId, userTable.id))
-        .innerJoin(internships, eq(applications.internshipId, internships.id))
-        .innerJoin(units, eq(internships.createdBy, units.userId))
-        .innerJoin(unitUser, eq(units.userId, unitUser.id))
-        .where(allConditions),
-    ]);
-
-    const totalItems = totalCountResult[0]?.count ?? 0;
-    const totalPages = Math.ceil(totalItems / limit);
-
-    const data = rows.map((row) => ({
-      applicationId: row.applicationId,
-      appliedAt: row.appliedAt,
-      updatedAt: row.updatedAt,
-      candidateOfferDecision: row.candidateOfferDecision,
-      unitOfferDecision: row.unitOfferDecision,
-      candidate: {
-        userId: row.candidateUserId,
-        name: row.candidateName,
-        email: row.candidateEmail,
-        avatarUrl: row.candidateAvatarUrl,
-        profileSummary: row.candidateProfileSummary,
-        skills: row.candidateSkills,
-        experienceLevel: row.candidateExperienceLevel,
-      },
-      internship: {
-        id: row.internshipId,
-        title: row.internshipTitle,
-        duration: row.internshipDuration,
-        jobType: row.internshipJobType,
-        isPaid: row.internshipIsPaid,
-        payment: row.internshipPayment,
-        unit: {
-          userId: row.unitUserId,
-          name: row.unitName,
-          avatarUrl: row.unitAvatarUrl,
-          email: row.unitEmail,
-        },
-      },
-    }));
-
-    const message =
-      data.length === 0
-        ? "None of your accepted candidates have been hired yet."
-        : "Hired candidates retrieved successfully.";
-
-    return c.json(
-      {
-        status_code: OK,
-        message,
-        data,
-        pagination: {
-          currentPage: page,
-          totalPages,
-          totalItems,
-          itemsPerPage: limit,
-        },
-      },
-      OK,
-    );
-  } catch (err) {
-    console.error("Error fetching hired candidates for mentor:", err);
-    return c.json(
-      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
-      INTERNAL_SERVER_ERROR,
-    );
-  }
-};
-
-// ─── ADD THIS to view.handlers.ts ────────────────────────────────────────────
-// Add to route type imports:
-//   GetMentorUnitCandidates
-
-/**
- * GET /mentor/units/:unitId/candidates
- *
- * Strategy:
- *  1. Get all accepted candidateIds for this mentor.
- *  2. Early-return if none.
- *  3. Guard: verify at least one accepted candidate applied to this unit
- *     (prevents mentor from querying arbitrary units).
- *  4. Query applications filtered to:
- *       - accepted candidateIds
- *       - internships belonging to this unitId
- *  5. Apply optional search (candidate name) and status filter.
- *  6. Paginate and return.
- */
-export const getMentorUnitCandidates: AppRouteHandler<
-  GetMentorUnitCandidates
-> = async (c) => {
-  const mentor = c.get("user");
-  const { unitId } = c.req.valid("param");
-  const { search, status, page = 1, limit = 10 } = c.req.valid("query");
-
-  try {
-    // Step 1: get all accepted candidateIds for this mentor
-    const acceptedRows = await db
-      .select({ candidateId: mentorshipRequests.candidateId })
-      .from(mentorshipRequests)
-      .where(
-        and(
-          eq(mentorshipRequests.mentorId, mentor.id),
-          eq(mentorshipRequests.status, "accepted"),
-        ),
-      );
-
-    const acceptedCandidateIds = acceptedRows.map((r) => r.candidateId);
-
-    // Step 2: early return if no accepted candidates
-    if (acceptedCandidateIds.length === 0) {
-      return c.json(
-        {
-          status_code: OK,
-          message: "You have not accepted any candidates yet.",
-          data: [],
-          pagination: {
-            currentPage: page,
-            totalPages: 0,
-            totalItems: 0,
-            itemsPerPage: limit,
-          },
-        },
-        OK,
-      );
-    }
-
-    // Step 3: guard — confirm at least one accepted candidate applied to this unit
-    const [access] = await db
-      .select({ id: applications.id })
-      .from(applications)
-      .innerJoin(internships, eq(applications.internshipId, internships.id))
-      .where(
-        and(
-          inArray(applications.userId, acceptedCandidateIds),
-          eq(internships.createdBy, unitId),
-        ),
-      )
-      .limit(1);
-
-    if (!access) {
-      return c.json(
-        {
-          status_code: NOT_FOUND,
-          message:
-            "Unit not found or none of your accepted candidates have applied to this unit.",
-        },
-        NOT_FOUND,
-      );
-    }
-
-    // Step 4: build conditions
-    const offset = (page - 1) * limit;
-
-    const baseConditions = [
-      inArray(applications.userId, acceptedCandidateIds),
-      eq(internships.createdBy, unitId),
-    ];
-
-    if (status) {
-      baseConditions.push(eq(applications.status, status));
-    }
-
-    const searchCondition = search
-      ? ilike(userTable.name, `%${search}%`)
-      : undefined;
-
-    const allConditions = searchCondition
-      ? and(...baseConditions, searchCondition)
-      : and(...baseConditions);
-
-    // Step 5: count + data in parallel
-    const [rows, totalCountResult] = await Promise.all([
-      db
-        .select({
-          applicationId: applications.id,
-          applicationStatus: applications.status,
-          appliedAt: applications.createdAt,
-          updatedAt: applications.updatedAt,
-          candidateOfferDecision: applications.candidateOfferDecision,
-          unitOfferDecision: applications.unitOfferDecision,
-          // Candidate snapshot
-          candidateUserId: candidates.userId,
-          candidateName: userTable.name,
-          candidateEmail: userTable.email,
-          candidateAvatarUrl: candidates.avatarUrl,
-          candidateProfileSummary: candidates.profileSummary,
-          candidateSkills: candidates.skills,
-          candidateExperienceLevel: candidates.experienceLevel,
-          // Internship they applied to at this unit
-          internshipId: internships.id,
-          internshipTitle: internships.title,
-          internshipDuration: internships.duration,
-          internshipJobType: internships.jobType,
-          internshipIsPaid: internships.isPaid,
-          internshipStatus: internships.status,
-        })
-        .from(applications)
-        .innerJoin(candidates, eq(applications.userId, candidates.userId))
-        .innerJoin(userTable, eq(candidates.userId, userTable.id))
-        .innerJoin(internships, eq(applications.internshipId, internships.id))
-        .where(allConditions)
-        .orderBy(desc(applications.createdAt))
-        .limit(limit)
-        .offset(offset),
-
-      db
-        .select({ count: count() })
-        .from(applications)
-        .innerJoin(candidates, eq(applications.userId, candidates.userId))
-        .innerJoin(userTable, eq(candidates.userId, userTable.id))
-        .innerJoin(internships, eq(applications.internshipId, internships.id))
-        .where(allConditions),
-    ]);
-
-    const totalItems = totalCountResult[0]?.count ?? 0;
-    const totalPages = Math.ceil(totalItems / limit);
-
-    const data = rows.map((row) => ({
-      applicationId: row.applicationId,
-      applicationStatus: row.applicationStatus,
-      appliedAt: row.appliedAt,
-      updatedAt: row.updatedAt,
-      candidateOfferDecision: row.candidateOfferDecision,
-      unitOfferDecision: row.unitOfferDecision,
-      candidate: {
-        userId: row.candidateUserId,
-        name: row.candidateName,
-        email: row.candidateEmail,
-        avatarUrl: row.candidateAvatarUrl,
-        profileSummary: row.candidateProfileSummary,
-        skills: row.candidateSkills,
-        experienceLevel: row.candidateExperienceLevel,
-      },
-      internship: {
-        id: row.internshipId,
-        title: row.internshipTitle,
-        duration: row.internshipDuration,
-        jobType: row.internshipJobType,
-        isPaid: row.internshipIsPaid,
-        status: row.internshipStatus,
-      },
-    }));
-
-    const message =
-      data.length === 0
-        ? "No candidates found for this unit."
-        : "Candidates retrieved successfully.";
-
-    return c.json(
-      {
-        status_code: OK,
-        message,
-        data,
-        pagination: {
-          currentPage: page,
-          totalPages,
-          totalItems,
-          itemsPerPage: limit,
-        },
-      },
-      OK,
-    );
-  } catch (err) {
-    console.error("Error fetching unit candidates for mentor:", err);
-    return c.json(
-      { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
-      INTERNAL_SERVER_ERROR,
-    );
-  }
-};
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Returns the first and last instant of the current calendar month (UTC). */
@@ -1216,6 +653,32 @@ export const getMentorStats: AppRouteHandler<GetMentorStats> = async (c) => {
   const { start: monthStart, end: monthEnd } = currentMonthBounds();
 
   try {
+    // ── 0. Pending Mentorship Requests ───────────────────────────────────────
+    // Requests sent to this mentor that are still awaiting a response.
+    // newThisMonth → pending requests *created* (createdAt) this month.
+    const pendingRequestsPromise = Promise.all([
+      db
+        .select({ count: count() })
+        .from(mentorshipRequests)
+        .where(
+          and(
+            eq(mentorshipRequests.mentorId, mentor.id),
+            eq(mentorshipRequests.status, "pending"),
+          ),
+        ),
+      db
+        .select({ count: count() })
+        .from(mentorshipRequests)
+        .where(
+          and(
+            eq(mentorshipRequests.mentorId, mentor.id),
+            eq(mentorshipRequests.status, "pending"),
+            gte(mentorshipRequests.createdAt, monthStart),
+            lt(mentorshipRequests.createdAt, monthEnd),
+          ),
+        ),
+    ]);
+
     // ── 1. Accepted Mentees ───────────────────────────────────────────────────
     // "accepted" rows in mentorship_requests where mentorId = me.
     // newThisMonth → requests accepted (updatedAt) in current month.
@@ -1335,11 +798,13 @@ export const getMentorStats: AppRouteHandler<GetMentorStats> = async (c) => {
 
     // ── Await all in parallel ─────────────────────────────────────────────────
     const [
+      [pendingTotal, pendingNew],
       [acceptedTotal, acceptedNew],
       [unitsTotal, unitsNew],
       [upcomingTotal, upcomingNew],
       [hiredTotal, hiredNew],
     ] = await Promise.all([
+      pendingRequestsPromise,
       acceptedMenteesPromise,
       menteeUnitsPromise,
       upcomingMeetingsPromise,
@@ -1351,6 +816,10 @@ export const getMentorStats: AppRouteHandler<GetMentorStats> = async (c) => {
         status_code: OK,
         message: "Mentor stats retrieved successfully.",
         data: {
+          pendingRequests: {
+            total: pendingTotal[0]?.count ?? 0,
+            newThisMonth: pendingNew[0]?.count ?? 0,
+          },
           acceptedMentees: {
             total: acceptedTotal[0]?.count ?? 0,
             newThisMonth: acceptedNew[0]?.count ?? 0,

@@ -24,7 +24,7 @@ import {
  */
 export const getMentors = createRoute({
   method: "get" as const,
-  path: "/candidate/mentors",
+  path: "/mentors",
   tags: ["Candidate - Mentors"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Get all available mentors",
@@ -51,7 +51,7 @@ export const getMentors = createRoute({
  */
 export const getMentorById = createRoute({
   method: "get" as const,
-  path: "/candidate/mentors/:mentorId",
+  path: "/mentors/:mentorId",
   tags: ["Candidate - Mentors"],
   middleware: requireRole({ allowedRoles: ["candidate"] }),
   summary: "Get detailed mentor information",

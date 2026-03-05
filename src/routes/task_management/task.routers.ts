@@ -70,7 +70,9 @@ export const getAllTasks = createRoute({
   path: "/tasks",
   tags: ["Tasks"],
   summary: "Get all tasks for hired candidates (grouped by internship)",
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({
+    allowedRoles: ["candidate", "unit", "admin", "mentor"],
+  }),
   description:
     "Get all tasks for hired candidates grouped by internship. Candidates see their own tasks with unit info. Units see tasks for all hired candidates in their internships grouped by internship and applicant.",
   request: {},
