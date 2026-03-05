@@ -22,6 +22,7 @@ import type {
   UpdateTask,
 } from "./task.routers";
 import { candidates } from "@/db/schema/candidate.schema";
+import { mentorshipRequests } from "@/db/schema/mentorship-requests.schema";
 
 // ============================================================================
 // CANDIDATE HANDLERS
@@ -231,6 +232,107 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
             eq(applications.status, "hired"),
           ),
         );
+
+      const groupedData = rows.reduce<
+        Array<{
+          internshipId: string;
+          internshipName: string | null;
+          internshipCreatedAt: string | null;
+          internshipClosingDate: string | null;
+          internshipDuration: string | null;
+          internshipJobType: string | null;
+          applicationId: string;
+          applicantId: string;
+          applicantName: string | null;
+          unitName: string | null;
+          candidateAvatarUrl: string | null;
+          tasks: Array<{
+            taskId: string;
+            taskStatus: "pending" | "submitted" | "redo" | "accepted";
+          }>;
+        }>
+      >((acc, row) => {
+        const key = `${row.internshipId}-${row.applicantId}`;
+        let existing = acc.find(
+          (i) => `${i.internshipId}-${i.applicantId}` === key,
+        );
+
+        if (!existing) {
+          existing = {
+            internshipId: row.internshipId,
+            internshipName: row.internshipName,
+            internshipCreatedAt: row.internshipCreatedAt,
+            internshipClosingDate: row.internshipClosingDate,
+            internshipDuration: row.internshipDuration,
+            internshipJobType: row.internshipJobType,
+            applicationId: row.applicationId,
+            applicantId: row.applicantId,
+            applicantName: row.applicantName,
+            unitName: row.unitName,
+            candidateAvatarUrl: row.candidateAvatarUrl,
+            tasks: [],
+          };
+          acc.push(existing);
+        }
+
+        if (row.taskId) {
+          existing.tasks.push({
+            taskId: row.taskId,
+            taskStatus: row.taskStatus!,
+          });
+        }
+
+        return acc;
+      }, []);
+
+      return c.json(
+        {
+          status_code: OK,
+          message: "Tasks retrieved successfully",
+          data: groupedData,
+        },
+        OK,
+      );
+    }
+
+    /* ============================
+       MENTOR ROLE
+    ============================ */
+    if (user.role === "mentor") {
+      const rows = await db
+        .select({
+          taskId: tasks.id,
+          taskStatus: tasks.status,
+
+          applicationId: applications.id,
+          applicantId: applications.userId,
+          applicantName: userTable.name,
+          candidateAvatarUrl: candidates.avatarUrl,
+
+          internshipId: internships.id,
+          internshipName: internships.title,
+          internshipCreatedAt: sql<string>`${internships.createdAt}::text`,
+          internshipClosingDate: internships.closingDate,
+          internshipDuration: internships.duration,
+          internshipJobType: internships.jobType,
+
+          unitName: units.name,
+        })
+        .from(applications)
+        .leftJoin(tasks, eq(tasks.applicationId, applications.id))
+        .innerJoin(internships, eq(applications.internshipId, internships.id))
+        .innerJoin(userTable, eq(applications.userId, userTable.id))
+        .leftJoin(candidates, eq(applications.userId, candidates.userId))
+        .leftJoin(units, eq(internships.createdBy, units.userId))
+        .innerJoin(
+          mentorshipRequests,
+          and(
+            eq(mentorshipRequests.candidateId, applications.userId),
+            eq(mentorshipRequests.mentorId, user.id),
+            eq(mentorshipRequests.status, "accepted"),
+          ),
+        )
+        .where(eq(applications.status, "hired"));
 
       const groupedData = rows.reduce<
         Array<{

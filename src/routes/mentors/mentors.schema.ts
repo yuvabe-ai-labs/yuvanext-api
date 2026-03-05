@@ -46,27 +46,16 @@ export const getMentorsQuerySchema = z.object({
 export const mentorListItemSchema = z.object({
   userId: z.string(),
   name: z.string().nullable(),
-  email: z.string().email(),
-  image: z.string().nullable(),
+  email: z.email(),
   mentorType: mentorTypeEnum.nullable(),
   expertiseAreas: z.array(z.string()).nullable(),
   experienceSnapshot: z.string().nullable(),
-  availabilityDays: z.array(z.string()).nullable(),
-  availabilityTimeWindows: z
-    .array(z.object({ start: z.string(), end: z.string() }))
-    .nullable(),
-  timezone: z.string().nullable(),
-  mentoringCapacity: capacityEnum.nullable(),
-  preferredStages: z.array(z.string()).nullable(),
-  communicationModes: z.array(z.string()).nullable(),
-  createdAt: z.date(),
 });
 
 export const detailedMentorSchema = z.object({
   userId: z.string(),
   name: z.string().nullable(),
-  email: z.string().email(),
-  image: z.string().nullable(),
+  email: z.email(),
   mentorType: mentorTypeEnum.nullable(),
   expertiseAreas: z.array(z.string()).nullable(),
   experienceSnapshot: z.string().nullable(),

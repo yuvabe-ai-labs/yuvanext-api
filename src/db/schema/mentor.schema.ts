@@ -37,6 +37,8 @@ export const mentors = pgTable("mentors", {
   >(), // [{ start: "09:00", end: "12:00" }, ...]
   timezone: text("timezone"), // "UTC", "IST", etc.
 
+  avatarUrl: text("avatar_url"), // from the user table
+
   // Capacity & Preferences
   mentoringCapacity: capacityEnum("mentoring_capacity"),
   preferredStages: jsonb("preferred_stages").$type<string[]>(), // ["Stage 1: Foundations", ...]

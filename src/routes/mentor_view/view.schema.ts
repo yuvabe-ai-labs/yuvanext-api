@@ -2,14 +2,38 @@ import z from "zod";
 import { candidateSnapshotSchema } from "../mentorship_request/mentorship-request.schema";
 
 /**
- * Query schema shared by both new mentor list endpoints.
- * search → filter by candidate name (case-insensitive)
+ * Query schema for the mentor accepted-candidates list.
+ *
+ * filter:
+ *   "recent" → return the 10 most-recently accepted candidates (no pagination)
+ *   "all"    → return all accepted candidates with full pagination (default)
+ *   "unit"   → return accepted candidates who have applied to the given unitId
+ *
+ * unitId is required when filter = "unit".
+ * search → filter by candidate name (case-insensitive, applied on all modes).
  */
-export const getMentorCandidatesQuerySchema = z.object({
-  search: z.string().optional().describe("Filter by candidate name"),
-  page: z.coerce.number().int().positive().default(1).optional(),
-  limit: z.coerce.number().int().positive().max(100).default(10).optional(),
-});
+export const getMentorCandidatesQuerySchema = z
+  .object({
+    filter: z
+      .enum(["recent", "all", "unit"])
+      .default("all")
+      .optional()
+      .describe(
+        '"recent" = last 10 accepted; "all" = paginated list; "unit" = candidates who applied to unitId',
+      ),
+    unitId: z
+      .string()
+      .uuid("unitId must be a valid UUID")
+      .optional()
+      .describe("Required when filter = \'unit\'"),
+    search: z.string().optional().describe("Filter by candidate name"),
+    page: z.coerce.number().int().positive().default(1).optional(),
+    limit: z.coerce.number().int().positive().max(100).default(10).optional(),
+  })
+  .refine((val) => val.filter !== "unit" || !!val.unitId, {
+    message: "unitId is required when filter is \'unit\'",
+    path: ["unitId"],
+  });
 
 /**
  * A richer candidate row returned to the mentor.
@@ -21,62 +45,6 @@ export const mentorCandidateItemSchema = z.object({
   requestedAt: z.date(), // when the request was created
   acceptedAt: z.date().nullable(), // populated only on the "accepted" endpoint
   candidate: candidateSnapshotSchema,
-});
-
-/**
- * A single application row returned to the mentor.
- * Includes which candidate submitted it so the mentor can identify them.
- */
-export const mentorAcceptedCandidateApplicationItemSchema = z.object({
-  applicationId: z.string(),
-  status: z.enum([
-    "applied",
-    "shortlisted",
-    "not_shortlisted",
-    "interviewed",
-    "hired",
-  ]),
-  appliedAt: z.date(),
-  updatedAt: z.date(),
-  profileScore: z.number().nullable(),
-  candidateOfferDecision: z.enum(["accept", "reject", "pending"]),
-  unitOfferDecision: z.enum(["selected", "reject", "pending"]),
-  candidate: candidateSnapshotSchema,
-  internship: z.object({
-    id: z.string(),
-    title: z.string(),
-    description: z.string().nullable(),
-    duration: z.string().nullable(),
-    jobType: z.enum(["part_time", "full_time", "both"]).nullable(),
-    isPaid: z.boolean().nullable(),
-    payment: z.string().nullable(),
-    status: z.enum(["active", "closed", "draft"]),
-    closingDate: z.string().nullable(),
-    skillsRequired: z.array(z.string()).nullable(),
-    unit: z.object({
-      userId: z.string(),
-      name: z.string().nullable(),
-      email: z.string().nullable(),
-      image: z.string().nullable(),
-    }),
-  }),
-});
-
-/**
- * Query schema for the mentor's accepted-candidates applications list.
- * search → filter by candidate name OR internship title
- * status → filter by application status
- */
-export const getMentorAcceptedCandidatesApplicationsQuerySchema = z.object({
-  search: z
-    .string()
-    .optional()
-    .describe("Filter by candidate name or internship title"),
-  status: z
-    .enum(["applied", "shortlisted", "not_shortlisted", "interviewed", "hired"])
-    .optional(),
-  page: z.coerce.number().int().positive().default(1).optional(),
-  limit: z.coerce.number().int().positive().max(100).default(10).optional(),
 });
 
 /**
@@ -154,32 +122,6 @@ export const getMentorDashboardQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(10).optional(),
 });
 
-/**
- * One accepted candidate row — includes their full snapshot
- * AND a nested list of all their internship applications.
- */
-export const mentorDashboardCandidateSchema = z.object({
-  requestId: z.string(),
-  acceptedAt: z.date(),
-  candidate: candidateSnapshotSchema,
-  applications: z.array(mentorAcceptedCandidateApplicationItemSchema),
-});
-
-/**
- * The full dashboard response shape.
- */
-export const mentorDashboardResponseSchema = z.object({
-  totalAcceptedCandidates: z.number(),
-  totalApplications: z.number(),
-  candidates: z.array(mentorDashboardCandidateSchema),
-  pagination: z.object({
-    currentPage: z.number(),
-    totalPages: z.number(),
-    totalItems: z.number(),
-    itemsPerPage: z.number(),
-  }),
-});
-
 export const getHiredCandidatesQuerySchema = z.object({
   search: z
     .string()
@@ -210,16 +152,6 @@ export const mentorHiredCandidateItemSchema = z.object({
       email: z.string().nullable(),
     }),
   }),
-});
-
-export const getMentorUnitCandidatesQuerySchema = z.object({
-  search: z.string().optional().describe("Filter by candidate name"),
-  status: z
-    .enum(["applied", "shortlisted", "not_shortlisted", "interviewed", "hired"])
-    .optional()
-    .describe("Filter by application status"),
-  page: z.coerce.number().int().positive().default(1).optional(),
-  limit: z.coerce.number().int().positive().max(100).default(10).optional(),
 });
 
 /**
@@ -266,6 +198,9 @@ export const statTileSchema = z.object({
  * Full response for GET /mentor/stats
  */
 export const mentorStatsResponseSchema = z.object({
+  pendingRequests: statTileSchema.describe(
+    "Mentorship requests with status 'pending' sent to this mentor",
+  ),
   acceptedMentees: statTileSchema.describe(
     "Candidates whose mentorship request the mentor accepted",
   ),

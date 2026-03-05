@@ -96,8 +96,6 @@ export const mentorSnapshotSchema = z.object({
 export const candidateSnapshotSchema = z.object({
   userId: z.string(),
   name: z.string().nullable(),
-  email: z.string().email(),
-  avatarUrl: z.string().nullable(),
   profileSummary: z.string().nullable(),
   skills: z.array(z.string()).nullable(),
   experienceLevel: z.string().nullable(),

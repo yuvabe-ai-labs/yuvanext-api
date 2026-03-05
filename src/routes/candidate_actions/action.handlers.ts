@@ -310,6 +310,30 @@ export const applyToInternship: AppRouteHandler<ApplyToInternship> = async (
 
     const internshipData = internship;
 
+    // Explicit check for existing application
+    const existingApplication = await db
+      .select()
+      .from(applications)
+      .where(
+        and(
+          eq(applications.userId, user.id),
+          eq(applications.internshipId, internshipId),
+        ),
+      )
+      .limit(1);
+
+    if (existingApplication.length > 0) {
+      return c.json(
+        {
+          status_code: CONFLICT,
+          message: "You have already applied to this internship",
+          code: "DUPLICATE_APPLICATION",
+          resource: { internshipId },
+        },
+        CONFLICT,
+      );
+    }
+
     let insert;
     try {
       [insert] = await db
@@ -403,7 +427,9 @@ export const applyToInternship: AppRouteHandler<ApplyToInternship> = async (
             userId: unitUserId,
             type: "info",
             title: internshipData.title,
-            message: `${candidateEmail ?? "A candidate"} applied to ${internshipData.title ?? "an internship"}`,
+            message: `${candidateEmail ?? "A candidate"} applied to ${
+              internshipData.title ?? "an internship"
+            }`,
           })
           .catch((notifError) => {
             console.error("Error creating in-app notification", {
