@@ -6,7 +6,6 @@ import db from "@/db";
 import { user as userTable } from "@/db/schema/auth.schema";
 import { candidates } from "@/db/schema/candidate.schema";
 import { meetings } from "@/db/schema/meeting.schema";
-import { notifications } from "@/db/schema/notification.schema";
 import { mentorshipRequests } from "@/db/schema/mentorship-requests.schema";
 import { userSettings } from "@/db/schema/settings.schema";
 import {
@@ -31,6 +30,7 @@ import type {
   GetMeetings,
 } from "./meeting.routes";
 import { mentors } from "@/db/schema/mentor.schema";
+import { notifications } from "@/db/schema/notification.schema";
 
 // ─── Notification helpers ─────────────────────────────────────────────────────
 
@@ -288,11 +288,12 @@ export const createMeeting: AppRouteHandler<CreateMeeting> = async (c) => {
 // ─── Cancel Meeting ───────────────────────────────────────────────────────────
 
 export const cancelMeeting: AppRouteHandler<CancelMeeting> = async (c) => {
-  const mentor = c.get("user");
+  const user = c.get("user");
 
   try {
     const { meetingId, cancellationReason } = c.req.valid("json");
 
+    // Fetch the meeting along with both mentor and candidate user details
     const [meetingRow] = await db
       .select({
         meeting: meetings,
@@ -313,11 +314,15 @@ export const cancelMeeting: AppRouteHandler<CancelMeeting> = async (c) => {
 
     const { meeting, candidateName, candidateEmail } = meetingRow;
 
-    if (meeting.mentorId !== mentor.id) {
+    // Both the mentor and the candidate who own this meeting may cancel it
+    const isMentor = meeting.mentorId === user.id;
+    const isCandidate = meeting.candidateId === user.id;
+
+    if (!isMentor && !isCandidate) {
       return c.json(
         {
           status_code: FORBIDDEN,
-          message: "You can only cancel your own meetings.",
+          message: "You can only cancel meetings you are part of.",
         },
         FORBIDDEN,
       );
@@ -355,9 +360,9 @@ export const cancelMeeting: AppRouteHandler<CancelMeeting> = async (c) => {
       .returning();
 
     // ── Notifications ─────────────────────────────────────────────────────────
-    const candidateSettings = await getNotificationSettings(
-      meeting.candidateId,
-    );
+    // Notify the counterpart (the person who did NOT cancel)
+    const counterpartId = isMentor ? meeting.candidateId : meeting.mentorId;
+    const counterpartSettings = await getNotificationSettings(counterpartId);
 
     const purposeLabel = meeting.purpose.replace(/_/g, " ");
     const scheduledDate = meeting.scheduledAt.toLocaleString("en-IN", {
@@ -365,26 +370,49 @@ export const cancelMeeting: AppRouteHandler<CancelMeeting> = async (c) => {
       timeStyle: "short",
     });
 
+    const cancellerLabel = isMentor ? "Your mentor" : "Your mentee";
     const notificationTitle = "Meeting Cancelled";
     const notificationMessage =
-      `Your mentor has cancelled the ${purposeLabel} meeting scheduled for ${scheduledDate}.` +
+      `${cancellerLabel} has cancelled the ${purposeLabel} meeting scheduled for ${scheduledDate}.` +
       (cancellationReason ? ` Reason: ${cancellationReason}` : "");
 
-    if (candidateSettings.inAppEnabled) {
+    if (counterpartSettings.inAppEnabled) {
       await createInAppNotification(
-        meeting.candidateId,
+        counterpartId,
         notificationTitle,
         notificationMessage,
         "warning",
       );
     }
 
+    // Fetch counterpart email for email notification (mentor email needed when candidate cancels)
+    let counterpartEmail: string | null = null;
+    let counterpartName: string | null = null;
+    if (isMentor) {
+      // counterpart is candidate — already have these from the join
+      counterpartEmail = candidateEmail;
+      counterpartName = candidateName;
+    } else {
+      // counterpart is mentor — fetch separately
+      const [mentorUser] = await db
+        .select({ name: userTable.name, email: userTable.email })
+        .from(userTable)
+        .where(eq(userTable.id, meeting.mentorId))
+        .limit(1);
+      counterpartEmail = mentorUser?.email ?? null;
+      counterpartName = mentorUser?.name ?? null;
+    }
+
     let emailSent = false;
-    if (candidateSettings.emailEnabled && candidateEmail) {
+    if (counterpartSettings.emailEnabled && counterpartEmail) {
       emailSent = await sendMeetingCancelledEmail({
-        to: candidateEmail,
-        candidateName: candidateName ?? "Candidate",
-        mentorName: mentor.name ?? "Your Mentor",
+        to: counterpartEmail,
+        candidateName: isMentor
+          ? (candidateName ?? "Candidate")
+          : (user.name ?? "Candidate"),
+        mentorName: isMentor
+          ? (user.name ?? "Mentor")
+          : (counterpartName ?? "Mentor"),
         purpose: purposeLabel,
         meetingType: meeting.meetingType,
         scheduledAt: meeting.scheduledAt,
@@ -402,7 +430,7 @@ export const cancelMeeting: AppRouteHandler<CancelMeeting> = async (c) => {
           status: updated.status,
           cancellationReason: updated.cancellationReason ?? null,
           zoomCancelled,
-          notificationSent: candidateSettings.inAppEnabled,
+          notificationSent: counterpartSettings.inAppEnabled,
           emailSent,
           updatedAt: updated.updatedAt,
         },

@@ -29,7 +29,6 @@ import {
   NOT_FOUND,
   OK,
 } from "@/lib/openapi/http-status-codes";
-import { applicationStatusEnum } from "../candidate_actions/action.schema";
 
 /**
  * GET /mentor/accepted-candidates

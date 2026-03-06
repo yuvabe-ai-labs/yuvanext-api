@@ -51,7 +51,7 @@ export const markNotificationAsRead = createRoute({
   method: "put" as const,
   path: "/notifications/{id}/mark-read",
   tags: ["Notifications"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Mark notification as read",
   description:
     "Marks a specific notification as read for the authenticated user",
@@ -71,7 +71,7 @@ export const markAllNotificationsAsRead = createRoute({
   method: "put" as const,
   path: "/notifications/mark-all-read",
   tags: ["Notifications"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Mark all notifications as read",
   description: "Marks all notifications as read for the authenticated user",
   responses: {
@@ -87,7 +87,7 @@ export const deleteNotification = createRoute({
   method: "delete" as const,
   path: "/notifications/{id}",
   tags: ["Notifications"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Delete notification",
   description:
     "Deletes a specific notification. Users can only delete their own notifications.",
@@ -107,7 +107,7 @@ export const deleteAllNotifications = createRoute({
   method: "delete" as const,
   path: "/notifications",
   tags: ["Notifications"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Delete all notifications",
   description:
     "Deletes all notifications for the authenticated user. Each user can only delete their own notifications.",
