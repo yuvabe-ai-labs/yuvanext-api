@@ -15,6 +15,7 @@ import {
   NOT_FOUND,
   OK,
 } from "@/lib/openapi/http-status-codes";
+import { sendNotification } from "@/lib/services/notification.service";
 
 import type {
   CancelMentorshipRequest,
@@ -122,6 +123,14 @@ export const createMentorshipRequest: AppRouteHandler<
       })
       .returning();
 
+    // Notify the mentor about the new mentorship request
+    await sendNotification(
+      mentorId,
+      "New Mentorship Request",
+      `${user.name} has sent you a mentorship request.`,
+      "info",
+    );
+
     return c.json(
       {
         status_code: OK,
@@ -196,6 +205,14 @@ export const cancelMentorshipRequest: AppRouteHandler<
       .set({ status: "cancelled", updatedAt: new Date() })
       .where(eq(mentorshipRequests.id, requestId))
       .returning();
+
+    // Notify the mentor about the cancellation
+    await sendNotification(
+      request.mentorId,
+      "Mentorship Request Cancelled",
+      `${user.name} has cancelled their mentorship request.`,
+      "warning",
+    );
 
     return c.json(
       {
@@ -536,6 +553,28 @@ export const respondToMentorshipRequest: AppRouteHandler<
         )
         .returning();
 
+      // Step 3: notify the candidate that their request was accepted
+      await sendNotification(
+        request.candidateId,
+        "Mentorship Request Accepted",
+        `${user.name} has accepted your mentorship request. You can now schedule meetings.`,
+        "success",
+      );
+
+      // Step 4: notify any candidates whose other requests were auto-rejected
+      if (autoRejected.length > 0) {
+        await Promise.all(
+          autoRejected.map((r) =>
+            sendNotification(
+              r.candidateId,
+              "Mentorship Request Declined",
+              "Your mentorship request was automatically declined because you have been matched with another mentor.",
+              "info",
+            ),
+          ),
+        );
+      }
+
       return c.json(
         {
           status_code: OK,
@@ -561,6 +600,16 @@ export const respondToMentorshipRequest: AppRouteHandler<
       })
       .where(eq(mentorshipRequests.id, requestId))
       .returning();
+
+    // Notify the candidate that their request was rejected
+    await sendNotification(
+      request.candidateId,
+      "Mentorship Request Declined",
+      rejectionReason
+        ? `${user.name} has declined your mentorship request. Reason: ${rejectionReason}`
+        : `${user.name} has declined your mentorship request.`,
+      "info",
+    );
 
     return c.json(
       {
