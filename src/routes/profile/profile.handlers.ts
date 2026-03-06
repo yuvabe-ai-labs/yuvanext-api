@@ -36,6 +36,8 @@ import type {
   GenerateTestimonialUploadUrl,
   CompleteTestimonialUpload,
   DeleteTestimonialVideo,
+  GetMentorProfile,
+  UpdateMentorProfile,
 } from "./profile.routes";
 
 // Helper function to calculate candidate profile score
@@ -1346,5 +1348,52 @@ export const deleteTestimonialVideo: AppRouteHandler<
       },
       INTERNAL_SERVER_ERROR,
     );
+  }
+};
+
+// GET /profile/mentor - Get mentor profile
+export const getMentorProfile: AppRouteHandler<GetMentorProfile> = async (
+  c,
+) => {
+  try {
+    const user = c.get("user"); // Correctly retrieve user from context
+
+    const mentor = await db.query.mentors.findFirst({
+      where: eq(mentors.userId, user.id),
+    });
+
+    if (!mentor) {
+      return c.json({ message: "Mentor profile not found" }, NOT_FOUND);
+    }
+
+    return c.json(mentor, OK);
+  } catch (error) {
+    console.error("Error fetching mentor profile:", error);
+    return c.json({ message: "Internal server error" }, INTERNAL_SERVER_ERROR);
+  }
+};
+
+// PUT /profile/mentor - Update mentor profile
+export const updateMentorProfile: AppRouteHandler<UpdateMentorProfile> = async (
+  c,
+) => {
+  try {
+    const user = c.get("user"); // Correctly retrieve user from context
+    const updatedData = c.req.valid("json"); // Use valid() to parse request body
+
+    const [updatedMentor] = await db
+      .update(mentors)
+      .set(updatedData)
+      .where(eq(mentors.userId, user.id))
+      .returning();
+
+    if (!updatedMentor) {
+      return c.json({ message: "Mentor profile not found" }, NOT_FOUND);
+    }
+
+    return c.json(updatedMentor, OK);
+  } catch (error) {
+    console.error("Error updating mentor profile:", error);
+    return c.json({ message: "Internal server error" }, INTERNAL_SERVER_ERROR);
   }
 };
