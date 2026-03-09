@@ -744,6 +744,11 @@ export const uploadAvatar: AppRouteHandler<UploadAvatar> = async (c) => {
           where: eq(units.userId, user.id),
         });
         oldAvatarUrl = unit?.avatarUrl || null;
+      } else if (user.role === "mentor") {
+        const mentor = await tx.query.mentors.findFirst({
+          where: eq(mentors.userId, user.id),
+        });
+        oldAvatarUrl = mentor?.avatarUrl || null;
       }
 
       // Upload new avatar to S3
@@ -760,6 +765,11 @@ export const uploadAvatar: AppRouteHandler<UploadAvatar> = async (c) => {
           .update(units)
           .set({ avatarUrl: newAvatarUrl, updatedAt: new Date() })
           .where(eq(units.userId, user.id));
+      } else if (user.role === "mentor") {
+        await tx
+          .update(mentors)
+          .set({ avatarUrl: newAvatarUrl, updatedAt: new Date() })
+          .where(eq(mentors.userId, user.id));
       }
     });
 
@@ -814,6 +824,11 @@ export const deleteAvatar: AppRouteHandler<DeleteAvatar> = async (c) => {
           where: eq(units.userId, user.id),
         });
         avatarUrlToDelete = unit?.avatarUrl || null;
+      } else if (user.role === "mentor") {
+        const mentor = await tx.query.mentors.findFirst({
+          where: eq(mentors.userId, user.id),
+        });
+        avatarUrlToDelete = mentor?.avatarUrl || null;
       }
 
       if (!avatarUrlToDelete) {
@@ -831,6 +846,11 @@ export const deleteAvatar: AppRouteHandler<DeleteAvatar> = async (c) => {
           .update(units)
           .set({ avatarUrl: null, updatedAt: new Date() })
           .where(eq(units.userId, user.id));
+      } else if (user.role === "mentor") {
+        await tx
+          .update(mentors)
+          .set({ avatarUrl: null, updatedAt: new Date() })
+          .where(eq(mentors.userId, user.id));
       }
     });
 
