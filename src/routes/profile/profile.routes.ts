@@ -66,7 +66,7 @@ export const uploadAvatar = createRoute({
   method: "post" as const,
   path: "/profile/avatar",
   tags: ["Profile", "File Upload"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Upload avatar image",
   description:
     "Upload avatar image to S3. Automatically deletes old avatar if exists.",
@@ -102,7 +102,7 @@ export const deleteAvatar = createRoute({
   method: "delete" as const,
   path: "/profile/avatar",
   tags: ["Profile", "File Upload"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Delete avatar image",
   description: "Delete avatar image from S3 and update database",
   responses: {
