@@ -17,7 +17,7 @@ export const getAllCourses = createRoute({
   method: "get" as const,
   path: "/courses",
   tags: ["Courses"],
-  middleware: requireRole({ allowedRoles: ["candidate", "admin"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "admin", "mentor"] }),
   summary: "Get all courses",
   description:
     "Retrieve a list of all available courses with creator information (candidates only)",

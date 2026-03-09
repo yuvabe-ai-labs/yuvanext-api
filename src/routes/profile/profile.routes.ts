@@ -23,7 +23,7 @@ export const getProfile = createRoute({
   method: "get" as const,
   path: "/profile",
   tags: ["Profile"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Get user profile",
   description: "Retrieve the complete profile for the authenticated user",
   responses: {
@@ -336,6 +336,49 @@ export const deleteTestimonialVideo = createRoute({
   },
 });
 
+/**
+ * GET /profile/mentor - Get mentor profile
+ */
+export const getMentorProfile = createRoute({
+  method: "get" as const,
+  path: "/profile/mentor",
+  tags: ["Profile", "Mentor"],
+  middleware: requireRole({ allowedRoles: ["mentor"] }),
+  summary: "Get mentor profile",
+  description: "Retrieve the complete profile for the authenticated mentor",
+  responses: {
+    [OK]: createResponse(OK, profileResponseSchema),
+    ...commonErrorResponses,
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+  },
+});
+
+/**
+ * PUT /profile/mentor - Update mentor profile
+ */
+export const updateMentorProfile = createRoute({
+  method: "put" as const,
+  path: "/profile/mentor",
+  tags: ["Profile", "Mentor"],
+  middleware: requireRole({ allowedRoles: ["mentor"] }),
+  summary: "Update mentor profile",
+  description: "Update profile fields for the authenticated mentor",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: updateProfileSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    [OK]: createResponse(OK, updateProfileSchema),
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+    ...validationErrorResponses,
+  },
+});
+
 export type GetProfile = typeof getProfile;
 export type UpdateProfile = typeof updateProfile;
 export type UploadAvatar = typeof uploadAvatar;
@@ -347,3 +390,5 @@ export type DeleteGalleryImage = typeof deleteGalleryImage;
 export type GenerateTestimonialUploadUrl = typeof generateTestimonialUploadUrl;
 export type CompleteTestimonialUpload = typeof completeTestimonialUpload;
 export type DeleteTestimonialVideo = typeof deleteTestimonialVideo;
+export type GetMentorProfile = typeof getMentorProfile;
+export type UpdateMentorProfile = typeof updateMentorProfile;

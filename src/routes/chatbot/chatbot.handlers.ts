@@ -6,6 +6,7 @@ import type { Context } from "hono";
 
 import db from "@/db";
 import { candidates } from "@/db/schema/candidate.schema";
+import { mentors } from "@/db/schema/mentor.schema";
 import { units } from "@/db/schema/unit.schema";
 
 import {
@@ -18,12 +19,17 @@ import {
   getLastBotQuestion,
   getMessages,
   initializeConversation,
+  resetConversation,
   printConversation,
   validateAndExtractData,
   type ExtractedFieldData,
   type StructuredBotResponse,
 } from "./chatbot.service";
-import { CANDIDATE_SYSTEM_PROMPT, UNIT_SYSTEM_PROMPT } from "./prompts";
+import {
+  CANDIDATE_SYSTEM_PROMPT,
+  UNIT_SYSTEM_PROMPT,
+  MENTOR_SYSTEM_PROMPT,
+} from "./prompts";
 
 /**
  * Main chat handler for onboarding chatbot
@@ -37,10 +43,11 @@ export const chat = async (c: Context) => {
   const userId = user.id as string;
   const role = user.role;
 
-  // Select appropriate system prompt based on role
   let SYSTEM_PROMPT = CANDIDATE_SYSTEM_PROMPT;
   if (role === "unit") {
     SYSTEM_PROMPT = UNIT_SYSTEM_PROMPT;
+  } else if (role === "mentor") {
+    SYSTEM_PROMPT = MENTOR_SYSTEM_PROMPT;
   }
 
   /**
@@ -48,7 +55,7 @@ export const chat = async (c: Context) => {
    */
   const ensureProfileExists = async (
     userId: string,
-    role: "candidate" | "unit",
+    role: "candidate" | "unit" | "mentor",
   ): Promise<{
     exists: boolean;
     onboardingCompleted: boolean;
@@ -67,7 +74,20 @@ export const chat = async (c: Context) => {
             onboardingCompleted: existing[0].onboardingCompleted,
           };
         }
+        return { exists: false, onboardingCompleted: false };
+      } else if (role === "mentor") {
+        const existing = await db
+          .select({ onboardingCompleted: mentors.onboardingCompleted })
+          .from(mentors)
+          .where(eq(mentors.userId, userId))
+          .limit(1);
 
+        if (existing.length > 0) {
+          return {
+            exists: true,
+            onboardingCompleted: existing[0].onboardingCompleted || false,
+          };
+        }
         return { exists: false, onboardingCompleted: false };
       } else {
         const existing = await db
@@ -82,7 +102,6 @@ export const chat = async (c: Context) => {
             onboardingCompleted: existing[0].onboardingCompleted || false,
           };
         }
-
         return { exists: false, onboardingCompleted: false };
       }
     } catch (error) {
@@ -118,7 +137,7 @@ export const chat = async (c: Context) => {
    */
   const saveAllDataToDatabase = async (
     userId: string,
-    role: "candidate" | "unit",
+    role: "candidate" | "unit" | "mentor",
     extractedData: ExtractedFieldData,
   ): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -131,7 +150,6 @@ export const chat = async (c: Context) => {
           updatedAt: new Date(),
         };
 
-        // Map extracted fields to database columns
         if (extractedData.phone) updateData.phone = String(extractedData.phone);
         if (extractedData.gender)
           updateData.gender = String(extractedData.gender).toLowerCase();
@@ -157,13 +175,109 @@ export const chat = async (c: Context) => {
         console.log(
           `[Candidate Data Saved] userId: ${userId}, fields: ${Object.keys(updateData).join(", ")}`,
         );
+      } else if (role === "mentor") {
+        const updateData: any = {
+          onboardingCompleted: true,
+          updatedAt: new Date(),
+        };
+
+        if (extractedData.mentor_type) {
+          const mentorTypeMap: Record<string, string> = {
+            "career guidance mentor": "career_guidance",
+            "internship application support mentor": "internship_support",
+            "skills & portfolio mentor": "skills_portfolio",
+            "skills and portfolio mentor": "skills_portfolio",
+            "wellbeing & confidence mentor": "wellbeing_confidence",
+            "wellbeing and confidence mentor": "wellbeing_confidence",
+            "general mentor": "general",
+          };
+          const mentorTypeStr = String(extractedData.mentor_type)
+            .toLowerCase()
+            .trim();
+          updateData.mentorType = mentorTypeMap[mentorTypeStr] || "general";
+          console.log(
+            `[Mentor Type Mapping] userId: ${userId}, original: ${extractedData.mentor_type}, mapped: ${updateData.mentorType}`,
+          );
+        }
+
+        if (extractedData.expertise_areas)
+          updateData.expertiseAreas = toArray(extractedData.expertise_areas);
+
+        if (extractedData.experience_snapshot)
+          updateData.experienceSnapshot = String(
+            extractedData.experience_snapshot,
+          );
+
+        if (extractedData.availability_days)
+          updateData.availabilityDays = toArray(
+            extractedData.availability_days,
+          );
+
+        // Debug log to inspect the structure of availability_time_windows
+        console.log(
+          `[Debug] availability_time_windows before saving:`,
+          extractedData.availability_time_windows,
+        );
+
+        if (extractedData.availability_time_windows) {
+          // Serialize the availability_time_windows field if it's an object or array
+          updateData.availabilityTimeWindows =
+            typeof extractedData.availability_time_windows === "object"
+              ? JSON.stringify(extractedData.availability_time_windows)
+              : extractedData.availability_time_windows;
+        }
+
+        // Log the normalized availability_time_windows for debugging
+        console.log(
+          `[Availability Time Windows] userId: ${userId}, normalized:`,
+          updateData.availabilityTimeWindows,
+        );
+
+        if (extractedData.mentoring_capacity) {
+          // FIX: Normalize dashes at save time as a final safety net
+          const capacityStr = String(extractedData.mentoring_capacity)
+            .toLowerCase()
+            .replace(/\u2013|\u2014|–|—/g, "-")
+            .trim();
+          updateData.mentoringCapacity = capacityStr;
+          console.log(
+            `[Capacity Mapping] userId: ${userId}, original: ${extractedData.mentoring_capacity}, mapped: ${capacityStr}`,
+          );
+        }
+
+        if (extractedData.preferred_stages)
+          updateData.preferredStages = toArray(extractedData.preferred_stages);
+
+        if (extractedData.communication_modes)
+          updateData.communicationModes = toArray(
+            extractedData.communication_modes,
+          );
+
+        if (extractedData.timezone)
+          updateData.timezone = String(extractedData.timezone);
+
+        // FIX: confirm_boundaries was extracted but never mapped to DB
+        if (extractedData.confirm_boundaries !== undefined) {
+          updateData.confirmBoundaries =
+            extractedData.confirm_boundaries === true ||
+            String(extractedData.confirm_boundaries).toLowerCase() === "true" ||
+            String(extractedData.confirm_boundaries).toLowerCase() === "yes";
+        }
+
+        await db
+          .update(mentors)
+          .set(updateData)
+          .where(eq(mentors.userId, userId));
+
+        console.log(
+          `[Mentor Data Saved] userId: ${userId}, fields: ${Object.keys(updateData).join(", ")}`,
+        );
       } else {
         const updateData: any = {
           onboardingCompleted: true,
           updatedAt: new Date(),
         };
 
-        // Map extracted fields to database columns
         if (extractedData.name) updateData.name = String(extractedData.name);
         if (extractedData.type) updateData.type = String(extractedData.type);
         if (extractedData.phone) updateData.phone = String(extractedData.phone);
@@ -207,12 +321,15 @@ export const chat = async (c: Context) => {
     field: string,
     value: any,
     lastQuestion: string,
-    role: "candidate" | "unit",
+    role: "candidate" | "unit" | "mentor",
   ): Promise<{ success: boolean; error?: string; extractedValue?: any }> => {
     try {
-      // Validate the field value
+      // Do NOT coerce value to String here — for fields like availability_time_windows
+      // the detector may return an object/array, and String() would corrupt it to "[object Object]".
+      // validateAndExtractData accepts `any` and handles type-specific logic internally.
+      const rawValue = value ?? "";
       const validationResult = await validateAndExtractData(
-        String(value || ""),
+        rawValue,
         lastQuestion,
         field,
         role,
@@ -226,8 +343,6 @@ export const chat = async (c: Context) => {
       }
 
       const extractedValue = validationResult.extractedValue;
-
-      // Store in memory (not DB)
       addExtractedField(userId, field, extractedValue);
 
       return { success: true, extractedValue };
@@ -244,29 +359,98 @@ export const chat = async (c: Context) => {
   };
 
   try {
-    // Validate role
-    if (role !== "candidate" && role !== "unit") {
+    if (role !== "candidate" && role !== "unit" && role !== "mentor") {
       return c.json(
         { success: false as const, error: "Invalid user role" },
         422,
       );
     }
 
-    // Check onboarding status
     const onboardingStatus = await ensureProfileExists(userId, role);
 
     if (!onboardingStatus.exists) {
-      return c.json(
-        { success: false as const, error: `Failed to access ${role} profile` },
-        500,
-      );
+      if (role === "candidate") {
+        try {
+          await db.insert(candidates).values({
+            userId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            onboardingCompleted: false,
+          });
+          console.log(
+            `[Profile Auto-Created] userId: ${userId}, role: ${role}`,
+          );
+        } catch (err) {
+          console.error(
+            `[Profile Creation Error] userId: ${userId}, role: ${role}`,
+            err,
+          );
+          return c.json(
+            {
+              success: false as const,
+              error: `Failed to access or create ${role} profile. Please contact support.`,
+            },
+            500,
+          );
+        }
+      } else if (role === "mentor") {
+        try {
+          await db.insert(mentors).values({
+            userId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            onboardingCompleted: false,
+          });
+          console.log(
+            `[Profile Auto-Created] userId: ${userId}, role: ${role}`,
+          );
+        } catch (err) {
+          console.error(
+            `[Profile Creation Error] userId: ${userId}, role: ${role}`,
+            err,
+          );
+          return c.json(
+            {
+              success: false as const,
+              error: `Failed to access or create ${role} profile. Please contact support.`,
+            },
+            500,
+          );
+        }
+      } else if (role === "unit") {
+        try {
+          await db.insert(units).values({
+            userId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            onboardingCompleted: false,
+          });
+          console.log(
+            `[Profile Auto-Created] userId: ${userId}, role: ${role}`,
+          );
+        } catch (err) {
+          console.error(
+            `[Profile Creation Error] userId: ${userId}, role: ${role}`,
+            err,
+          );
+          return c.json(
+            {
+              success: false as const,
+              error: `Failed to access or create ${role} profile. Please contact support.`,
+            },
+            500,
+          );
+        }
+      }
     }
 
     if (onboardingStatus.onboardingCompleted) {
       const completionMessage =
         role === "candidate"
           ? "You have already completed the onboarding process!"
-          : "You have already completed the unit registration!";
+          : role === "mentor"
+            ? "You have already completed the mentor profile setup!"
+            : "You have already completed the unit registration!";
 
       return c.json(
         {
@@ -284,18 +468,25 @@ export const chat = async (c: Context) => {
       );
     }
 
-    // Initialize conversation if needed
-    initializeConversation(userId);
+    // FIX: Detect if this is the first message ("hi", "hello", "start", etc.).
+    // If so, reset the conversation so stale extracted data from a previous
+    // incomplete session doesn't persist. This prevents wrong field values
+    // (e.g. old timezone) from leaking into the new save.
+    const isGreeting = /^\s*(hi|hello|hey|start|begin|ok|okay|sure)\s*$/i.test(
+      message,
+    );
+    if (isGreeting) {
+      resetConversation(userId);
+    } else {
+      initializeConversation(userId);
+    }
 
-    // Add user message to conversation array
     addMessage(userId, "user", message);
     console.log(`[User Message] userId: ${userId}, message: "${message}"`);
 
-    // Get conversation history and last question
     const conversationHistory = getMessages(userId);
     const lastBotQuestion = getLastBotQuestion(userId);
 
-    // Auto-detect and validate fields from user's response
     let fieldsToValidate: Array<{ field: string; value: any }> = [];
 
     if (lastBotQuestion) {
@@ -321,8 +512,8 @@ export const chat = async (c: Context) => {
       }
     }
 
-    // Validate and store fields in memory
     const failedFields: Array<{ field: string; error: string }> = [];
+    const successfulFields: string[] = [];
 
     for (const fieldData of fieldsToValidate) {
       const validationResult = await validateAndStoreField(
@@ -338,30 +529,26 @@ export const chat = async (c: Context) => {
           field: fieldData.field,
           error: validationResult.error || "Validation failed",
         });
+        addMessage(
+          userId,
+          "system",
+          `[Invalid Input] The response for "${fieldData.field}" was invalid. Reason: ${validationResult.error}. Please politely ask the user to provide the information again with clear guidance on the expected format. Do NOT accept this answer - ask the SAME question again.`,
+        );
+        console.log(
+          `[Field Validation Failed - Re-asking] userId: ${userId}, field: ${fieldData.field}, reason: ${validationResult.error}`,
+        );
       } else {
-        // Add system message about field extraction
         addMessage(userId, "system", `[Extracted: ${fieldData.field}]`);
+        successfulFields.push(fieldData.field);
       }
     }
 
-    // Return validation error if any fields failed
     if (failedFields.length > 0) {
       console.log(
-        `[Validation Failed] userId: ${userId}, fields:`,
-        failedFields,
-      );
-      return c.json(
-        {
-          success: false as const,
-          error: failedFields[0].error,
-          needsRetry: true,
-          fieldsFailed: failedFields.map((f) => f.field),
-        },
-        422,
+        `[Validation Summary] userId: ${userId}, successful: ${successfulFields.length}, failed: ${failedFields.length} - re-asking failed questions`,
       );
     }
 
-    // Stream structured response
     return streamSSE(c, async (stream) => {
       let structuredResponse: StructuredBotResponse | null = null;
 
@@ -371,14 +558,12 @@ export const chat = async (c: Context) => {
           data: JSON.stringify({ message: "Streaming started" }),
         });
 
-        // Generate structured response from model
         for await (const response of generateStructuredStreamFromModel(
           conversationHistory,
           SYSTEM_PROMPT,
         )) {
           structuredResponse = response;
 
-          // Send the complete structured response
           await stream.writeSSE({
             event: "structured",
             data: JSON.stringify(response),
@@ -389,17 +574,14 @@ export const chat = async (c: Context) => {
           throw new Error("No response from model");
         }
 
-        // Add assistant response to conversation array
         addMessage(userId, "assistant", structuredResponse.message);
         console.log(
           `[Bot Response] userId: ${userId}, isComplete: ${structuredResponse.isComplete || false}`,
         );
 
-        // Check if onboarding is complete
         const isComplete = structuredResponse.isComplete || false;
 
         if (isComplete) {
-          // NOW save all data to database
           const extractedData = getExtractedData(userId);
           const saveResult = await saveAllDataToDatabase(
             userId,
@@ -415,16 +597,13 @@ export const chat = async (c: Context) => {
 
           console.log(`[Onboarding Complete] userId: ${userId}, role: ${role}`);
 
-          // Optional: Print final conversation for debugging
           if (process.env.NODE_ENV === "development") {
             printConversation(userId);
           }
 
-          // Clear conversation from memory after successful save
           clearConversation(userId);
         }
 
-        // Send completion event
         await stream.writeSSE({
           event: "complete",
           data: JSON.stringify({

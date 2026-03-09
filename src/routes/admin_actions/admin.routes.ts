@@ -63,7 +63,7 @@ export const getCandidates = createRoute({
   method: "get" as const,
   path: "/admin/candidates",
   tags: ["Admin"],
-  middleware: requireRole({ allowedRoles: ["admin"] }),
+  middleware: requireRole({ allowedRoles: ["admin", "mentor"] }),
   summary: "Get candidates with filters",
   description:
     "Get candidates based on filter: recent (10), all, applied, hired, or shortlisted with pagination",

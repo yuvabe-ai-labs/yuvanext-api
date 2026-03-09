@@ -26,3 +26,7 @@ export const candidate = ac.newRole({
 export const unit = ac.newRole({
   internship: ["read", "update", "delete", "create", "manage"],
 });
+
+export const mentor = ac.newRole({
+  internship: ["read", "update", "apply", "revoke"],
+});
