@@ -910,13 +910,13 @@ export const uploadBanner: AppRouteHandler<UploadBanner> = async (c) => {
     // Transaction: get old URL, upload new file, update DB
     await db.transaction(async (tx) => {
       // Get current banner URL
-      const unit = await tx.query.units.findFirst({
+      const unitOrMentor = await tx.query.units.findFirst({
         where: eq(units.userId, user.id),
       });
-      oldBannerUrl = unit?.bannerUrl || null;
+      oldBannerUrl = unitOrMentor?.bannerUrl || null;
 
       // Upload new banner to S3
-      newBannerUrl = await uploadFileToS3(file, user.id, "banner", "unit");
+      newBannerUrl = await uploadFileToS3(file, user.id, "banner", user.role);
 
       // Update database within transaction
       await tx
