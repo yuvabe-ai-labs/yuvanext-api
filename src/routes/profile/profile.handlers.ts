@@ -1375,21 +1375,44 @@ export const deleteTestimonialVideo: AppRouteHandler<
 export const getMentorProfile: AppRouteHandler<GetMentorProfile> = async (
   c,
 ) => {
-  try {
-    const user = c.get("user"); // Correctly retrieve user from context
+  const user = c.get("user");
 
-    const mentor = await db.query.mentors.findFirst({
+  try {
+    const mentorProfile = await db.query.mentors.findFirst({
       where: eq(mentors.userId, user.id),
     });
 
-    if (!mentor) {
-      return c.json({ message: "Mentor profile not found" }, NOT_FOUND);
+    if (!mentorProfile) {
+      return c.json(
+        { status_code: NOT_FOUND, message: "Mentor profile not found" },
+        NOT_FOUND,
+      );
     }
 
-    return c.json(mentor, OK);
-  } catch (error) {
-    console.error("Error fetching mentor profile:", error);
-    return c.json({ message: "Internal server error" }, INTERNAL_SERVER_ERROR);
+    const avatarUrl = mentorProfile.avatarUrl || null;
+    const bannerUrl = mentorProfile.bannerUrl || null;
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Mentor profile retrieved successfully",
+        data: {
+          ...mentorProfile,
+          avatarUrl,
+          bannerUrl,
+        },
+      },
+      OK,
+    );
+  } catch (_err) {
+    console.error("Error retrieving mentor profile:", _err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Failed to retrieve mentor profile",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
   }
 };
 
@@ -1397,23 +1420,18 @@ export const getMentorProfile: AppRouteHandler<GetMentorProfile> = async (
 export const updateMentorProfile: AppRouteHandler<UpdateMentorProfile> = async (
   c,
 ) => {
-  try {
-    const user = c.get("user"); // Correctly retrieve user from context
-    const updatedData = c.req.valid("json"); // Use valid() to parse request body
+  const user = c.get("user");
+  const updatedData = c.req.valid("json");
 
-    const [updatedMentor] = await db
-      .update(mentors)
-      .set(updatedData)
-      .where(eq(mentors.userId, user.id))
-      .returning();
+  const [updatedMentor] = await db
+    .update(mentors)
+    .set(updatedData)
+    .where(eq(mentors.userId, user.id))
+    .returning();
 
-    if (!updatedMentor) {
-      return c.json({ message: "Mentor profile not found" }, NOT_FOUND);
-    }
-
-    return c.json(updatedMentor, OK);
-  } catch (error) {
-    console.error("Error updating mentor profile:", error);
-    return c.json({ message: "Internal server error" }, INTERNAL_SERVER_ERROR);
+  if (!updatedMentor) {
+    return c.json({ message: "Mentor profile not found" }, NOT_FOUND);
   }
+
+  return c.json(updatedMentor, OK);
 };
