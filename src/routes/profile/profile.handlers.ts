@@ -890,7 +890,7 @@ export const deleteAvatar: AppRouteHandler<DeleteAvatar> = async (c) => {
   }
 };
 
-// POST /profile/upload-banner - Upload banner (Units only)
+// POST /profile/upload-banner - Upload banner (Units & Mentors)
 export const uploadBanner: AppRouteHandler<UploadBanner> = async (c) => {
   const user = c.get("user");
 
@@ -907,22 +907,32 @@ export const uploadBanner: AppRouteHandler<UploadBanner> = async (c) => {
     let oldBannerUrl: string | null = null;
     let newBannerUrl: string | null = null;
 
-    // Transaction: get old URL, upload new file, update DB
+    // Upload new banner to S3 (outside transaction - no DB rollback possible for S3 anyway)
+    newBannerUrl = await uploadFileToS3(file, user.id, "banner", file.name);
+
+    // Transaction: get old URL and update DB
     await db.transaction(async (tx) => {
-      // Get current banner URL
-      const unitOrMentor = await tx.query.units.findFirst({
-        where: eq(units.userId, user.id),
-      });
-      oldBannerUrl = unitOrMentor?.bannerUrl || null;
+      if (user.role === "unit") {
+        const unit = await tx.query.units.findFirst({
+          where: eq(units.userId, user.id),
+        });
+        oldBannerUrl = unit?.bannerUrl || null;
 
-      // Upload new banner to S3
-      newBannerUrl = await uploadFileToS3(file, user.id, "banner", user.role);
+        await tx
+          .update(units)
+          .set({ bannerUrl: newBannerUrl, updatedAt: new Date() })
+          .where(eq(units.userId, user.id));
+      } else if (user.role === "mentor") {
+        const mentor = await tx.query.mentors.findFirst({
+          where: eq(mentors.userId, user.id),
+        });
+        oldBannerUrl = mentor?.bannerUrl || null;
 
-      // Update database within transaction
-      await tx
-        .update(units)
-        .set({ bannerUrl: newBannerUrl, updatedAt: new Date() })
-        .where(eq(units.userId, user.id));
+        await tx
+          .update(mentors)
+          .set({ bannerUrl: newBannerUrl, updatedAt: new Date() })
+          .where(eq(mentors.userId, user.id));
+      }
     });
 
     // Fire-and-forget: delete old file after successful transaction commit
@@ -956,7 +966,7 @@ export const uploadBanner: AppRouteHandler<UploadBanner> = async (c) => {
   }
 };
 
-// DELETE /profile/banner - Delete banner (Units only)
+// DELETE /profile/banner - Delete banner (Units & Mentors)
 export const deleteBanner: AppRouteHandler<DeleteBanner> = async (c) => {
   const user = c.get("user");
 
@@ -965,21 +975,35 @@ export const deleteBanner: AppRouteHandler<DeleteBanner> = async (c) => {
 
     // Transaction: get URL and update DB
     await db.transaction(async (tx) => {
-      // Get current banner URL
-      const unit = await tx.query.units.findFirst({
-        where: eq(units.userId, user.id),
-      });
-      bannerUrlToDelete = unit?.bannerUrl || null;
+      if (user.role === "unit") {
+        const unit = await tx.query.units.findFirst({
+          where: eq(units.userId, user.id),
+        });
+        bannerUrlToDelete = unit?.bannerUrl || null;
 
-      if (!bannerUrlToDelete) {
-        throw new Error("No banner found");
+        if (!bannerUrlToDelete) {
+          throw new Error("No banner found");
+        }
+
+        await tx
+          .update(units)
+          .set({ bannerUrl: null, updatedAt: new Date() })
+          .where(eq(units.userId, user.id));
+      } else if (user.role === "mentor") {
+        const mentor = await tx.query.mentors.findFirst({
+          where: eq(mentors.userId, user.id),
+        });
+        bannerUrlToDelete = mentor?.bannerUrl || null;
+
+        if (!bannerUrlToDelete) {
+          throw new Error("No banner found");
+        }
+
+        await tx
+          .update(mentors)
+          .set({ bannerUrl: null, updatedAt: new Date() })
+          .where(eq(mentors.userId, user.id));
       }
-
-      // Update database within transaction
-      await tx
-        .update(units)
-        .set({ bannerUrl: null, updatedAt: new Date() })
-        .where(eq(units.userId, user.id));
     });
 
     // Fire-and-forget: delete from S3 after successful transaction commit
@@ -1375,21 +1399,44 @@ export const deleteTestimonialVideo: AppRouteHandler<
 export const getMentorProfile: AppRouteHandler<GetMentorProfile> = async (
   c,
 ) => {
-  try {
-    const user = c.get("user"); // Correctly retrieve user from context
+  const user = c.get("user");
 
-    const mentor = await db.query.mentors.findFirst({
+  try {
+    const mentorProfile = await db.query.mentors.findFirst({
       where: eq(mentors.userId, user.id),
     });
 
-    if (!mentor) {
-      return c.json({ message: "Mentor profile not found" }, NOT_FOUND);
+    if (!mentorProfile) {
+      return c.json(
+        { status_code: NOT_FOUND, message: "Mentor profile not found" },
+        NOT_FOUND,
+      );
     }
 
-    return c.json(mentor, OK);
-  } catch (error) {
-    console.error("Error fetching mentor profile:", error);
-    return c.json({ message: "Internal server error" }, INTERNAL_SERVER_ERROR);
+    const avatarUrl = mentorProfile.avatarUrl || null;
+    const bannerUrl = mentorProfile.bannerUrl || null;
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Mentor profile retrieved successfully",
+        data: {
+          ...mentorProfile,
+          avatarUrl,
+          bannerUrl,
+        },
+      },
+      OK,
+    );
+  } catch (_err) {
+    console.error("Error retrieving mentor profile:", _err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Failed to retrieve mentor profile",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
   }
 };
 
@@ -1397,23 +1444,18 @@ export const getMentorProfile: AppRouteHandler<GetMentorProfile> = async (
 export const updateMentorProfile: AppRouteHandler<UpdateMentorProfile> = async (
   c,
 ) => {
-  try {
-    const user = c.get("user"); // Correctly retrieve user from context
-    const updatedData = c.req.valid("json"); // Use valid() to parse request body
+  const user = c.get("user");
+  const updatedData = c.req.valid("json");
 
-    const [updatedMentor] = await db
-      .update(mentors)
-      .set(updatedData)
-      .where(eq(mentors.userId, user.id))
-      .returning();
+  const [updatedMentor] = await db
+    .update(mentors)
+    .set(updatedData)
+    .where(eq(mentors.userId, user.id))
+    .returning();
 
-    if (!updatedMentor) {
-      return c.json({ message: "Mentor profile not found" }, NOT_FOUND);
-    }
-
-    return c.json(updatedMentor, OK);
-  } catch (error) {
-    console.error("Error updating mentor profile:", error);
-    return c.json({ message: "Internal server error" }, INTERNAL_SERVER_ERROR);
+  if (!updatedMentor) {
+    return c.json({ message: "Mentor profile not found" }, NOT_FOUND);
   }
+
+  return c.json(updatedMentor, OK);
 };

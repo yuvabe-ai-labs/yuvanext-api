@@ -38,6 +38,7 @@ export const mentors = pgTable("mentors", {
   timezone: text("timezone"), // "UTC", "IST", etc.
 
   avatarUrl: text("avatar_url"), // from the user table
+  bannerUrl: text("banner_url"),
 
   // Capacity & Preferences
   mentoringCapacity: capacityEnum("mentoring_capacity"),
