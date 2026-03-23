@@ -66,7 +66,7 @@ export const uploadAvatar = createRoute({
   method: "post" as const,
   path: "/profile/avatar",
   tags: ["Profile", "File Upload"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Upload avatar image",
   description:
     "Upload avatar image to S3. Automatically deletes old avatar if exists.",
@@ -102,7 +102,7 @@ export const deleteAvatar = createRoute({
   method: "delete" as const,
   path: "/profile/avatar",
   tags: ["Profile", "File Upload"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Delete avatar image",
   description: "Delete avatar image from S3 and update database",
   responses: {
@@ -118,7 +118,7 @@ export const uploadBanner = createRoute({
   method: "post" as const,
   path: "/profile/banner",
   tags: ["Profile", "File Upload"],
-  middleware: requireRole({ allowedRoles: ["unit"] }),
+  middleware: requireRole({ allowedRoles: ["unit", "mentor"] }),
   summary: "Upload banner image (Units only)",
   description:
     "Upload banner image to S3. Automatically deletes old banner if exists.",
@@ -154,7 +154,7 @@ export const deleteBanner = createRoute({
   method: "delete" as const,
   path: "/profile/banner",
   tags: ["Profile", "File Upload"],
-  middleware: requireRole({ allowedRoles: ["unit"] }),
+  middleware: requireRole({ allowedRoles: ["unit", "mentor"] }),
   summary: "Delete banner image (Units only)",
   description: "Delete banner image from S3 and update database",
   responses: {

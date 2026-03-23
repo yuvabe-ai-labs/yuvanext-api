@@ -157,6 +157,8 @@ const mentorFieldsSchema = z.object({
   communicationModes: z.array(z.string()).nullable(),
   confirmBoundaries: z.boolean().nullable(),
   onboardingCompleted: z.boolean().nullable(),
+  avatarUrl: z.string().nullable(),
+  bannerUrl: z.string().nullable(),
 });
 
 // Profile score field (always included in GET /profile response)
@@ -167,12 +169,7 @@ const profileScoreSchema = z.object({
 // Profile response can be user + candidate fields or user + unit fields or user + mentor fields
 // Always includes profileScore
 export const profileResponseSchema = z.union([
-  baseUserSchema
-    .merge(candidateFieldsSchema.partial())
-    .merge(profileScoreSchema),
-  baseUserSchema.merge(unitFieldsSchema.partial()).merge(profileScoreSchema),
   baseUserSchema.merge(mentorFieldsSchema.partial()).merge(profileScoreSchema),
-  baseUserSchema.merge(profileScoreSchema), // Just base user if no role-specific data
 ]);
 
 const _updateAvatarSchema = z.object({
