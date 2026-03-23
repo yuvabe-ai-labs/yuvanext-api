@@ -11,6 +11,7 @@ import { requireRole } from "@/middleware/auth";
 import {
   applicationByInternshipResponseSchema,
   applicationResponseSchema,
+  candidateProfileResponseSchema,
   detailedApplicationResponseSchema,
   updateApplicationStatusResponseSchema,
   updateApplicationStatusSchema,
@@ -101,8 +102,27 @@ export const getApplicationsByInternshipId = createRoute({
   },
 });
 
+/**
+ * GET /candidates/:candidateId - Get candidate profile without application (for mentors)
+ */
+export const getCandidateProfileById = createRoute({
+  method: "get" as const,
+  path: "/mentor/candidates/:candidateId",
+  tags: ["Unit Actions"],
+  middleware: requireRole({ allowedRoles: ["mentor"] }),
+  summary: "Get candidate profile without application",
+  description:
+    "Returns a candidate's profile information directly without requiring an associated application. Only mentors can access this endpoint.",
+  responses: {
+    [OK]: createResponse(OK, candidateProfileResponseSchema),
+    ...restrictedErrorResponses,
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+  },
+});
+
 export type GetApplicationsByInternshipId =
   typeof getApplicationsByInternshipId;
 export type GetApplications = typeof getApplications;
 export type UpdateApplicationStatus = typeof updateApplicationStatus;
 export type GetApplicationById = typeof getApplicationById;
+export type GetCandidateProfileById = typeof getCandidateProfileById;
