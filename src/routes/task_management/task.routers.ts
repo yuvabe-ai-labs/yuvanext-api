@@ -70,7 +70,9 @@ export const getAllTasks = createRoute({
   path: "/tasks",
   tags: ["Tasks"],
   summary: "Get all tasks for hired candidates (grouped by internship)",
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({
+    allowedRoles: ["candidate", "unit", "admin", "mentor"],
+  }),
   description:
     "Get all tasks for hired candidates grouped by internship. Candidates see their own tasks with unit info. Units see tasks for all hired candidates in their internships grouped by internship and applicant.",
   request: {},
@@ -87,7 +89,9 @@ export const getTasksByApplicationId = createRoute({
   method: "get" as const,
   path: "/tasks/application/{applicationId}",
   tags: ["Tasks - Unit and Candidate"],
-  middleware: requireRole({ allowedRoles: ["unit", "candidate", "admin"] }),
+  middleware: requireRole({
+    allowedRoles: ["unit", "candidate", "admin", "mentor"],
+  }),
   summary: "Get all tasks by application ID",
   description:
     "Get all tasks for a hired application in this unit's internships (Unit and Candidate)",

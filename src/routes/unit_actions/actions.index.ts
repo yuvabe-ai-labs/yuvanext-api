@@ -15,6 +15,7 @@ router
   .openapi(
     routes.getApplicationsByInternshipId,
     handlers.getApplicationsByInternshipId,
-  );
+  )
+  .openapi(routes.getCandidateProfileById, handlers.getCandidateProfileById);
 
 export default router;

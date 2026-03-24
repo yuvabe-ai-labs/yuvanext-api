@@ -28,6 +28,10 @@ router
     handlers.generateTestimonialUploadUrl,
   )
   .openapi(routes.completeTestimonialUpload, handlers.completeTestimonialUpload)
-  .openapi(routes.deleteTestimonialVideo, handlers.deleteTestimonialVideo);
+  .openapi(routes.deleteTestimonialVideo, handlers.deleteTestimonialVideo)
+
+  // Mentor Profile
+  .openapi(routes.getMentorProfile, handlers.getMentorProfile)
+  .openapi(routes.updateMentorProfile, handlers.updateMentorProfile);
 
 export default router;

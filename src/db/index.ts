@@ -4,7 +4,6 @@ import env from "@/config/env";
 import * as schema from "@/db/schema/index";
 
 const db = drizzle({
-
   connection: {
     connectionString: env.DATABASE_URL,
   },

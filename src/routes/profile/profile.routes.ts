@@ -23,7 +23,7 @@ export const getProfile = createRoute({
   method: "get" as const,
   path: "/profile",
   tags: ["Profile"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Get user profile",
   description: "Retrieve the complete profile for the authenticated user",
   responses: {
@@ -66,7 +66,7 @@ export const uploadAvatar = createRoute({
   method: "post" as const,
   path: "/profile/avatar",
   tags: ["Profile", "File Upload"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Upload avatar image",
   description:
     "Upload avatar image to S3. Automatically deletes old avatar if exists.",
@@ -102,7 +102,7 @@ export const deleteAvatar = createRoute({
   method: "delete" as const,
   path: "/profile/avatar",
   tags: ["Profile", "File Upload"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit"] }),
+  middleware: requireRole({ allowedRoles: ["candidate", "unit", "mentor"] }),
   summary: "Delete avatar image",
   description: "Delete avatar image from S3 and update database",
   responses: {
@@ -118,7 +118,7 @@ export const uploadBanner = createRoute({
   method: "post" as const,
   path: "/profile/banner",
   tags: ["Profile", "File Upload"],
-  middleware: requireRole({ allowedRoles: ["unit"] }),
+  middleware: requireRole({ allowedRoles: ["unit", "mentor"] }),
   summary: "Upload banner image (Units only)",
   description:
     "Upload banner image to S3. Automatically deletes old banner if exists.",
@@ -154,7 +154,7 @@ export const deleteBanner = createRoute({
   method: "delete" as const,
   path: "/profile/banner",
   tags: ["Profile", "File Upload"],
-  middleware: requireRole({ allowedRoles: ["unit"] }),
+  middleware: requireRole({ allowedRoles: ["unit", "mentor"] }),
   summary: "Delete banner image (Units only)",
   description: "Delete banner image from S3 and update database",
   responses: {
@@ -336,6 +336,49 @@ export const deleteTestimonialVideo = createRoute({
   },
 });
 
+/**
+ * GET /profile/mentor - Get mentor profile
+ */
+export const getMentorProfile = createRoute({
+  method: "get" as const,
+  path: "/profile/mentor",
+  tags: ["Profile", "Mentor"],
+  middleware: requireRole({ allowedRoles: ["mentor"] }),
+  summary: "Get mentor profile",
+  description: "Retrieve the complete profile for the authenticated mentor",
+  responses: {
+    [OK]: createResponse(OK, profileResponseSchema),
+    ...commonErrorResponses,
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+  },
+});
+
+/**
+ * PUT /profile/mentor - Update mentor profile
+ */
+export const updateMentorProfile = createRoute({
+  method: "put" as const,
+  path: "/profile/mentor",
+  tags: ["Profile", "Mentor"],
+  middleware: requireRole({ allowedRoles: ["mentor"] }),
+  summary: "Update mentor profile",
+  description: "Update profile fields for the authenticated mentor",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: updateProfileSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    [OK]: createResponse(OK, updateProfileSchema),
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+    ...validationErrorResponses,
+  },
+});
+
 export type GetProfile = typeof getProfile;
 export type UpdateProfile = typeof updateProfile;
 export type UploadAvatar = typeof uploadAvatar;
@@ -347,3 +390,5 @@ export type DeleteGalleryImage = typeof deleteGalleryImage;
 export type GenerateTestimonialUploadUrl = typeof generateTestimonialUploadUrl;
 export type CompleteTestimonialUpload = typeof completeTestimonialUpload;
 export type DeleteTestimonialVideo = typeof deleteTestimonialVideo;
+export type GetMentorProfile = typeof getMentorProfile;
+export type UpdateMentorProfile = typeof updateMentorProfile;

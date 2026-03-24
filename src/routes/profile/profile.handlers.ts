@@ -6,6 +6,7 @@ import db from "@/db";
 import { user as userTable } from "@/db/schema/auth.schema";
 import { candidates } from "@/db/schema/candidate.schema";
 import { units } from "@/db/schema/unit.schema";
+import { mentors } from "@/db/schema/mentor.schema";
 import {
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
@@ -35,6 +36,8 @@ import type {
   GenerateTestimonialUploadUrl,
   CompleteTestimonialUpload,
   DeleteTestimonialVideo,
+  GetMentorProfile,
+  UpdateMentorProfile,
 } from "./profile.routes";
 
 // Helper function to calculate candidate profile score
@@ -172,6 +175,69 @@ function calculateUnitScore(unit: any): number {
   if (unit.websiteUrl) score += weights.websiteUrl;
   if (unit.socialLinks && Object.keys(unit.socialLinks).length > 0)
     score += weights.socialLinks;
+
+  return Math.min(score, 100);
+}
+
+// Helper function to calculate mentor profile score
+function calculateMentorScore(mentor: any): number {
+  let score = 0;
+  const weights = {
+    // Basic info (20 points)
+    name: 5,
+    email: 5,
+    phone: 5,
+    mentorType: 5,
+
+    // Experience & Expertise (30 points)
+    expertiseAreas: 10,
+    experienceSnapshot: 10,
+
+    // Availability (20 points)
+    availabilityDays: 7,
+    availabilityTimeWindows: 7,
+    timezone: 6,
+
+    // Preferences & Capacity (20 points)
+    mentoringCapacity: 5,
+    preferredStages: 7,
+    communicationModes: 8,
+
+    // Boundaries (10 points)
+    confirmBoundaries: 10,
+  };
+
+  // Check basic fields
+  if (mentor.name) score += weights.name;
+  if (mentor.email) score += weights.email;
+  if (mentor.phone) score += weights.phone;
+  if (mentor.mentorType) score += weights.mentorType;
+
+  // Check experience & expertise
+  if (mentor.expertiseAreas && mentor.expertiseAreas.length > 0)
+    score += weights.expertiseAreas;
+  if (mentor.experienceSnapshot && mentor.experienceSnapshot.length > 20)
+    score += weights.experienceSnapshot;
+
+  // Check availability
+  if (mentor.availabilityDays && mentor.availabilityDays.length > 0)
+    score += weights.availabilityDays;
+  if (
+    mentor.availabilityTimeWindows &&
+    mentor.availabilityTimeWindows.length > 0
+  )
+    score += weights.availabilityTimeWindows;
+  if (mentor.timezone) score += weights.timezone;
+
+  // Check preferences & capacity
+  if (mentor.mentoringCapacity) score += weights.mentoringCapacity;
+  if (mentor.preferredStages && mentor.preferredStages.length > 0)
+    score += weights.preferredStages;
+  if (mentor.communicationModes && mentor.communicationModes.length > 0)
+    score += weights.communicationModes;
+
+  // Check boundaries
+  if (mentor.confirmBoundaries) score += weights.confirmBoundaries;
 
   return Math.min(score, 100);
 }
@@ -360,6 +426,77 @@ export const getProfile: AppRouteHandler<GetProfile> = async (c) => {
           message: "Profile retrieved successfully",
           data: {
             ...unitProfile,
+            profileScore,
+          },
+        },
+        OK,
+      );
+    } else if (user.role === "mentor") {
+      const profileData = await db
+        .select({
+          // User fields
+          id: userTable.id,
+          name: userTable.name,
+          email: userTable.email,
+          role: userTable.role,
+          createdAt: userTable.createdAt,
+          updatedAt: userTable.updatedAt,
+          // Mentor fields
+          mentorType: mentors.mentorType,
+          expertiseAreas: mentors.expertiseAreas,
+          experienceSnapshot: mentors.experienceSnapshot,
+          availabilityDays: mentors.availabilityDays,
+          availabilityTimeWindows: mentors.availabilityTimeWindows,
+          timezone: mentors.timezone,
+          mentoringCapacity: mentors.mentoringCapacity,
+          preferredStages: mentors.preferredStages,
+          communicationModes: mentors.communicationModes,
+          confirmBoundaries: mentors.confirmBoundaries,
+          onboardingCompleted: mentors.onboardingCompleted,
+        })
+        .from(userTable)
+        .leftJoin(mentors, eq(mentors.userId, userTable.id))
+        .where(eq(userTable.id, user.id))
+        .limit(1);
+
+      if (!profileData || profileData.length === 0) {
+        return c.json(
+          { status_code: NOT_FOUND, message: "User not found" },
+          NOT_FOUND,
+        );
+      }
+
+      const data = profileData[0];
+
+      // Construct mentor profile
+      const mentorProfile = {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+        mentorType: data.mentorType,
+        expertiseAreas: data.expertiseAreas,
+        experienceSnapshot: data.experienceSnapshot,
+        availabilityDays: data.availabilityDays,
+        availabilityTimeWindows: data.availabilityTimeWindows,
+        timezone: data.timezone,
+        mentoringCapacity: data.mentoringCapacity,
+        preferredStages: data.preferredStages,
+        communicationModes: data.communicationModes,
+        confirmBoundaries: data.confirmBoundaries,
+        onboardingCompleted: data.onboardingCompleted,
+      };
+
+      const profileScore = calculateMentorScore(mentorProfile);
+
+      return c.json(
+        {
+          status_code: OK,
+          message: "Profile retrieved successfully",
+          data: {
+            ...mentorProfile,
             profileScore,
           },
         },
@@ -607,6 +744,11 @@ export const uploadAvatar: AppRouteHandler<UploadAvatar> = async (c) => {
           where: eq(units.userId, user.id),
         });
         oldAvatarUrl = unit?.avatarUrl || null;
+      } else if (user.role === "mentor") {
+        const mentor = await tx.query.mentors.findFirst({
+          where: eq(mentors.userId, user.id),
+        });
+        oldAvatarUrl = mentor?.avatarUrl || null;
       }
 
       // Upload new avatar to S3
@@ -623,6 +765,11 @@ export const uploadAvatar: AppRouteHandler<UploadAvatar> = async (c) => {
           .update(units)
           .set({ avatarUrl: newAvatarUrl, updatedAt: new Date() })
           .where(eq(units.userId, user.id));
+      } else if (user.role === "mentor") {
+        await tx
+          .update(mentors)
+          .set({ avatarUrl: newAvatarUrl, updatedAt: new Date() })
+          .where(eq(mentors.userId, user.id));
       }
     });
 
@@ -677,6 +824,11 @@ export const deleteAvatar: AppRouteHandler<DeleteAvatar> = async (c) => {
           where: eq(units.userId, user.id),
         });
         avatarUrlToDelete = unit?.avatarUrl || null;
+      } else if (user.role === "mentor") {
+        const mentor = await tx.query.mentors.findFirst({
+          where: eq(mentors.userId, user.id),
+        });
+        avatarUrlToDelete = mentor?.avatarUrl || null;
       }
 
       if (!avatarUrlToDelete) {
@@ -694,6 +846,11 @@ export const deleteAvatar: AppRouteHandler<DeleteAvatar> = async (c) => {
           .update(units)
           .set({ avatarUrl: null, updatedAt: new Date() })
           .where(eq(units.userId, user.id));
+      } else if (user.role === "mentor") {
+        await tx
+          .update(mentors)
+          .set({ avatarUrl: null, updatedAt: new Date() })
+          .where(eq(mentors.userId, user.id));
       }
     });
 
@@ -733,7 +890,7 @@ export const deleteAvatar: AppRouteHandler<DeleteAvatar> = async (c) => {
   }
 };
 
-// POST /profile/upload-banner - Upload banner (Units only)
+// POST /profile/upload-banner - Upload banner (Units & Mentors)
 export const uploadBanner: AppRouteHandler<UploadBanner> = async (c) => {
   const user = c.get("user");
 
@@ -750,22 +907,32 @@ export const uploadBanner: AppRouteHandler<UploadBanner> = async (c) => {
     let oldBannerUrl: string | null = null;
     let newBannerUrl: string | null = null;
 
-    // Transaction: get old URL, upload new file, update DB
+    // Upload new banner to S3 (outside transaction - no DB rollback possible for S3 anyway)
+    newBannerUrl = await uploadFileToS3(file, user.id, "banner", file.name);
+
+    // Transaction: get old URL and update DB
     await db.transaction(async (tx) => {
-      // Get current banner URL
-      const unit = await tx.query.units.findFirst({
-        where: eq(units.userId, user.id),
-      });
-      oldBannerUrl = unit?.bannerUrl || null;
+      if (user.role === "unit") {
+        const unit = await tx.query.units.findFirst({
+          where: eq(units.userId, user.id),
+        });
+        oldBannerUrl = unit?.bannerUrl || null;
 
-      // Upload new banner to S3
-      newBannerUrl = await uploadFileToS3(file, user.id, "banner", "unit");
+        await tx
+          .update(units)
+          .set({ bannerUrl: newBannerUrl, updatedAt: new Date() })
+          .where(eq(units.userId, user.id));
+      } else if (user.role === "mentor") {
+        const mentor = await tx.query.mentors.findFirst({
+          where: eq(mentors.userId, user.id),
+        });
+        oldBannerUrl = mentor?.bannerUrl || null;
 
-      // Update database within transaction
-      await tx
-        .update(units)
-        .set({ bannerUrl: newBannerUrl, updatedAt: new Date() })
-        .where(eq(units.userId, user.id));
+        await tx
+          .update(mentors)
+          .set({ bannerUrl: newBannerUrl, updatedAt: new Date() })
+          .where(eq(mentors.userId, user.id));
+      }
     });
 
     // Fire-and-forget: delete old file after successful transaction commit
@@ -799,7 +966,7 @@ export const uploadBanner: AppRouteHandler<UploadBanner> = async (c) => {
   }
 };
 
-// DELETE /profile/banner - Delete banner (Units only)
+// DELETE /profile/banner - Delete banner (Units & Mentors)
 export const deleteBanner: AppRouteHandler<DeleteBanner> = async (c) => {
   const user = c.get("user");
 
@@ -808,21 +975,35 @@ export const deleteBanner: AppRouteHandler<DeleteBanner> = async (c) => {
 
     // Transaction: get URL and update DB
     await db.transaction(async (tx) => {
-      // Get current banner URL
-      const unit = await tx.query.units.findFirst({
-        where: eq(units.userId, user.id),
-      });
-      bannerUrlToDelete = unit?.bannerUrl || null;
+      if (user.role === "unit") {
+        const unit = await tx.query.units.findFirst({
+          where: eq(units.userId, user.id),
+        });
+        bannerUrlToDelete = unit?.bannerUrl || null;
 
-      if (!bannerUrlToDelete) {
-        throw new Error("No banner found");
+        if (!bannerUrlToDelete) {
+          throw new Error("No banner found");
+        }
+
+        await tx
+          .update(units)
+          .set({ bannerUrl: null, updatedAt: new Date() })
+          .where(eq(units.userId, user.id));
+      } else if (user.role === "mentor") {
+        const mentor = await tx.query.mentors.findFirst({
+          where: eq(mentors.userId, user.id),
+        });
+        bannerUrlToDelete = mentor?.bannerUrl || null;
+
+        if (!bannerUrlToDelete) {
+          throw new Error("No banner found");
+        }
+
+        await tx
+          .update(mentors)
+          .set({ bannerUrl: null, updatedAt: new Date() })
+          .where(eq(mentors.userId, user.id));
       }
-
-      // Update database within transaction
-      await tx
-        .update(units)
-        .set({ bannerUrl: null, updatedAt: new Date() })
-        .where(eq(units.userId, user.id));
     });
 
     // Fire-and-forget: delete from S3 after successful transaction commit
@@ -1212,4 +1393,69 @@ export const deleteTestimonialVideo: AppRouteHandler<
       INTERNAL_SERVER_ERROR,
     );
   }
+};
+
+// GET /profile/mentor - Get mentor profile
+export const getMentorProfile: AppRouteHandler<GetMentorProfile> = async (
+  c,
+) => {
+  const user = c.get("user");
+
+  try {
+    const mentorProfile = await db.query.mentors.findFirst({
+      where: eq(mentors.userId, user.id),
+    });
+
+    if (!mentorProfile) {
+      return c.json(
+        { status_code: NOT_FOUND, message: "Mentor profile not found" },
+        NOT_FOUND,
+      );
+    }
+
+    const avatarUrl = mentorProfile.avatarUrl || null;
+    const bannerUrl = mentorProfile.bannerUrl || null;
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Mentor profile retrieved successfully",
+        data: {
+          ...mentorProfile,
+          avatarUrl,
+          bannerUrl,
+        },
+      },
+      OK,
+    );
+  } catch (_err) {
+    console.error("Error retrieving mentor profile:", _err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Failed to retrieve mentor profile",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// PUT /profile/mentor - Update mentor profile
+export const updateMentorProfile: AppRouteHandler<UpdateMentorProfile> = async (
+  c,
+) => {
+  const user = c.get("user");
+  const updatedData = c.req.valid("json");
+
+  const [updatedMentor] = await db
+    .update(mentors)
+    .set(updatedData)
+    .where(eq(mentors.userId, user.id))
+    .returning();
+
+  if (!updatedMentor) {
+    return c.json({ message: "Mentor profile not found" }, NOT_FOUND);
+  }
+
+  return c.json(updatedMentor, OK);
 };

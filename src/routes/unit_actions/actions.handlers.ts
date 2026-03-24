@@ -30,6 +30,7 @@ import type {
   GetApplications,
   GetApplicationsByInternshipId,
   UpdateApplicationStatus,
+  GetCandidateProfileById,
 } from "./actions.routes";
 
 // Helper function to check if email notifications are enabled for a user
@@ -477,6 +478,7 @@ export const getUnitApplicationById: AppRouteHandler<
         internshipTitle: internships.title,
         internshipType: internships.jobType,
         internshipDuration: internships.duration,
+        internshipCreatedBy: internships.createdBy,
 
         // Candidate fields
         candidateUserId: candidates.userId,
@@ -502,22 +504,33 @@ export const getUnitApplicationById: AppRouteHandler<
       .innerJoin(internships, eq(applications.internshipId, internships.id))
       .innerJoin(candidates, eq(applications.userId, candidates.userId))
       .innerJoin(userTable, eq(applications.userId, userTable.id))
-      .where(
-        and(
-          eq(applications.id, applicationId),
-          eq(internships.createdBy, user.id),
-        ),
-      );
+      .where(eq(applications.id, applicationId));
 
     if (applicationData.length === 0) {
       return c.json(
         {
           status_code: NOT_FOUND,
-          message: "Application not found or does not belong to this unit",
+          message: "Application not found",
         },
         NOT_FOUND,
       );
     }
+
+    const app = applicationData[0];
+
+    // Permission check: only unit/admin who created the internship or any mentor can view
+    if (user.role === "unit" || user.role === "admin") {
+      if (app.internshipCreatedBy !== user.id) {
+        return c.json(
+          {
+            status_code: FORBIDDEN,
+            message: "You can only view applications for your own internships",
+          },
+          FORBIDDEN,
+        );
+      }
+    }
+    // Mentors can view any candidate's application details
 
     const formattedApplications = applicationData.map((app) => ({
       application: {
@@ -653,6 +666,68 @@ export const getApplicationsByInternshipId: AppRouteHandler<
     );
   } catch (err) {
     console.error("Error fetching applications by internship ID:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// GET /candidates/:candidateId - Get candidate profile without application (for mentors)
+export const getCandidateProfileById: AppRouteHandler<
+  GetCandidateProfileById
+> = async (c) => {
+  const candidateId = c.req.param("candidateId");
+
+  try {
+    // Fetch candidate profile data
+    const candidateData = await db
+      .select({
+        userId: candidates.userId,
+        name: userTable.name,
+        email: userTable.email,
+        avatarUrl: candidates.avatarUrl,
+        skills: candidates.skills,
+        profileSummary: candidates.profileSummary,
+        interests: candidates.interests,
+        location: candidates.location,
+        phone: candidates.phone,
+        experienceLevel: candidates.experienceLevel,
+        education: candidates.education,
+        course: candidates.course,
+        socialLinks: candidates.socialLinks,
+        internship: candidates.internship,
+        projects: candidates.projects,
+      })
+      .from(candidates)
+      .innerJoin(userTable, eq(candidates.userId, userTable.id))
+      .where(eq(candidates.userId, candidateId));
+
+    if (candidateData.length === 0) {
+      return c.json(
+        {
+          status_code: NOT_FOUND,
+          message: "Candidate not found",
+        },
+        NOT_FOUND,
+      );
+    }
+
+    const candidate = candidateData[0];
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Candidate profile retrieved successfully",
+        data: candidate,
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error fetching candidate profile by ID:", err);
     return c.json(
       {
         status_code: INTERNAL_SERVER_ERROR,

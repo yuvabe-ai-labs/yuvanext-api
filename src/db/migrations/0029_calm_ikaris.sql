@@ -1,0 +1,1 @@
+ALTER TABLE "mentors" ADD COLUMN "banner_url" text;
