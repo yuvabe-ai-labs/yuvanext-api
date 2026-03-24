@@ -30,11 +30,7 @@ export const createMeetingSchema = z
     meetingType: meetingTypeEnum,
     scheduledAt: z
       .string()
-      .datetime({ message: "Must be a valid ISO 8601 datetime" })
-      .refine(isOfficeHours, {
-        message:
-          "Meeting must be scheduled on a weekday between 09:00AM to 5:00PM.",
-      }),
+      .datetime({ message: "Must be a valid ISO 8601 datetime" }),
     durationMinutes: z
       .number()
       .int()
