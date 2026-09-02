@@ -227,6 +227,23 @@ export const updateApplicationStatus: AppRouteHandler<
           if (zoomMeeting) {
             zoomLink = zoomMeeting.joinUrl;
             provider = "zoom";
+          } else {
+            // createZoomMeeting logs the underlying cause; log the context here
+            // so the failure can be tied back to a specific interview. The
+            // interview is still recorded and the emails still go out, but
+            // without a join link.
+            console.error(
+              "Zoom meeting creation failed - interview will have no join link",
+              {
+                applicationId,
+                internshipTitle: internship.title,
+                candidateName: candidateUser.name,
+                candidateEmail: candidateUser.email,
+                scheduledAt,
+                durationMinutes: interviewDetails?.durationMinutes || 60,
+                unitUserId: user.id,
+              },
+            );
           }
         } else if (zoomLink && !provider) {
           // Auto-detect provider from link if not specified
