@@ -4,14 +4,17 @@ import { units } from "@/db/schema/unit.schema";
 import {
   aliasedTable,
   and,
+  type AnyColumn,
   count,
   desc,
   eq,
   ilike,
   inArray,
+  ne,
   sql,
 } from "drizzle-orm";
 import {
+  GetMenteeGrowth,
   GetMentorAcceptedCandidates,
   GetMentorStats,
   GetMentorUnitProfile,
@@ -65,27 +68,64 @@ export const getMentorAcceptedCandidates: AppRouteHandler<
     // ── Alias unit's user row to avoid column clash with candidate user ─────────
     const unitUser = aliasedTable(userTable, "unit_user");
 
+    // ── One application summary row per candidate ─────────────────────────────
+    // Joining applications directly would emit one row per application, so a
+    // candidate with several applications appeared several times and inflated
+    // the page against a count that only counts mentorship requests. Grouping
+    // by candidate here keeps rows 1:1 with accepted mentees; array_agg picks
+    // the most recent application. Pass unitId to scope it to one unit.
+    const buildApplicationSummary = (scopedUnitId?: string) => {
+      const pickLatest = (column: AnyColumn) =>
+        sql`(array_agg(${column} order by ${applications.createdAt} desc))[1]`;
+
+      const query = db
+        .select({
+          candidateId: applications.userId,
+          applicationId: pickLatest(applications.id).as("application_id"),
+          applicationStatus: pickLatest(applications.status).as(
+            "application_status",
+          ),
+          internshipTitle: pickLatest(internships.title).as("internship_title"),
+          unitName: pickLatest(unitUser.name).as("unit_name"),
+        })
+        .from(applications)
+        .leftJoin(internships, eq(internships.id, applications.internshipId))
+        .leftJoin(units, eq(units.userId, internships.createdBy))
+        .leftJoin(unitUser, eq(unitUser.id, units.userId));
+
+      return (
+        scopedUnitId
+          ? query.where(eq(internships.createdBy, scopedUnitId))
+          : query
+      )
+        .groupBy(applications.userId)
+        .as("application_summary");
+    };
+
     // ── Shared candidate + latest application select ──────────────────────────
-    // LEFT JOINs to applications/internships/units mean candidates with no
-    // applications are still returned; application fields will be null.
-    const candidateSelect = {
-      requestId: mentorshipRequests.id,
-      message: mentorshipRequests.message,
-      requestedAt: mentorshipRequests.createdAt,
-      acceptedAt: mentorshipRequests.updatedAt,
-      candidateUserId: candidates.userId,
-      candidateName: userTable.name,
-      candidateEmail: userTable.email,
-      candidateAvatarUrl: candidates.avatarUrl,
-      candidateProfileSummary: candidates.profileSummary,
-      candidateSkills: candidates.skills,
-      candidateExperienceLevel: candidates.experienceLevel,
-      // Application enrichment fields (null when candidate has no application)
-      applicationId: applications.id,
-      applicationStatus: applications.status,
-      internshipTitle: internships.title,
-      unitName: unitUser.name,
-    } as const;
+    // The application summary is LEFT JOINed, so candidates with no
+    // applications are still returned with null application fields.
+    const candidateSelect = (
+      appSummary: ReturnType<typeof buildApplicationSummary>,
+    ) =>
+      ({
+        requestId: mentorshipRequests.id,
+        message: mentorshipRequests.message,
+        requestedAt: mentorshipRequests.createdAt,
+        acceptedAt: mentorshipRequests.updatedAt,
+        candidateUserId: candidates.userId,
+        candidateName: userTable.name,
+        candidateEmail: userTable.email,
+        candidateAvatarUrl: candidates.avatarUrl,
+        candidateProfileSummary: candidates.profileSummary,
+        candidateSkills: candidates.skills,
+        candidateExperienceLevel: candidates.experienceLevel,
+        // Application enrichment fields (null when candidate has no application)
+        applicationId: appSummary.applicationId,
+        applicationStatus: appSummary.applicationStatus,
+        internshipTitle: appSummary.internshipTitle,
+        unitName: appSummary.unitName,
+      }) as const;
 
     const mapRow = (row: (typeof rows)[number]) => ({
       requestId: row.requestId,
@@ -111,13 +151,11 @@ export const getMentorAcceptedCandidates: AppRouteHandler<
         : null,
     });
 
-    // ── Shared LEFT JOIN chain appended after the core FROM/innerJoins ────────
-    const applyAppJoins = (q: any) =>
-      q
-        .leftJoin(applications, eq(applications.userId, candidates.userId))
-        .leftJoin(internships, eq(applications.internshipId, internships.id))
-        .leftJoin(units, eq(internships.createdBy, units.userId))
-        .leftJoin(unitUser, eq(units.userId, unitUser.id));
+    // ── Attach the per-candidate application summary (never multiplies rows) ──
+    const applyAppJoins = (
+      q: any,
+      appSummary: ReturnType<typeof buildApplicationSummary>,
+    ) => q.leftJoin(appSummary, eq(appSummary.candidateId, candidates.userId));
 
     // ── MODE: "recent" ────────────────────────────────────────────────────────
     // Return the 10 most-recently accepted candidates with their application info.
@@ -130,15 +168,17 @@ export const getMentorAcceptedCandidates: AppRouteHandler<
         ? and(...baseConditions, ilike(userTable.name, `%${search}%`))
         : and(...baseConditions);
 
+      const appSummary = buildApplicationSummary();
       const rows = await applyAppJoins(
         db
-          .select(candidateSelect)
+          .select(candidateSelect(appSummary))
           .from(mentorshipRequests)
           .innerJoin(
             candidates,
             eq(mentorshipRequests.candidateId, candidates.userId),
           )
           .innerJoin(userTable, eq(candidates.userId, userTable.id)) as any,
+        appSummary,
       )
         .where(whereClause)
         .orderBy(desc(mentorshipRequests.updatedAt))
@@ -265,16 +305,18 @@ export const getMentorAcceptedCandidates: AppRouteHandler<
             inArray(mentorshipRequests.candidateId, candidateIdsAtUnit),
           );
 
+      const appSummary = buildApplicationSummary(unitId);
       const [rows, totalCountResult] = await Promise.all([
         applyAppJoins(
           db
-            .select(candidateSelect)
+            .select(candidateSelect(appSummary))
             .from(mentorshipRequests)
             .innerJoin(
               candidates,
               eq(mentorshipRequests.candidateId, candidates.userId),
             )
             .innerJoin(userTable, eq(candidates.userId, userTable.id)) as any,
+          appSummary,
         )
           .where(whereClause)
           .orderBy(desc(mentorshipRequests.updatedAt))
@@ -327,16 +369,18 @@ export const getMentorAcceptedCandidates: AppRouteHandler<
       ? and(...baseConditions, ilike(userTable.name, `%${search}%`))
       : and(...baseConditions);
 
+    const appSummary = buildApplicationSummary();
     const [rows, totalCountResult] = await Promise.all([
       applyAppJoins(
         db
-          .select(candidateSelect)
+          .select(candidateSelect(appSummary))
           .from(mentorshipRequests)
           .innerJoin(
             candidates,
             eq(mentorshipRequests.candidateId, candidates.userId),
           )
           .innerJoin(userTable, eq(candidates.userId, userTable.id)) as any,
+        appSummary,
       )
         .where(allConditions)
         .orderBy(desc(mentorshipRequests.updatedAt))
@@ -747,6 +791,8 @@ export const getMentorStats: AppRouteHandler<GetMentorStats> = async (c) => {
     // Meetings where mentorId = me, status = "pending", scheduledAt > now.
     // newThisMonth → pending future meetings *created* (createdAt) this month.
     const now = new Date();
+    // total → every meeting the mentor has, cancelled ones excluded since they
+    // never took place. newThisMonth → meetings scheduled within this month.
     const upcomingMeetingsPromise = Promise.all([
       db
         .select({ count: count() })
@@ -754,8 +800,7 @@ export const getMentorStats: AppRouteHandler<GetMentorStats> = async (c) => {
         .where(
           and(
             eq(meetings.mentorId, mentor.id),
-            eq(meetings.status, "pending"),
-            gt(meetings.scheduledAt, now),
+            ne(meetings.status, "cancelled"),
           ),
         ),
       db
@@ -764,10 +809,9 @@ export const getMentorStats: AppRouteHandler<GetMentorStats> = async (c) => {
         .where(
           and(
             eq(meetings.mentorId, mentor.id),
-            eq(meetings.status, "pending"),
-            gt(meetings.scheduledAt, now),
-            gte(meetings.createdAt, monthStart),
-            lt(meetings.createdAt, monthEnd),
+            ne(meetings.status, "cancelled"),
+            gte(meetings.scheduledAt, monthStart),
+            lt(meetings.scheduledAt, monthEnd),
           ),
         ),
     ]);
@@ -846,6 +890,101 @@ export const getMentorStats: AppRouteHandler<GetMentorStats> = async (c) => {
     console.error("Error fetching mentor stats:", err);
     return c.json(
       { status_code: INTERNAL_SERVER_ERROR, message: "Internal server error" },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+/**
+ * GET /mentor/mentee-growth
+ *
+ * How many mentees joined each month. "Joined" means the mentorship request
+ * reached status "accepted", tracked by updatedAt — the same definition the
+ * stats tile uses for acceptedMentees.newThisMonth, so the chart and the tile
+ * agree.
+ *
+ * Bucketing happens in SQL; the handler only fills the gaps so months with no
+ * joins still appear as 0 and the series is safe to plot directly.
+ */
+export const getMenteeGrowth: AppRouteHandler<GetMenteeGrowth> = async (c) => {
+  const mentor = c.get("user");
+  const { months = 6 } = c.req.valid("query");
+
+  try {
+    const now = new Date();
+    // First day of the earliest month in the window, local to the server.
+    const windowStart = new Date(
+      now.getFullYear(),
+      now.getMonth() - (months - 1),
+      1,
+    );
+
+    const rows = await db
+      .select({
+        month: sql<string>`to_char(date_trunc('month', ${mentorshipRequests.updatedAt}), 'YYYY-MM')`,
+        count: count(),
+      })
+      .from(mentorshipRequests)
+      .where(
+        and(
+          eq(mentorshipRequests.mentorId, mentor.id),
+          eq(mentorshipRequests.status, "accepted"),
+          gte(mentorshipRequests.updatedAt, windowStart),
+        ),
+      )
+      .groupBy(sql`date_trunc('month', ${mentorshipRequests.updatedAt})`);
+
+    const countsByMonth = new Map(rows.map((row) => [row.month, row.count]));
+
+    const MONTH_LABELS = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+
+    const series = Array.from({ length: months }, (_, offset) => {
+      const date = new Date(
+        windowStart.getFullYear(),
+        windowStart.getMonth() + offset,
+        1,
+      );
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+      return {
+        month: key,
+        label: MONTH_LABELS[date.getMonth()],
+        year: date.getFullYear(),
+        count: countsByMonth.get(key) ?? 0,
+      };
+    });
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Mentee growth retrieved successfully.",
+        data: {
+          months: series,
+          total: series.reduce((sum, point) => sum + point.count, 0),
+        },
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error fetching mentee growth:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
       INTERNAL_SERVER_ERROR,
     );
   }

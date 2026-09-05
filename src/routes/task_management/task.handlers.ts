@@ -308,6 +308,9 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
           applicantId: applications.userId,
           applicantName: userTable.name,
           candidateAvatarUrl: candidates.avatarUrl,
+          // When the application was set to "hired" — the internship start
+          // proxy used to work out who is in their final month.
+          hiredAt: sql<string>`${applications.updatedAt}::text`,
 
           internshipId: internships.id,
           internshipName: internships.title,
@@ -347,6 +350,7 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
           applicantName: string | null;
           unitName: string | null;
           candidateAvatarUrl: string | null;
+          hiredAt: string | null;
           tasks: Array<{
             taskId: string;
             taskStatus: "pending" | "submitted" | "redo" | "accepted";
@@ -371,6 +375,7 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
             applicantName: row.applicantName,
             unitName: row.unitName,
             candidateAvatarUrl: row.candidateAvatarUrl,
+            hiredAt: row.hiredAt,
             tasks: [],
           };
           acc.push(existing);
@@ -478,6 +483,7 @@ export const getTasksByApplicationId: AppRouteHandler<
         applicantEmail: userTable.email,
         candidateAvatarUrl: candidates.avatarUrl,
         candidatePhoneNumber: candidates.phone,
+        candidateLocation: candidates.location,
 
         // ---- Internship ----
         internshipId: internships.id,
@@ -512,6 +518,7 @@ export const getTasksByApplicationId: AppRouteHandler<
       applicantEmail: firstRow.applicantEmail,
       candidateAvatarUrl: firstRow.candidateAvatarUrl,
       candidatePhoneNumber: firstRow.candidatePhoneNumber,
+      candidateLocation: firstRow.candidateLocation,
       internshipId: firstRow.internshipId,
       internshipName: firstRow.internshipName,
       internshipCreatedAt: firstRow.internshipCreatedAt,

@@ -76,6 +76,10 @@ export const groupedTasksResponseSchema = z.object({
   applicantId: z.string(),
   applicantName: z.string().nullable(),
   unitName: z.string().nullable(),
+  internshipDuration: z.string().nullable().optional(),
+  candidateAvatarUrl: z.string().nullable().optional(),
+  /** When the application became "hired" — the internship start proxy. */
+  hiredAt: z.string().nullable().optional(),
   tasks: z.array(
     z.object({
       taskId: z.string(),
@@ -92,6 +96,7 @@ export const applicationTasksResponseSchema = z.object({
   applicantEmail: z.string().nullable(),
   candidateAvatarUrl: z.string().nullable(),
   candidatePhoneNumber: z.string().nullable(),
+  candidateLocation: z.string().nullable(),
   internshipId: z.string(),
   internshipName: z.string().nullable(),
   internshipCreatedAt: z.string(),

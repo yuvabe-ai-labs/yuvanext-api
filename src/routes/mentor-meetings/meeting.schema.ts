@@ -94,6 +94,8 @@ export const meetingItemSchema = z.object({
   zoomStartUrl: z.string().nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
+  /** Unit behind the candidate's most recent application; null if they have none. */
+  unitName: z.string().nullable(),
   candidate: z.object({
     userId: z.string(),
     name: z.string().nullable(),
