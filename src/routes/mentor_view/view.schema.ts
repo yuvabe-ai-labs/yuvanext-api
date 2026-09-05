@@ -214,3 +214,25 @@ export const mentorStatsResponseSchema = z.object({
     "Applications with status = 'hired' submitted by accepted mentees",
   ),
 });
+
+/**
+ * Query schema for the mentee-growth series.
+ *
+ * months → how many months back the series covers, current month included.
+ */
+export const menteeGrowthQuerySchema = z.object({
+  months: z.coerce.number().int().positive().max(24).default(6).optional(),
+});
+
+/** One bucket of the mentee-growth series. Months with no joins return 0. */
+export const menteeGrowthPointSchema = z.object({
+  month: z.string().describe("Start of the month, as YYYY-MM"),
+  label: z.string().describe("Short month name, e.g. 'Apr'"),
+  year: z.number(),
+  count: z.number().describe("Mentees whose request was accepted that month"),
+});
+
+export const menteeGrowthResponseSchema = z.object({
+  months: z.array(menteeGrowthPointSchema),
+  total: z.number().describe("Sum across the returned window"),
+});

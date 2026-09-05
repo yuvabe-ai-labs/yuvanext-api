@@ -735,11 +735,28 @@ export const getCandidateProfileById: AppRouteHandler<
 
     const candidate = candidateData[0];
 
+    // Every internship this candidate applied to, for the Application History
+    // block. Unit name/logo come from the internship's owning unit.
+    const applicationHistory = await db
+      .select({
+        applicationId: applications.id,
+        status: applications.status,
+        internshipTitle: internships.title,
+        unitName: units.name,
+        unitLogoUrl: units.avatarUrl,
+        appliedAt: applications.createdAt,
+      })
+      .from(applications)
+      .leftJoin(internships, eq(internships.id, applications.internshipId))
+      .leftJoin(units, eq(units.userId, internships.createdBy))
+      .where(eq(applications.userId, candidateId))
+      .orderBy(desc(applications.createdAt));
+
     return c.json(
       {
         status_code: OK,
         message: "Candidate profile retrieved successfully",
-        data: candidate,
+        data: { ...candidate, applicationHistory },
       },
       OK,
     );

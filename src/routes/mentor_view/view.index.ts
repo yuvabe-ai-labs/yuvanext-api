@@ -13,6 +13,7 @@ router
 
   .openapi(routes.getMentorUnits, handlers.getMentorUnits)
   .openapi(routes.getMentorStats, handlers.getMentorStats)
+  .openapi(routes.getMenteeGrowth, handlers.getMenteeGrowth)
   .openapi(routes.getMentorUnitProfile, handlers.getMentorUnitProfile);
 
 export default router;
