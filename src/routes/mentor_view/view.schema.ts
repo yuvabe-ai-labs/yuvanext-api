@@ -68,6 +68,7 @@ export const mentorUnitListItemSchema = z.object({
   industry: z.string().nullable(),
   location: z.string().nullable(),
   avatarUrl: z.string().nullable(),
+  bannerUrl: z.string().nullable(),
   description: z.string().nullable(),
   isAurovillian: z.boolean().nullable(),
   // how many of this mentor's accepted candidates have applied to this unit
@@ -208,7 +209,7 @@ export const mentorStatsResponseSchema = z.object({
     "Unique units (companies) that accepted mentees have applied to",
   ),
   upcomingMeetings: statTileSchema.describe(
-    "Pending meetings whose scheduledAt is in the future",
+    "Meetings the mentor has scheduled, past and future; cancelled excluded",
   ),
   hiredApplications: statTileSchema.describe(
     "Applications with status = 'hired' submitted by accepted mentees",
