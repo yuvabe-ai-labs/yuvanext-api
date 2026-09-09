@@ -154,6 +154,17 @@ export const candidateProfileResponseSchema = z.object({
   socialLinks: z.record(z.string(), z.string()).nullable(),
   internship: z.array(z.any()).nullable(),
   projects: z.array(z.any()).nullable(),
+  /** Every internship this candidate has applied to, newest first. */
+  applicationHistory: z.array(
+    z.object({
+      applicationId: z.string(),
+      status: applicationStatusEnum,
+      internshipTitle: z.string().nullable(),
+      unitName: z.string().nullable(),
+      unitLogoUrl: z.string().nullable(),
+      appliedAt: z.union([z.string(), z.date()]).nullable(),
+    }),
+  ),
 });
 
 export const applicationByInternshipResponseSchema = z.object({

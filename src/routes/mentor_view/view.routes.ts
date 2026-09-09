@@ -16,6 +16,8 @@ import {
   mentorUnitProfileSchema,
   getMentorUnitsQuerySchema,
   mentorUnitListItemSchema,
+  menteeGrowthQuerySchema,
+  menteeGrowthResponseSchema,
   mentorStatsResponseSchema,
 } from "./view.schema";
 
@@ -136,7 +138,34 @@ export const getMentorStats = createRoute({
   },
 });
 
+/**
+ * GET /mentor/mentee-growth
+ *
+ * Monthly count of mentees who joined (mentorship request accepted) over the
+ * last `months` months, current month last. Months with no joins return 0, so
+ * the series is always dense and safe to plot directly.
+ */
+export const getMenteeGrowth = createRoute({
+  method: "get" as const,
+  path: "/mentor/mentee-growth",
+  tags: ["Mentor view - Mentor"],
+  middleware: requireRole({ allowedRoles: ["mentor"] }),
+  summary: "Mentees joined per month",
+  description:
+    "Returns a dense monthly series of how many mentees the mentor accepted, " +
+    "for the dashboard performance chart.",
+  request: {
+    query: menteeGrowthQuerySchema,
+  },
+  responses: {
+    [OK]: createResponse(OK, menteeGrowthResponseSchema),
+    ...restrictedErrorResponses,
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
+  },
+});
+
 export type GetMentorStats = typeof getMentorStats;
+export type GetMenteeGrowth = typeof getMenteeGrowth;
 
 export type GetMentorAcceptedCandidates = typeof getMentorAcceptedCandidates;
 export type GetMentorUnits = typeof getMentorUnits;
