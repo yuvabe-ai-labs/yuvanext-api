@@ -492,6 +492,7 @@ export const getMentorUnits: AppRouteHandler<GetMentorUnits> = async (c) => {
           industry: units.industry,
           location: units.location,
           avatarUrl: units.avatarUrl,
+          bannerUrl: units.bannerUrl,
           description: units.description,
           isAurovillian: units.isAurovillian,
           applicationCount: count(applications.id),
@@ -507,6 +508,7 @@ export const getMentorUnits: AppRouteHandler<GetMentorUnits> = async (c) => {
           units.industry,
           units.location,
           units.avatarUrl,
+          units.bannerUrl,
           units.description,
           units.isAurovillian,
         )
@@ -787,13 +789,11 @@ export const getMentorStats: AppRouteHandler<GetMentorStats> = async (c) => {
         ),
     ]);
 
-    // ── 3. Upcoming Meetings ──────────────────────────────────────────────────
-    // Meetings where mentorId = me, status = "pending", scheduledAt > now.
-    // newThisMonth → pending future meetings *created* (createdAt) this month.
-    const now = new Date();
-    // total → every meeting the mentor has, cancelled ones excluded since they
-    // never took place. newThisMonth → meetings scheduled within this month.
-    const upcomingMeetingsPromise = Promise.all([
+    // ── 3. Meetings ───────────────────────────────────────────────────────────
+    // total → every meeting the mentor has scheduled, past and future alike;
+    // cancelled ones are excluded since they never took place.
+    // newThisMonth → those scheduled within the current calendar month.
+    const meetingsPromise = Promise.all([
       db
         .select({ count: count() })
         .from(meetings)
@@ -847,13 +847,13 @@ export const getMentorStats: AppRouteHandler<GetMentorStats> = async (c) => {
       [pendingTotal, pendingNew],
       [acceptedTotal, acceptedNew],
       [unitsTotal, unitsNew],
-      [upcomingTotal, upcomingNew],
+      [meetingsTotal, meetingsNew],
       [hiredTotal, hiredNew],
     ] = await Promise.all([
       pendingRequestsPromise,
       acceptedMenteesPromise,
       menteeUnitsPromise,
-      upcomingMeetingsPromise,
+      meetingsPromise,
       hiredApplicationsPromise,
     ]);
 
@@ -875,8 +875,8 @@ export const getMentorStats: AppRouteHandler<GetMentorStats> = async (c) => {
             newThisMonth: unitsNew[0]?.count ?? 0,
           },
           upcomingMeetings: {
-            total: upcomingTotal[0]?.count ?? 0,
-            newThisMonth: upcomingNew[0]?.count ?? 0,
+            total: meetingsTotal[0]?.count ?? 0,
+            newThisMonth: meetingsNew[0]?.count ?? 0,
           },
           hiredApplications: {
             total: hiredTotal[0]?.count ?? 0,
