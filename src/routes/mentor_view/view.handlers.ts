@@ -65,9 +65,6 @@ export const getMentorAcceptedCandidates: AppRouteHandler<
   } = c.req.valid("query");
 
   try {
-    // ── Alias unit's user row to avoid column clash with candidate user ─────────
-    const unitUser = aliasedTable(userTable, "unit_user");
-
     // ── One application summary row per candidate ─────────────────────────────
     // Joining applications directly would emit one row per application, so a
     // candidate with several applications appeared several times and inflated
@@ -86,12 +83,15 @@ export const getMentorAcceptedCandidates: AppRouteHandler<
             "application_status",
           ),
           internshipTitle: pickLatest(internships.title).as("internship_title"),
-          unitName: pickLatest(unitUser.name).as("unit_name"),
+          // units.name is the unit's profile name — the one shown on the Units
+          // List and unit profile. The unit's login account (user.name) can
+          // differ, so reading it here made the same unit render under two
+          // different names on different screens.
+          unitName: pickLatest(units.name).as("unit_name"),
         })
         .from(applications)
         .leftJoin(internships, eq(internships.id, applications.internshipId))
-        .leftJoin(units, eq(units.userId, internships.createdBy))
-        .leftJoin(unitUser, eq(unitUser.id, units.userId));
+        .leftJoin(units, eq(units.userId, internships.createdBy));
 
       return (
         scopedUnitId
