@@ -483,20 +483,22 @@ export const getMeetings: AppRouteHandler<GetMeetings> = async (c) => {
     // recent application. Grouped by candidate so a candidate with several
     // applications cannot multiply the meeting rows (which would corrupt
     // pagination), and LEFT JOINed so meetings with no application still return.
-    const unitUser = aliasedTable(userTable, "unit_user");
+    // The unit's name comes from units.name — its profile name, the one the
+    // Units List and unit profile show. The unit's login account (user.name)
+    // can differ and must not be used here, or the same unit reads differently
+    // on different screens.
     const candidateUnits = db
       .select({
         candidateId: applications.userId,
         unitName: sql<
           string | null
-        >`(array_agg(${unitUser.name} order by ${applications.createdAt} desc))[1]`.as(
+        >`(array_agg(${units.name} order by ${applications.createdAt} desc))[1]`.as(
           "unit_name",
         ),
       })
       .from(applications)
       .innerJoin(internships, eq(internships.id, applications.internshipId))
       .innerJoin(units, eq(units.userId, internships.createdBy))
-      .innerJoin(unitUser, eq(unitUser.id, units.userId))
       .groupBy(applications.userId)
       .as("candidate_units");
 
