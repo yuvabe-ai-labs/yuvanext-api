@@ -227,6 +227,23 @@ export const updateApplicationStatus: AppRouteHandler<
           if (zoomMeeting) {
             zoomLink = zoomMeeting.joinUrl;
             provider = "zoom";
+          } else {
+            // createZoomMeeting logs the underlying cause; log the context here
+            // so the failure can be tied back to a specific interview. The
+            // interview is still recorded and the emails still go out, but
+            // without a join link.
+            console.error(
+              "Zoom meeting creation failed - interview will have no join link",
+              {
+                applicationId,
+                internshipTitle: internship.title,
+                candidateName: candidateUser.name,
+                candidateEmail: candidateUser.email,
+                scheduledAt,
+                durationMinutes: interviewDetails?.durationMinutes || 60,
+                unitUserId: user.id,
+              },
+            );
           }
         } else if (zoomLink && !provider) {
           // Auto-detect provider from link if not specified
@@ -718,11 +735,28 @@ export const getCandidateProfileById: AppRouteHandler<
 
     const candidate = candidateData[0];
 
+    // Every internship this candidate applied to, for the Application History
+    // block. Unit name/logo come from the internship's owning unit.
+    const applicationHistory = await db
+      .select({
+        applicationId: applications.id,
+        status: applications.status,
+        internshipTitle: internships.title,
+        unitName: units.name,
+        unitLogoUrl: units.avatarUrl,
+        appliedAt: applications.createdAt,
+      })
+      .from(applications)
+      .leftJoin(internships, eq(internships.id, applications.internshipId))
+      .leftJoin(units, eq(units.userId, internships.createdBy))
+      .where(eq(applications.userId, candidateId))
+      .orderBy(desc(applications.createdAt));
+
     return c.json(
       {
         status_code: OK,
         message: "Candidate profile retrieved successfully",
-        data: candidate,
+        data: { ...candidate, applicationHistory },
       },
       OK,
     );

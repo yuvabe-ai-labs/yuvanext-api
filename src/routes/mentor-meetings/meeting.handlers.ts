@@ -1,11 +1,14 @@
-import { and, count, desc, eq, ilike } from "drizzle-orm";
+import { aliasedTable, and, count, desc, eq, ilike, sql } from "drizzle-orm";
 
 import type { AppRouteHandler } from "@/types/app.types";
 
 import db from "@/db";
 import { user as userTable } from "@/db/schema/auth.schema";
+import { applications } from "@/db/schema/application.schema";
 import { candidates } from "@/db/schema/candidate.schema";
+import { internships } from "@/db/schema/internship.schema";
 import { meetings } from "@/db/schema/meeting.schema";
+import { units } from "@/db/schema/unit.schema";
 import { mentorshipRequests } from "@/db/schema/mentorship-requests.schema";
 import { userSettings } from "@/db/schema/settings.schema";
 import {
@@ -226,6 +229,8 @@ export const createMeeting: AppRouteHandler<CreateMeeting> = async (c) => {
     const scheduledDate = new Date(scheduledAt).toLocaleString("en-IN", {
       dateStyle: "full",
       timeStyle: "short",
+      // Pinned to IST so the notification matches the UI, not the server zone.
+      timeZone: "Asia/Kolkata",
     });
 
     const creatorRoleName =
@@ -368,6 +373,8 @@ export const cancelMeeting: AppRouteHandler<CancelMeeting> = async (c) => {
     const scheduledDate = meeting.scheduledAt.toLocaleString("en-IN", {
       dateStyle: "full",
       timeStyle: "short",
+      // Pinned to IST so the notification matches the UI, not the server zone.
+      timeZone: "Asia/Kolkata",
     });
 
     const cancellerLabel = isMentor ? "Your mentor" : "Your mentee";
@@ -475,6 +482,30 @@ export const getMeetings: AppRouteHandler<GetMeetings> = async (c) => {
       ? and(...baseConditions, searchCondition)
       : and(...baseConditions);
 
+    // ── Unit the candidate is attached to ─────────────────────────────────────
+    // A meeting has no unit of its own; it is derived from the candidate's most
+    // recent application. Grouped by candidate so a candidate with several
+    // applications cannot multiply the meeting rows (which would corrupt
+    // pagination), and LEFT JOINed so meetings with no application still return.
+    // The unit's name comes from units.name — its profile name, the one the
+    // Units List and unit profile show. The unit's login account (user.name)
+    // can differ and must not be used here, or the same unit reads differently
+    // on different screens.
+    const candidateUnits = db
+      .select({
+        candidateId: applications.userId,
+        unitName: sql<
+          string | null
+        >`(array_agg(${units.name} order by ${applications.createdAt} desc))[1]`.as(
+          "unit_name",
+        ),
+      })
+      .from(applications)
+      .innerJoin(internships, eq(internships.id, applications.internshipId))
+      .innerJoin(units, eq(units.userId, internships.createdBy))
+      .groupBy(applications.userId)
+      .as("candidate_units");
+
     const [rows, totalCountResult] = await Promise.all([
       db
         .select({
@@ -498,10 +529,15 @@ export const getMeetings: AppRouteHandler<GetMeetings> = async (c) => {
           candidateProfileSummary: candidates.profileSummary,
           candidateSkills: candidates.skills,
           candidateExperienceLevel: candidates.experienceLevel,
+          unitName: candidateUnits.unitName,
         })
         .from(meetings)
         .innerJoin(candidates, eq(meetings.candidateId, candidates.userId))
         .innerJoin(userTable, eq(candidates.userId, userTable.id))
+        .leftJoin(
+          candidateUnits,
+          eq(candidateUnits.candidateId, meetings.candidateId),
+        )
         .where(allConditions)
         .orderBy(desc(meetings.scheduledAt))
         .limit(limit)
@@ -532,6 +568,8 @@ export const getMeetings: AppRouteHandler<GetMeetings> = async (c) => {
       zoomStartUrl: row.zoomStartUrl,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      // null when the candidate has not applied to any internship yet
+      unitName: row.unitName,
       candidate: {
         userId: row.candidateUserId,
         name: row.candidateName,

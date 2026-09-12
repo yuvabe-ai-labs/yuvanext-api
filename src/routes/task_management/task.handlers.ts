@@ -308,6 +308,11 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
           applicantId: applications.userId,
           applicantName: userTable.name,
           candidateAvatarUrl: candidates.avatarUrl,
+          // When the application was set to "hired" — the internship start
+          // proxy used to work out who is in their final month.
+          hiredAt: sql<string>`${applications.updatedAt}::text`,
+          // Ranking key for "recent" activity: when a task last moved.
+          taskUpdatedAt: sql<string | null>`${tasks.updatedAt}::text`,
 
           internshipId: internships.id,
           internshipName: internships.title,
@@ -347,6 +352,9 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
           applicantName: string | null;
           unitName: string | null;
           candidateAvatarUrl: string | null;
+          hiredAt: string | null;
+          /** Internal ranking key — stripped before the response is sent. */
+          lastActivityAt: string | null;
           tasks: Array<{
             taskId: string;
             taskStatus: "pending" | "submitted" | "redo" | "accepted";
@@ -371,6 +379,8 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
             applicantName: row.applicantName,
             unitName: row.unitName,
             candidateAvatarUrl: row.candidateAvatarUrl,
+            hiredAt: row.hiredAt,
+            lastActivityAt: null,
             tasks: [],
           };
           acc.push(existing);
@@ -381,16 +391,38 @@ export const getAllTasks: AppRouteHandler<GetAllTasks> = async (c) => {
             taskId: row.taskId,
             taskStatus: row.taskStatus!,
           });
+          // Keep the most recent task update seen for this mentee.
+          if (
+            row.taskUpdatedAt &&
+            (!existing.lastActivityAt ||
+              row.taskUpdatedAt > existing.lastActivityAt)
+          ) {
+            existing.lastActivityAt = row.taskUpdatedAt;
+          }
         }
 
         return acc;
       }, []);
 
+      // Most recent task activity first. The query has no ORDER BY of its own,
+      // so the row order was whatever the planner happened to return — which
+      // made "Recent Mentee Activity" on the dashboard (it takes the first
+      // three) an arbitrary trio. Mentees with no tasks fall back to their hire
+      // date rather than sorting to the top on an empty key.
+      const sortedData = [...groupedData].sort((a, b) => {
+        const aKey = a.lastActivityAt ?? a.hiredAt ?? "";
+        const bKey = b.lastActivityAt ?? b.hiredAt ?? "";
+        if (aKey === bKey)
+          return a.applicationId.localeCompare(b.applicationId);
+        return aKey < bKey ? 1 : -1;
+      });
+
       return c.json(
         {
           status_code: OK,
           message: "Tasks retrieved successfully",
-          data: groupedData,
+          // lastActivityAt is an internal ranking key, not part of the contract.
+          data: sortedData.map(({ lastActivityAt: _rank, ...group }) => group),
         },
         OK,
       );
@@ -478,6 +510,7 @@ export const getTasksByApplicationId: AppRouteHandler<
         applicantEmail: userTable.email,
         candidateAvatarUrl: candidates.avatarUrl,
         candidatePhoneNumber: candidates.phone,
+        candidateLocation: candidates.location,
 
         // ---- Internship ----
         internshipId: internships.id,
@@ -512,6 +545,7 @@ export const getTasksByApplicationId: AppRouteHandler<
       applicantEmail: firstRow.applicantEmail,
       candidateAvatarUrl: firstRow.candidateAvatarUrl,
       candidatePhoneNumber: firstRow.candidatePhoneNumber,
+      candidateLocation: firstRow.candidateLocation,
       internshipId: firstRow.internshipId,
       internshipName: firstRow.internshipName,
       internshipCreatedAt: firstRow.internshipCreatedAt,
