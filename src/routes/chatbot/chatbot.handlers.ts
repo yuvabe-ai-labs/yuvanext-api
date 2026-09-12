@@ -114,6 +114,31 @@ export const chat = async (c: Context) => {
   };
 
   /**
+   * Q7 offers exactly two options, so anything else the model returns is
+   * wrong — free-typed values like "Messaging" or "Calls" used to be stored
+   * verbatim, and case variants ("In-Person Meeting") produced duplicates.
+   * Map onto the canonical spellings and drop what cannot be mapped.
+   */
+  const normaliseCommunicationModes = (values: string[]): string[] => {
+    const IN_PERSON = "In-person Meetings";
+    const VIRTUAL = "Virtual Video Calls";
+    const out = new Set<string>();
+
+    for (const raw of values) {
+      const v = raw.toLowerCase().replace(/[^a-z]/g, "");
+      if (/inperson|facetoface|offline|meetup|physical/.test(v)) {
+        out.add(IN_PERSON);
+      } else if (/virtual|video|zoom|online|call|remote/.test(v)) {
+        out.add(VIRTUAL);
+      } else if (/meeting/.test(v)) {
+        // Bare "Meetings" with no qualifier — the in-person option.
+        out.add(IN_PERSON);
+      }
+    }
+    return [...out];
+  };
+
+  /**
    * Helper to convert values to string array
    */
   const toArray = (val: any): string[] => {
@@ -220,11 +245,12 @@ export const chat = async (c: Context) => {
         );
 
         if (extractedData.availability_time_windows) {
-          // Serialize the availability_time_windows field if it's an object or array
+          // availability_time_windows is a jsonb column, so hand Drizzle the
+          // value itself. JSON.stringify-ing it first stored a JSON *string*
+          // instead of an array, and the profile page — which maps over
+          // {start, end} objects — then rendered nothing.
           updateData.availabilityTimeWindows =
-            typeof extractedData.availability_time_windows === "object"
-              ? JSON.stringify(extractedData.availability_time_windows)
-              : extractedData.availability_time_windows;
+            extractedData.availability_time_windows;
         }
 
         // Log the normalized availability_time_windows for debugging
@@ -249,8 +275,8 @@ export const chat = async (c: Context) => {
           updateData.preferredStages = toArray(extractedData.preferred_stages);
 
         if (extractedData.communication_modes)
-          updateData.communicationModes = toArray(
-            extractedData.communication_modes,
+          updateData.communicationModes = normaliseCommunicationModes(
+            toArray(extractedData.communication_modes),
           );
 
         if (extractedData.timezone)

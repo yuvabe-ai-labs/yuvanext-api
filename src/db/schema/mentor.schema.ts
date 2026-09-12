@@ -43,7 +43,7 @@ export const mentors = pgTable("mentors", {
   // Capacity & Preferences
   mentoringCapacity: capacityEnum("mentoring_capacity"),
   preferredStages: jsonb("preferred_stages").$type<string[]>(), // ["Stage 1: Foundations", ...]
-  communicationModes: jsonb("communication_modes").$type<string[]>(), // ["Messaging", "Calls", "Meetings", "Video"]
+  communicationModes: jsonb("communication_modes").$type<string[]>(), // ["In-person Meetings", "Virtual Video Calls"]
 
   // Boundaries & Acknowledgements
   confirmBoundaries: boolean("confirm_boundaries").default(false),
