@@ -695,7 +695,13 @@ export async function validateAndExtractData(
       "Normalize to use a regular hyphen in extractedValue.",
     preferred_stages: "Comma-separated list of mentorship stages",
     communication_modes:
-      "Comma-separated list of communication modes (In-person Meetings, Virtual Video Calls, Messaging, etc.)",
+      "Comma-separated list drawn ONLY from these two options: " +
+      "'In-person Meetings', 'Virtual Video Calls'. " +
+      "Map any equivalent phrasing onto one of them (e.g. 'in person', " +
+      "'face to face', 'meet up' -> 'In-person Meetings'; 'video', 'zoom', " +
+      "'online call', 'virtual' -> 'Virtual Video Calls') and return them " +
+      "spelled exactly as above. Never invent other modes such as Messaging " +
+      "or Calls — the question offers only these two.",
     // FIX: Explicitly instruct to return boolean true for any agreement
     confirm_boundaries:
       "Any expression of agreement (e.g. 'I agree', 'yes', 'ok', 'sure', 'agreed') " +

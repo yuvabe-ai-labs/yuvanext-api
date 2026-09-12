@@ -102,7 +102,11 @@ export const deactivateAccount = createRoute({
   method: "post" as const,
   path: "/settings/account-deactivate",
   tags: ["Settings"],
-  middleware: requireRole({ allowedRoles: ["candidate", "unit", "admin"] }),
+  // Role-agnostic: the handler only flags the user and clears their sessions,
+  // so every signed-in role can deactivate — mentors included.
+  middleware: requireRole({
+    allowedRoles: ["candidate", "unit", "admin", "mentor"],
+  }),
   summary: "Deactivate account",
   description: "Deactivate account and remove all active sessions",
   responses: {

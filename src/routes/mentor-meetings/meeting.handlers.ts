@@ -229,6 +229,8 @@ export const createMeeting: AppRouteHandler<CreateMeeting> = async (c) => {
     const scheduledDate = new Date(scheduledAt).toLocaleString("en-IN", {
       dateStyle: "full",
       timeStyle: "short",
+      // Pinned to IST so the notification matches the UI, not the server zone.
+      timeZone: "Asia/Kolkata",
     });
 
     const creatorRoleName =
@@ -371,6 +373,8 @@ export const cancelMeeting: AppRouteHandler<CancelMeeting> = async (c) => {
     const scheduledDate = meeting.scheduledAt.toLocaleString("en-IN", {
       dateStyle: "full",
       timeStyle: "short",
+      // Pinned to IST so the notification matches the UI, not the server zone.
+      timeZone: "Asia/Kolkata",
     });
 
     const cancellerLabel = isMentor ? "Your mentor" : "Your mentee";

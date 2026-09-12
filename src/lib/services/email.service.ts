@@ -56,6 +56,9 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+/** Meetings are scheduled and displayed in IST. */
+const MEETING_TIME_ZONE = "Asia/Kolkata";
+
 interface MeetingCreatedEmailParams {
   to: string;
   candidateName: string;
@@ -89,9 +92,12 @@ export async function sendMeetingCreatedEmail(
     const template = compiledTemplates.meetingCreated;
     if (!template) throw new Error("meeting-created template not found");
 
+    // Pin the zone: without it the server's timezone is used, so a UTC host
+    // mailed out a time hours off the one the UI shows the user.
     const scheduledAtFormatted = params.scheduledAt.toLocaleString("en-IN", {
       dateStyle: "full",
       timeStyle: "short",
+      timeZone: MEETING_TIME_ZONE,
     });
 
     // Make checks case-insensitive
@@ -135,9 +141,12 @@ export async function sendMeetingCancelledEmail(
     const template = compiledTemplates.meetingCancelled;
     if (!template) throw new Error("meeting-cancelled template not found");
 
+    // Pin the zone: without it the server's timezone is used, so a UTC host
+    // mailed out a time hours off the one the UI shows the user.
     const scheduledAtFormatted = params.scheduledAt.toLocaleString("en-IN", {
       dateStyle: "full",
       timeStyle: "short",
+      timeZone: MEETING_TIME_ZONE,
     });
 
     // Make checks case-insensitive
