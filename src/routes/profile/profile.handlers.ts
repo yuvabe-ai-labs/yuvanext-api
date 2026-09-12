@@ -438,10 +438,13 @@ export const getProfile: AppRouteHandler<GetProfile> = async (c) => {
           id: userTable.id,
           name: userTable.name,
           email: userTable.email,
+          image: userTable.image,
           role: userTable.role,
           createdAt: userTable.createdAt,
           updatedAt: userTable.updatedAt,
           // Mentor fields
+          avatarUrl: mentors.avatarUrl,
+          bannerUrl: mentors.bannerUrl,
           mentorType: mentors.mentorType,
           expertiseAreas: mentors.expertiseAreas,
           experienceSnapshot: mentors.experienceSnapshot,
@@ -476,6 +479,11 @@ export const getProfile: AppRouteHandler<GetProfile> = async (c) => {
         role: data.role,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
+        // Without these the navbar avatar could never show a mentor's photo:
+        // it reads profile.avatarUrl / profile.image from this response.
+        image: data.image,
+        avatarUrl: data.avatarUrl,
+        bannerUrl: data.bannerUrl,
         mentorType: data.mentorType,
         expertiseAreas: data.expertiseAreas,
         experienceSnapshot: data.experienceSnapshot,
@@ -1416,12 +1424,23 @@ export const getMentorProfile: AppRouteHandler<GetMentorProfile> = async (
     const avatarUrl = mentorProfile.avatarUrl || null;
     const bannerUrl = mentorProfile.bannerUrl || null;
 
+    // name and email live on the user table. Returning them here lets the
+    // profile page render the saved name straight after an edit, instead of
+    // falling back to the session copy, which only refreshes on re-login.
+    const [userRow] = await db
+      .select({ name: userTable.name, email: userTable.email })
+      .from(userTable)
+      .where(eq(userTable.id, user.id))
+      .limit(1);
+
     return c.json(
       {
         status_code: OK,
         message: "Mentor profile retrieved successfully",
         data: {
           ...mentorProfile,
+          name: userRow?.name ?? null,
+          email: userRow?.email ?? null,
           avatarUrl,
           bannerUrl,
         },
@@ -1445,17 +1464,46 @@ export const updateMentorProfile: AppRouteHandler<UpdateMentorProfile> = async (
   c,
 ) => {
   const user = c.get("user");
-  const updatedData = c.req.valid("json");
+  const updatedData = c.req.valid("json") as Record<string, unknown>;
 
-  const [updatedMentor] = await db
-    .update(mentors)
-    .set(updatedData)
-    .where(eq(mentors.userId, user.id))
-    .returning();
+  // name and image live on the user table, everything else on mentors. Writing
+  // the whole payload to mentors silently dropped the name, so editing it from
+  // the profile dialog appeared to succeed and changed nothing.
+  const { name, image, ...mentorFields } = updatedData;
+
+  if (name !== undefined || image !== undefined) {
+    await db
+      .update(userTable)
+      .set({
+        ...(name !== undefined ? { name: String(name) } : {}),
+        ...(image !== undefined ? { image: String(image) } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(userTable.id, user.id));
+  }
+
+  let updatedMentor;
+  if (Object.keys(mentorFields).length > 0) {
+    [updatedMentor] = await db
+      .update(mentors)
+      .set({ ...mentorFields, updatedAt: new Date() })
+      .where(eq(mentors.userId, user.id))
+      .returning();
+  } else {
+    updatedMentor = await db.query.mentors.findFirst({
+      where: eq(mentors.userId, user.id),
+    });
+  }
 
   if (!updatedMentor) {
     return c.json({ message: "Mentor profile not found" }, NOT_FOUND);
   }
 
-  return c.json(updatedMentor, OK);
+  const [currentUser] = await db
+    .select({ name: userTable.name, image: userTable.image })
+    .from(userTable)
+    .where(eq(userTable.id, user.id))
+    .limit(1);
+
+  return c.json({ ...updatedMentor, ...currentUser }, OK);
 };
