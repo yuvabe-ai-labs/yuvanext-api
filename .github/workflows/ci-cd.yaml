@@ -27,6 +27,11 @@ env:
   ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
   ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
   ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
+  # One Google OAuth client serves every environment; each environment's
+  # callback URL is registered against it in the Google console.
+  # Needed at top level so the db:migrate step can pass env validation too.
+  GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+  GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
 
 jobs:
   deploy:
@@ -152,6 +157,8 @@ jobs:
             --arg ZOOM_ACCOUNT_ID "$ZOOM_ACCOUNT_ID" \
             --arg ZOOM_CLIENT_ID "$ZOOM_CLIENT_ID" \
             --arg ZOOM_CLIENT_SECRET "$ZOOM_CLIENT_SECRET" \
+            --arg GOOGLE_CLIENT_ID "$GOOGLE_CLIENT_ID" \
+            --arg GOOGLE_CLIENT_SECRET "$GOOGLE_CLIENT_SECRET" \
             --arg S3_BUCKET_NAME "$S3_BUCKET_NAME" \
             --arg FRONTEND_URL "$FRONTEND_URL" \
             '{Variables: {
@@ -167,6 +174,8 @@ jobs:
               ZOOM_ACCOUNT_ID: $ZOOM_ACCOUNT_ID,
               ZOOM_CLIENT_ID: $ZOOM_CLIENT_ID,
               ZOOM_CLIENT_SECRET: $ZOOM_CLIENT_SECRET,
+              GOOGLE_CLIENT_ID: $GOOGLE_CLIENT_ID,
+              GOOGLE_CLIENT_SECRET: $GOOGLE_CLIENT_SECRET,
               S3_BUCKET_NAME: $S3_BUCKET_NAME,
               FRONTEND_URL: $FRONTEND_URL
             }}')
