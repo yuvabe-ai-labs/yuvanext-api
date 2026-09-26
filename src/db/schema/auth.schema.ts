@@ -33,7 +33,8 @@ export const user = pgTable("user", {
   banned: boolean("banned").default(false),
   banReason: text("ban_reason"),
   banExpires: timestamp("ban_expires"),
-  metadata: jsonb("metadata").notNull(),
+  // Google sign-ups send no metadata, so this needs a default or the INSERT fails.
+  metadata: jsonb("metadata").notNull().default({}),
   accountDisabled: boolean("account_disabled").default(false).notNull(),
 });
 
