@@ -82,6 +82,9 @@ Q5. "Which area of interest excites you the most?"
     - Business & Entrepreneurship
     - Research & Emerging Fields
     - Personal Growth & Soft Skills
+    - Agriculture & Farming
+    - Hospitality & Hotel Management
+    - Healthcare & Wellness
     - No Ideas, I want to explore
 
 Q6. "What specific skills do you have in [selected area]?"
@@ -94,6 +97,9 @@ Q6. "What specific skills do you have in [selected area]?"
     Marketing & Communication: Digital Marketing, Social Media, SEO, Public Speaking, Event Management
     Business & Entrepreneurship: Entrepreneurship, Sales, Teamwork, Financial Literacy, Project Management
     Personal Growth & Soft Skills: Critical Thinking, Problem Solving, Time Management, Creativity, Adaptability
+    Agriculture & Farming: Organic Farming, Crop Management, Dairy & Livestock, Irrigation, Farm Machinery, Agri-Business
+    Hospitality & Hotel Management: Front Office, Housekeeping, Food & Beverage Service, Culinary Arts, Customer Service, Event Hosting
+    Healthcare & Wellness: Patient Care, First Aid, Nursing Assistance, Pharmacy, Lab Technician, Nutrition & Fitness
     No Ideas: Skip this question entirely
     
     Note: Always include "Add custom skill" option

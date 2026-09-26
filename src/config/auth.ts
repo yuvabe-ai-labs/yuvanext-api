@@ -11,9 +11,11 @@ import {
   sendVerificationMail,
   updateUserRoleOnEmailVerification,
   enableUserByEmailBeforeSignin,
+  enableUserByIdBeforeSignin,
   sendChangeEmailConfirmation,
 } from "@/routes/auth/auth.service";
 
+import env from "./env";
 import db from "../db/index";
 import { ac, admin, candidate, mentor, unit } from "./auth-permission";
 import { ALLOWED_ORIGINS } from "@/lib/create-app";
@@ -50,6 +52,58 @@ export const auth = betterAuth({
           });
         }
       }
+    },
+  },
+  databaseHooks: {
+    session: {
+      create: {
+        // Email sign-in clears accountDisabled through hooks.before above.
+        // Social sign-in never hits /sign-in/email, so mirror it here — scoped
+        // to the OAuth callback so no existing sign-in path changes behaviour.
+        before: async (session: any, ctx: any) => {
+          const path: string | undefined = ctx?.path;
+          if (!path?.startsWith("/callback/")) return;
+
+          try {
+            await enableUserByIdBeforeSignin(session.userId);
+          } catch (error) {
+            console.error("Error enabling user on social signin:", error);
+          }
+        },
+      },
+    },
+  },
+  socialProviders: {
+    google: {
+      clientId: env.GOOGLE_CLIENT_ID,
+      clientSecret: env.GOOGLE_CLIENT_SECRET,
+      // Signing in must not silently create an account. The signup pages opt
+      // in by sending requestSignUp: true; the signin pages don't, so an
+      // unknown Google account is turned away instead of being registered.
+      disableImplicitSignUp: true,
+      // Google sends no metadata and the column is NOT NULL. This keeps signup
+      // working even against a database where migration 0030 hasn't run.
+      mapProfileToUser: (profile: Record<string, any>) => ({
+        name: profile.name,
+        // DO NOT REMOVE THIS LINE. We deliberately do not take the Google
+        // profile picture. The provider builds the user as
+        // `{ ...defaults, image: profile.picture, ...thisObject }`, so this key
+        // must be present to override it. Deleting it — or "tidying" it as a
+        // no-op — silently restores the Google avatar. `undefined` rather than
+        // `null` because a null literal here breaks Better Auth's inference of
+        // the role/metadata additional fields.
+        image: undefined,
+        metadata: {},
+      }),
+    },
+  },
+  account: {
+    accountLinking: {
+      enabled: true,
+      // Google verifies ownership of the address, so linking by email is safe.
+      trustedProviders: ["google"],
+      // Never attach a Google account under a different address.
+      allowDifferentEmails: false,
     },
   },
   trustedOrigins: ALLOWED_ORIGINS,
