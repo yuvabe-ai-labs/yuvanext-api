@@ -149,6 +149,33 @@ export async function enableUserByEmailBeforeSignin(email: string) {
   }
 }
 
+/**
+ * Same intent as enableUserByEmailBeforeSignin, but keyed by id.
+ * Social sign-in never exposes an email on the callback, only a session.
+ */
+export async function enableUserByIdBeforeSignin(userId: string) {
+  const existingUser = await db.query.user.findFirst({
+    where: (users, { eq }) => eq(users.id, userId),
+  });
+
+  if (!existingUser) {
+    console.error("User not found:", userId);
+    return;
+  }
+
+  if (existingUser.accountDisabled === true) {
+    console.log("Enabling user before social signin:", existingUser.id);
+
+    await db
+      .update(user)
+      .set({
+        accountDisabled: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(user.id, existingUser.id));
+  }
+}
+
 export async function updateUserRoleOnEmailVerification(
   userId: string,
   role: string,

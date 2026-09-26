@@ -19,6 +19,9 @@ const EnvSchema = z.object({
   BETTER_AUTH_SECRET: z.string(),
   BETTER_AUTH_URL: z.string(),
 
+  GOOGLE_CLIENT_ID: z.string(),
+  GOOGLE_CLIENT_SECRET: z.string(),
+
   SMTP_HOST: z.string(),
   SMTP_PORT: z.coerce.number().default(587),
   SMTP_USER: z.string(),
