@@ -24,6 +24,8 @@ export const ALLOWED_ORIGINS = [
   "https://admin-dev.yuvanext.com",
   "https://admin.yuvanext.com",
   "https://admin-stg.yuvanext.com",
+  "https://d20n2fy84kuvfi.cloudfront.net", // yuvabe-atr app
+  "https://d1ngiqfund20jz.cloudfront.net", // yuvabe-atr admin
 ];
 
 export default function createApp() {

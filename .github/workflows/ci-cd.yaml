@@ -6,6 +6,7 @@ on:
       - development
       - staging
       - main
+      - yuvabe-atr
 
 # --------------------
 # Top-level environment variables
@@ -59,6 +60,15 @@ jobs:
             echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_STAGING }}" >> $GITHUB_ENV
             echo "S3_BUCKET_NAME=${{ secrets.BUCKET_NAME_STAGING }}" >> $GITHUB_ENV
             echo "FRONTEND_URL=${{ secrets.FRONTEND_URL_STAGING }}" >> $GITHUB_ENV
+          elif [ "${{ github.ref }}" == "refs/heads/yuvabe-atr" ]; then
+            # NODE_ENV only accepts development|staging|production (src/config/env.ts)
+            echo "NODE_ENV=staging" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_ATR }}" >> $GITHUB_ENV
+            echo "DATABASE_URL=${{ secrets.DATABASE_URL_ATR }}" >> $GITHUB_ENV
+            echo "IMAGE_TAG=atr" >> $GITHUB_ENV
+            echo "BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL_ATR }}" >> $GITHUB_ENV
+            echo "S3_BUCKET_NAME=${{ secrets.BUCKET_NAME_ATR }}" >> $GITHUB_ENV
+            echo "FRONTEND_URL=${{ secrets.FRONTEND_URL_ATR }}" >> $GITHUB_ENV
           else
             echo "NODE_ENV=development" >> $GITHUB_ENV
             echo "FUNCTION_NAME=${{ secrets.FUNCTION_NAME_DEV }}" >> $GITHUB_ENV
