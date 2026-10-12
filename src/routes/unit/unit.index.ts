@@ -8,6 +8,7 @@ const router = createRouter();
 // Register routes
 router
   .openapi(routes.getAllUnits, handlers.getAllUnits)
-  .openapi(routes.getUnitById, handlers.getUnitById);
+  .openapi(routes.getUnitById, handlers.getUnitById)
+  .openapi(routes.getPublicUnitById, handlers.getPublicUnitById);
 
 export default router;

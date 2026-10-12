@@ -12,7 +12,11 @@ import {
   OK,
 } from "@/lib/openapi/http-status-codes";
 
-import type { GetAllUnits, GetUnitById } from "./unit.routes";
+import type {
+  GetAllUnits,
+  GetPublicUnitById,
+  GetUnitById,
+} from "./unit.routes";
 
 // GET /units - Get all units (candidate only)
 export const getAllUnits: AppRouteHandler<GetAllUnits> = async (c) => {
@@ -71,99 +75,144 @@ export const getAllUnits: AppRouteHandler<GetAllUnits> = async (c) => {
   }
 };
 
+// Unit profile plus its active internships; null when the unit doesn't exist
+const fetchUnitWithInternships = async (id: string) => {
+  // Get specific unit with user information
+  const unitData = await db
+    .select({
+      userId: units.userId,
+      name: units.name,
+      type: units.type,
+      phone: units.phone,
+      address: units.address,
+      websiteUrl: units.websiteUrl,
+      mission: units.mission,
+      values: units.values,
+      description: units.description,
+      industry: units.industry,
+      isAurovillian: units.isAurovillian,
+      bannerUrl: units.bannerUrl,
+      avatarUrl: units.avatarUrl,
+      galleryImages: units.galleryImages,
+      galleryVideos: units.galleryVideos,
+      createdAt: units.createdAt,
+      updatedAt: units.updatedAt,
+      focusAreas: units.focusAreas,
+      skillsOffered: units.skillsOffered,
+      location: units.location,
+      opportunitiesOffered: units.opportunitiesOffered,
+      projects: units.projects,
+      socialLinks: units.socialLinks,
+      // User info
+      email: userTable.email,
+      userImage: userTable.image,
+      userAccountStatus: userTable.accountDisabled,
+    })
+    .from(units)
+    .leftJoin(userTable, eq(units.userId, userTable.id))
+    .where(eq(units.userId, id))
+    .limit(1);
+
+  if (!unitData || unitData.length === 0) {
+    return null;
+  }
+
+  // Fetch only active internships created by this unit
+  const unitInternships = await db
+    .select({
+      id: internships.id,
+      title: internships.title,
+      description: internships.description,
+      duration: internships.duration,
+      payment: internships.payment,
+      status: internships.status,
+      closingDate: internships.closingDate,
+      createdAt: internships.createdAt,
+      updatedAt: internships.updatedAt,
+      isPaid: internships.isPaid,
+      minAgeRequired: internships.minAgeRequired,
+      jobType: internships.jobType,
+      benefits: internships.benefits,
+      skillsRequired: internships.skillsRequired,
+      responsibilities: internships.responsibilities,
+      language: internships.language,
+    })
+    .from(internships)
+    .where(eq(internships.createdBy, id))
+    .orderBy(desc(internships.createdAt));
+
+  // Filter for active internships only and add isOpen field
+  const activeInternships = unitInternships
+    .filter((internship) => internship.status === "active")
+    .map((internship) => ({
+      ...internship,
+      isOpen: true,
+    }));
+
+  return { ...unitData[0], internships: activeInternships };
+};
+
 // GET /units/:id - Get specific unit by ID (candidate only)
 export const getUnitById: AppRouteHandler<GetUnitById> = async (c) => {
   const { id } = c.req.valid("param");
 
   try {
-    // Get specific unit with user information
-    const unitData = await db
-      .select({
-        userId: units.userId,
-        name: units.name,
-        type: units.type,
-        phone: units.phone,
-        address: units.address,
-        websiteUrl: units.websiteUrl,
-        mission: units.mission,
-        values: units.values,
-        description: units.description,
-        industry: units.industry,
-        isAurovillian: units.isAurovillian,
-        bannerUrl: units.bannerUrl,
-        avatarUrl: units.avatarUrl,
-        galleryImages: units.galleryImages,
-        galleryVideos: units.galleryVideos,
-        createdAt: units.createdAt,
-        updatedAt: units.updatedAt,
-        focusAreas: units.focusAreas,
-        skillsOffered: units.skillsOffered,
-        location: units.location,
-        opportunitiesOffered: units.opportunitiesOffered,
-        projects: units.projects,
-        socialLinks: units.socialLinks,
-        // User info
-        email: userTable.email,
-        userImage: userTable.image,
-        userAccountStatus: userTable.accountDisabled,
-      })
-      .from(units)
-      .leftJoin(userTable, eq(units.userId, userTable.id))
-      .where(eq(units.userId, id))
-      .limit(1);
+    const unit = await fetchUnitWithInternships(id);
 
-    if (!unitData || unitData.length === 0) {
+    if (!unit) {
       return c.json(
         { status_code: NOT_FOUND, message: "Unit not found" },
         NOT_FOUND,
       );
     }
 
-    // Fetch only active internships created by this unit
-    const unitInternships = await db
-      .select({
-        id: internships.id,
-        title: internships.title,
-        description: internships.description,
-        duration: internships.duration,
-        payment: internships.payment,
-        status: internships.status,
-        closingDate: internships.closingDate,
-        createdAt: internships.createdAt,
-        updatedAt: internships.updatedAt,
-        isPaid: internships.isPaid,
-        minAgeRequired: internships.minAgeRequired,
-        jobType: internships.jobType,
-        benefits: internships.benefits,
-        skillsRequired: internships.skillsRequired,
-        responsibilities: internships.responsibilities,
-        language: internships.language,
-      })
-      .from(internships)
-      .where(eq(internships.createdBy, id))
-      .orderBy(desc(internships.createdAt));
-
-    // Filter for active internships only and add isOpen field
-    const activeInternships = unitInternships
-      .filter((internship) => internship.status === "active")
-      .map((internship) => ({
-        ...internship,
-        isOpen: true,
-      }));
-
     return c.json(
       {
         status_code: OK,
         message: "Unit details retrieved successfully",
-        data: {
-          ...unitData[0],
-          internships: activeInternships,
-        },
+        data: unit,
       },
       OK,
     );
   } catch (err) {
     console.error("Error fetching unit details:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+// GET /public/units/:id - Unit profile for the public job board (no auth).
+// Hides the account email and status, and treats disabled accounts as missing.
+export const getPublicUnitById: AppRouteHandler<GetPublicUnitById> = async (
+  c,
+) => {
+  const { id } = c.req.valid("param");
+
+  try {
+    const unit = await fetchUnitWithInternships(id);
+
+    if (!unit || unit.userAccountStatus) {
+      return c.json(
+        { status_code: NOT_FOUND, message: "Unit not found" },
+        NOT_FOUND,
+      );
+    }
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Unit details retrieved successfully",
+        data: { ...unit, email: null, userAccountStatus: null },
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error fetching public unit details:", err);
     return c.json(
       {
         status_code: INTERNAL_SERVER_ERROR,

@@ -8,6 +8,8 @@ const router = createRouter();
 // Register routes
 router
   .openapi(routes.getUnitStats, handlers.getUnitStats)
+  .openapi(routes.getPublicInternships, handlers.getPublicInternships)
+  .openapi(routes.getPublicInternshipById, handlers.getPublicInternshipById)
   .openapi(routes.getInternships, handlers.getInternships)
   .openapi(routes.getRecommendedInternships, handlers.getRecommendedInternships)
   .openapi(routes.createInternship, handlers.createInternship)
