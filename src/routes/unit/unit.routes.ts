@@ -2,6 +2,7 @@ import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
 
 import {
+  INTERNAL_SERVER_ERROR,
   NOT_FOUND,
   OK,
   UNPROCESSABLE_ENTITY,
@@ -57,5 +58,27 @@ export const getUnitById = createRoute({
   },
 });
 
+/**
+ * GET /public/units/:id - Unit profile for the public job board (no auth)
+ */
+export const getPublicUnitById = createRoute({
+  method: "get" as const,
+  path: "/public/units/{id}",
+  tags: ["Units"],
+  summary: "Get unit details publicly",
+  description:
+    "Unit profile and active internships for the public job board; no session required. Account email is not included.",
+  request: {
+    params: unitIdParamSchema,
+  },
+  responses: {
+    [OK]: createResponse(OK, unitWithInternshipsResponseSchema),
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
+    [INTERNAL_SERVER_ERROR]: createResponse(INTERNAL_SERVER_ERROR),
+  },
+});
+
 export type GetAllUnits = typeof getAllUnits;
 export type GetUnitById = typeof getUnitById;
+export type GetPublicUnitById = typeof getPublicUnitById;

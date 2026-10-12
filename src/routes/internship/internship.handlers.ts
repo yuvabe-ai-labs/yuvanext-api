@@ -22,6 +22,8 @@ import type {
   DeleteInternship,
   GetInternshipById,
   GetInternships,
+  GetPublicInternshipById,
+  GetPublicInternships,
   GetRecommendedInternships,
   GetUnitStats,
   UpdateInternship,
@@ -521,6 +523,72 @@ export const getInternships: AppRouteHandler<GetInternships> = async (c) => {
     );
   } catch (err) {
     console.error("Error fetching internships:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+export const getPublicInternships: AppRouteHandler<
+  GetPublicInternships
+> = async (c) => {
+  try {
+    const internshipList = await fetchInternshipsWithMetadata(
+      eq(internships.status, "active"),
+    );
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Internships retrieved successfully",
+        data: internshipList,
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error fetching public internships:", err);
+    return c.json(
+      {
+        status_code: INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      },
+      INTERNAL_SERVER_ERROR,
+    );
+  }
+};
+
+export const getPublicInternshipById: AppRouteHandler<
+  GetPublicInternshipById
+> = async (c) => {
+  const { id } = c.req.valid("param");
+
+  try {
+    const internship = await fetchInternshipById(
+      id,
+      and(eq(internships.id, id), eq(internships.status, "active")),
+    );
+
+    if (!internship) {
+      return c.json(
+        { status_code: NOT_FOUND, message: "Internship not found" },
+        NOT_FOUND,
+      );
+    }
+
+    return c.json(
+      {
+        status_code: OK,
+        message: "Internship retrieved successfully",
+        data: internship,
+      },
+      OK,
+    );
+  } catch (err) {
+    console.error("Error fetching public internship:", err);
     return c.json(
       {
         status_code: INTERNAL_SERVER_ERROR,

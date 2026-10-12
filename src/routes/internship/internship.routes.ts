@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   CREATED,
+  INTERNAL_SERVER_ERROR,
   NOT_FOUND,
   OK,
   UNPROCESSABLE_ENTITY,
@@ -169,6 +170,43 @@ export const deleteInternship = createRoute({
   },
 });
 
+/**
+ * GET /public/internships - List active internships (no auth, public job board)
+ */
+export const getPublicInternships = createRoute({
+  method: "get" as const,
+  path: "/public/internships",
+  tags: ["Internships"],
+  summary: "List active internships publicly",
+  description:
+    "Active internships for the public job board; no session required",
+  responses: {
+    [OK]: createResponse(OK, z.array(internshipResponseSchema)),
+    [INTERNAL_SERVER_ERROR]: createResponse(INTERNAL_SERVER_ERROR),
+  },
+});
+
+/**
+ * GET /public/internships/:id - Get an active internship (no auth)
+ */
+export const getPublicInternshipById = createRoute({
+  method: "get" as const,
+  path: "/public/internships/{id}",
+  tags: ["Internships"],
+  summary: "Get active internship by ID publicly",
+  description:
+    "Details of an active internship for the public job board; no session required",
+  request: {
+    params: internshipIdParamSchema,
+  },
+  responses: {
+    [OK]: createResponse(OK, internshipResponseSchema),
+    [NOT_FOUND]: createResponse(NOT_FOUND),
+    [UNPROCESSABLE_ENTITY]: createResponse(UNPROCESSABLE_ENTITY),
+    [INTERNAL_SERVER_ERROR]: createResponse(INTERNAL_SERVER_ERROR),
+  },
+});
+
 export type GetInternships = typeof getInternships;
 export type GetRecommendedInternships = typeof getRecommendedInternships;
 export type CreateInternship = typeof createInternship;
@@ -176,3 +214,5 @@ export type GetInternshipById = typeof getInternshipById;
 export type UpdateInternship = typeof updateInternship;
 export type DeleteInternship = typeof deleteInternship;
 export type GetUnitStats = typeof getUnitStats;
+export type GetPublicInternships = typeof getPublicInternships;
+export type GetPublicInternshipById = typeof getPublicInternshipById;
